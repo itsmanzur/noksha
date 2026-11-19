@@ -70,7 +70,7 @@ export function summaryOf(section, t) {
   const props = section.props || {};
   const text = section.type === 'html'
     ? String(props.html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-    : String(props.title || props.eyebrow || props.text || props.label || '').trim();
+    : String(props.title || props.eyebrow || props.text || props.label || props.number || '').trim();
   if (!text) {
     return t('editor.untitled');
   }
