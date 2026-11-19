@@ -138,7 +138,7 @@ export function Welcome({ t, go, locale }) {
     body = (
       <>
         <p className="nk-muted">{t('welcome.pageHelp')}</p>
-        <Select label={t('pages.language')} value={template} onChange={(e) => setTemplate(e.target.value)}>
+        <Select label={t('pages.templatePick')} value={template} onChange={(e) => setTemplate(e.target.value)}>
           <option value="single">{t('pages.single')}</option>
           <option value="lead">{t('pages.lead')}</option>
           <option value="fashion">{t('pages.fashion')}</option>

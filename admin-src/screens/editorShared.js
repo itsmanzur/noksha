@@ -72,7 +72,7 @@ export function summaryOf(section, t) {
     ? String(props.html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
     : String(props.title || props.eyebrow || props.text || props.label || props.number || '').trim();
   if (!text) {
-    return t('editor.untitled');
+    return section.type === 'whatsapp' ? t('editor.waSiteNumber') : t('editor.untitled');
   }
   return text.length > 44 ? text.slice(0, 42) + '…' : text;
 }
