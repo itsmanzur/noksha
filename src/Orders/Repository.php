@@ -98,47 +98,49 @@ final class Repository {
         return (int) $wpdb->insert_id;
     }
 
-    public static function update(int $id, array $fields, bool $note_status = true, string $source = 'admin'): void {
+    /** Courier-reported states that may skip the manual workflow (never from a terminal state). */
+    private const WEBHOOK_STATES = ['shipped', 'delivered', 'returned'];
+
+    /**
+     * @return bool False when the requested status change was blocked (other fields are still saved).
+     */
+    public static function update(int $id, array $fields, bool $note_status = true, string $source = 'admin'): bool {
         global $wpdb;
         $old = self::find($id);
         $fields['updated_at'] = current_time('mysql');
-        if (isset($fields['status']) && $old) {
-            $new_status = (string) $fields['status'];
-            $old_status = (string) ($old['status'] ?? '');
-            if ($new_status !== $old_status && !self::can_transition($old_status, $new_status)) {
-                unset($fields['status']);
-                if ($note_status) {
-                    self::add_note($id, sprintf('Blocked status change %s → %s (%s)', $old_status, $new_status, $source ?: 'unknown'));
-                }
-                if ($fields === ['updated_at' => $fields['updated_at']] || count($fields) <= 1) {
-                    return;
-                }
-                $wpdb->update(self::table(), $fields, ['id' => $id]);
-                return;
-            }
-            if ($source === 'webhook' && in_array($old_status, ['fake', 'cancelled', 'returned'], true) && $new_status !== $old_status) {
-                unset($fields['status']);
-                if ($note_status) {
-                    self::add_note($id, sprintf('Blocked status change %s → %s (webhook)', $old_status, $new_status));
-                }
-                if (count($fields) <= 1) {
-                    return;
-                }
-                $wpdb->update(self::table(), $fields, ['id' => $id]);
-                return;
-            }
-            if (isset($fields['status']) && $new_status === 'no_answer') {
-                $fields['call_attempts'] = (int) ($old['call_attempts'] ?? 0) + 1;
-                $fields['last_call_at'] = current_time('mysql');
-            }
+        if (!isset($fields['status']) || !$old) {
             $wpdb->update(self::table(), $fields, ['id' => $id]);
-            if ($note_status && isset($fields['status']) && $new_status !== $old_status) {
-                self::add_note($id, sprintf('Status: %s → %s', $old_status, $new_status));
-                do_action('noksha_order_status_changed', $id, $old_status, $new_status);
+            return true;
+        }
+        $new_status = (string) $fields['status'];
+        $old_status = (string) ($old['status'] ?? '');
+        $allowed = $new_status === $old_status
+            || self::can_transition($old_status, $new_status)
+            || (
+                $source === 'webhook'
+                && !in_array($old_status, ['fake', 'cancelled', 'returned'], true)
+                && in_array($new_status, self::WEBHOOK_STATES, true)
+            );
+        if (!$allowed) {
+            unset($fields['status']);
+            if ($note_status) {
+                self::add_note($id, sprintf('Blocked status change %s → %s (%s)', $old_status, $new_status, $source ?: 'unknown'));
             }
-            return;
+            if (count($fields) > 1) {
+                $wpdb->update(self::table(), $fields, ['id' => $id]);
+            }
+            return false;
+        }
+        if ($new_status === 'no_answer') {
+            $fields['call_attempts'] = (int) ($old['call_attempts'] ?? 0) + 1;
+            $fields['last_call_at'] = current_time('mysql');
         }
         $wpdb->update(self::table(), $fields, ['id' => $id]);
+        if ($note_status && $new_status !== $old_status) {
+            self::add_note($id, sprintf('Status: %s → %s', $old_status, $new_status));
+            do_action('noksha_order_status_changed', $id, $old_status, $new_status);
+        }
+        return true;
     }
 
     public static function on_status_changed(int $id, string $old, string $new): void {
@@ -252,22 +254,22 @@ final class Repository {
     }
 
     /**
-     * @param array{search?:string,status?:string,page?:int,per_page?:int,from?:string,to?:string,payment_method?:string} $args
+     * Shared WHERE builder for list, export and tab counts.
+     *
+     * @param array{search?:string,status?:string,from?:string,to?:string,payment_method?:string} $args
+     * @return array{0:string,1:array<int,string>} Clause and prepare() params.
      */
-    public static function query(array $args = []): array {
+    private static function build_where(array $args, bool $with_status = true): array {
         global $wpdb;
         $search = sanitize_text_field((string) ($args['search'] ?? ''));
         $status = sanitize_key((string) ($args['status'] ?? ''));
         $method = sanitize_key((string) ($args['payment_method'] ?? ''));
         $from = sanitize_text_field((string) ($args['from'] ?? ''));
         $to = sanitize_text_field((string) ($args['to'] ?? ''));
-        $page = max(1, (int) ($args['page'] ?? 1));
-        $per_page = max(1, min(100, (int) ($args['per_page'] ?? 50)));
-        $offset = ($page - 1) * $per_page;
 
         $where = ['1=1'];
         $params = [];
-        if ($status !== '' && in_array($status, self::STATUSES, true)) {
+        if ($with_status && $status !== '' && in_array($status, self::STATUSES, true)) {
             $where[] = 'status = %s';
             $params[] = $status;
         }
@@ -288,7 +290,18 @@ final class Repository {
             $where[] = '(customer_name LIKE %s OR phone LIKE %s OR order_number LIKE %s OR trx_id LIKE %s)';
             array_push($params, $like, $like, $like, $like);
         }
-        $clause = implode(' AND ', $where);
+        return [implode(' AND ', $where), $params];
+    }
+
+    /**
+     * @param array{search?:string,status?:string,page?:int,per_page?:int,from?:string,to?:string,payment_method?:string} $args
+     */
+    public static function query(array $args = []): array {
+        global $wpdb;
+        $page = max(1, (int) ($args['page'] ?? 1));
+        $per_page = max(1, min(100, (int) ($args['per_page'] ?? 50)));
+        $offset = ($page - 1) * $per_page;
+        [$clause, $params] = self::build_where($args);
         $total_sql = 'SELECT COUNT(*) FROM ' . self::table() . ' WHERE ' . $clause;
         $total = $params === []
             ? (int) $wpdb->get_var($total_sql)
@@ -417,38 +430,9 @@ final class Repository {
      */
     public static function export_rows(array $args = []): array {
         global $wpdb;
-        $search = sanitize_text_field((string) ($args['search'] ?? ''));
-        $status = sanitize_key((string) ($args['status'] ?? ''));
-        $method = sanitize_key((string) ($args['payment_method'] ?? ''));
-        $from = sanitize_text_field((string) ($args['from'] ?? ''));
-        $to = sanitize_text_field((string) ($args['to'] ?? ''));
         $limit = max(1, min(5000, (int) ($args['limit'] ?? 5000)));
         $chunk = 500;
-
-        $where = ['1=1'];
-        $params = [];
-        if ($status !== '' && in_array($status, self::STATUSES, true)) {
-            $where[] = 'status = %s';
-            $params[] = $status;
-        }
-        if ($method !== '') {
-            $where[] = 'payment_method = %s';
-            $params[] = $method;
-        }
-        if ($from !== '' && preg_match('/^\d{4}-\d{2}-\d{2}/', $from)) {
-            $where[] = 'created_at >= %s';
-            $params[] = substr($from, 0, 10) . ' 00:00:00';
-        }
-        if ($to !== '' && preg_match('/^\d{4}-\d{2}-\d{2}/', $to)) {
-            $where[] = 'created_at <= %s';
-            $params[] = substr($to, 0, 10) . ' 23:59:59';
-        }
-        if ($search !== '') {
-            $like = '%' . $wpdb->esc_like($search) . '%';
-            $where[] = '(customer_name LIKE %s OR phone LIKE %s OR order_number LIKE %s OR trx_id LIKE %s)';
-            array_push($params, $like, $like, $like, $like);
-        }
-        $clause = implode(' AND ', $where);
+        [$clause, $params] = self::build_where($args);
         $out = [];
         $offset = 0;
         while ($offset < $limit) {
@@ -477,31 +461,7 @@ final class Repository {
      */
     public static function counts(array $args = []): array {
         global $wpdb;
-        $search = sanitize_text_field((string) ($args['search'] ?? ''));
-        $method = sanitize_key((string) ($args['payment_method'] ?? ''));
-        $from = sanitize_text_field((string) ($args['from'] ?? ''));
-        $to = sanitize_text_field((string) ($args['to'] ?? ''));
-
-        $where = ['1=1'];
-        $params = [];
-        if ($method !== '') {
-            $where[] = 'payment_method = %s';
-            $params[] = $method;
-        }
-        if ($from !== '' && preg_match('/^\d{4}-\d{2}-\d{2}/', $from)) {
-            $where[] = 'created_at >= %s';
-            $params[] = substr($from, 0, 10) . ' 00:00:00';
-        }
-        if ($to !== '' && preg_match('/^\d{4}-\d{2}-\d{2}/', $to)) {
-            $where[] = 'created_at <= %s';
-            $params[] = substr($to, 0, 10) . ' 23:59:59';
-        }
-        if ($search !== '') {
-            $like = '%' . $wpdb->esc_like($search) . '%';
-            $where[] = '(customer_name LIKE %s OR phone LIKE %s OR order_number LIKE %s OR trx_id LIKE %s)';
-            array_push($params, $like, $like, $like, $like);
-        }
-        $clause = implode(' AND ', $where);
+        [$clause, $params] = self::build_where($args, false);
         $sql = 'SELECT status, COUNT(*) AS total FROM ' . self::table() . ' WHERE ' . $clause . ' GROUP BY status';
         $rows = $params === []
             ? $wpdb->get_results($sql, ARRAY_A)

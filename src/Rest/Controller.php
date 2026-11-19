@@ -460,6 +460,9 @@ final class Controller {
         if ($collect < 0 || $collect > (float) $order['total']) {
             return new \WP_Error('noksha_invalid_collect', 'Collect amount must be between 0 and the order total.', ['status' => 400]);
         }
+        if (!Orders::can_transition((string) $order['status'], 'paid')) {
+            return new \WP_Error('noksha_bad_transition', 'This order cannot be marked paid from its current status.', ['status' => 409]);
+        }
         Orders::update((int) $order['id'], [
             'status' => 'paid',
             'trx_verified' => 1,
@@ -479,6 +482,9 @@ final class Controller {
         }
         if (!in_array($order['payment_method'], ['manual_bkash', 'manual_nagad'], true) || $order['trx_id'] === '') {
             return new \WP_Error('noksha_trx_required', 'This order has no TrxID to reject.', ['status' => 400]);
+        }
+        if (!Orders::can_transition((string) $order['status'], 'cancelled')) {
+            return new \WP_Error('noksha_bad_transition', 'This order cannot be cancelled from its current status.', ['status' => 409]);
         }
         Orders::update((int) $order['id'], [
             'status' => 'cancelled',
@@ -667,8 +673,13 @@ final class Controller {
         $out = [];
         foreach ($fields as $field) {
             $value = (string) $field;
-            // Formula injection guard for Excel/Sheets.
-            if ($value !== '' && preg_match('/^[=+\-@\t\r]/', $value)) {
+            // Formula injection guard for Excel/Sheets. Plain numbers and phone numbers
+            // (e.g. +8801712345678, -5) are safe and must stay untouched.
+            if (
+                $value !== ''
+                && preg_match('/^[=+\-@\t\r]/', $value)
+                && !preg_match('/^[+\-]?\d+(\.\d+)?$/', $value)
+            ) {
                 $value = "'" . $value;
             }
             if (str_contains($value, '"') || str_contains($value, ',') || str_contains($value, "\n")) {

@@ -67,6 +67,7 @@ final class WalletVerifier {
             return [
                 'ok' => true,
                 'verified' => false,
+                'terminal' => !empty($result['terminal']),
                 'source' => 'api',
                 'message' => $result['message'] ?? 'Transaction not confirmed yet.',
                 'raw' => $result['raw'] ?? '',
@@ -117,6 +118,13 @@ final class WalletVerifier {
         }
         $result = self::verify_order($order_id);
         if (!empty($result['verified'])) {
+            return;
+        }
+        // Not configured / wrong order type / amount mismatch will not fix themselves — stop retrying.
+        if (empty($result['ok']) || !empty($result['terminal'])) {
+            if (!empty($result['terminal'])) {
+                Orders::add_note($order_id, 'Wallet auto-verify stopped: ' . (string) ($result['message'] ?? 'mismatch'));
+            }
             return;
         }
         $next = $attempt + 1;
@@ -172,7 +180,7 @@ final class WalletVerifier {
             return ['verified' => false, 'message' => 'bKash status: ' . ($data['transactionStatus'] ?? 'unknown'), 'raw' => $raw];
         }
         if ($amount > 0 && $paid > 0 && abs($paid - $amount) > 1) {
-            return ['verified' => false, 'message' => 'Amount mismatch.', 'raw' => $raw];
+            return ['verified' => false, 'terminal' => true, 'message' => 'Amount mismatch.', 'raw' => $raw];
         }
         return ['verified' => true, 'raw' => $raw];
     }
@@ -261,7 +269,7 @@ final class WalletVerifier {
         }
         $paid = (float) ($data['amount'] ?? 0);
         if ($amount > 0 && $paid > 0 && abs($paid - $amount) > 1) {
-            return ['verified' => false, 'message' => 'Amount mismatch.', 'raw' => $raw];
+            return ['verified' => false, 'terminal' => true, 'message' => 'Amount mismatch.', 'raw' => $raw];
         }
         return ['verified' => true, 'raw' => $raw];
     }
