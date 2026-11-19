@@ -75,6 +75,63 @@ final class Sanitizer {
         ];
     }
 
+    /** Layout variants per section type; the first entry is the default. */
+    public const LAYOUTS = [
+        'hero' => ['split', 'center', 'overlay'],
+        'benefits' => ['cards', 'list', 'numbers'],
+        'reviews' => ['slider', 'grid'],
+        'product' => ['side', 'reverse', 'stacked'],
+    ];
+
+    public const BACKGROUNDS = ['none', 'soft', 'warm', 'dark', 'brand', 'gradient'];
+
+    public const SPACINGS = ['compact', 'normal', 'roomy'];
+    public const SIZES = ['sm', 'md', 'lg', 'xl'];
+    public const RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
+    public const FITS = ['cover', 'contain'];
+    public const ROUNDS = ['none', 'md', 'lg', 'full'];
+    public const IMAGE_TYPES = ['hero', 'product'];
+
+    /**
+     * Per-section look: layout variant, background band, vertical spacing.
+     *
+     * @param mixed $raw
+     * @return array{layout:string,bg:string,space:string}
+     */
+    public static function style(string $type, $raw): array {
+        $raw = is_array($raw) ? $raw : [];
+        if ($type === 'order_form') {
+            return ['layout' => '', 'bg' => 'none', 'space' => 'normal', 'size' => 'md', 'ratio' => 'auto', 'fit' => 'cover', 'round' => 'md'];
+        }
+        $layouts = self::LAYOUTS[$type] ?? [];
+        $layout = sanitize_key((string) ($raw['layout'] ?? ''));
+        if (!in_array($layout, $layouts, true)) {
+            $layout = $layouts[0] ?? '';
+        }
+        $bg = sanitize_key((string) ($raw['bg'] ?? ''));
+        if (!in_array($bg, self::BACKGROUNDS, true)) {
+            $bg = 'none';
+        }
+        $space = sanitize_key((string) ($raw['space'] ?? ''));
+        if (!in_array($space, self::SPACINGS, true)) {
+            $space = 'normal';
+        }
+        $pick = static function ($key, array $allowed, string $default) use ($raw): string {
+            $value = sanitize_key((string) ($raw[$key] ?? ''));
+            return in_array($value, $allowed, true) ? $value : $default;
+        };
+        $image = in_array($type, self::IMAGE_TYPES, true);
+        return [
+            'layout' => $layout,
+            'bg' => $bg,
+            'space' => $space,
+            'size' => $pick('size', self::SIZES, 'md'),
+            'ratio' => $image ? $pick('ratio', self::RATIOS, 'auto') : 'auto',
+            'fit' => $image ? $pick('fit', self::FITS, 'cover') : 'cover',
+            'round' => $image ? $pick('round', self::ROUNDS, 'md') : 'md',
+        ];
+    }
+
     public static function section(array $section, bool $stored = false): ?array {
         $type = sanitize_key((string) ($section['type'] ?? ''));
         $props = is_array($section['props'] ?? null) ? $section['props'] : [];
@@ -133,6 +190,7 @@ final class Sanitizer {
             'type' => $type,
             'hidden' => !empty($section['hidden']),
             'props' => $clean,
+            'style' => self::style($type, $section['style'] ?? []),
         ];
     }
 

@@ -239,10 +239,47 @@ final class Renderer {
                 : '',
             default => '',
         };
+        $html = self::apply_style($html, is_array($section['style'] ?? null) ? $section['style'] : []);
         if ($preview && $html !== '') {
             $html = preg_replace('/^<([a-z0-9]+)/i', '<$1 data-nk-section="' . esc_attr((string) ($section['id'] ?? '')) . '"', $html, 1) ?? $html;
         }
         return $html;
+    }
+
+    /** Adds layout/background/spacing classes to the section's root element. */
+    private static function apply_style(string $html, array $style): string {
+        if ($html === '') {
+            return $html;
+        }
+        $classes = [];
+        $layout = sanitize_key((string) ($style['layout'] ?? ''));
+        if ($layout !== '') {
+            $classes[] = 'nk-layout-' . $layout;
+        }
+        $bg = sanitize_key((string) ($style['bg'] ?? 'none'));
+        if ($bg !== '' && $bg !== 'none') {
+            $classes[] = 'nk-has-band';
+            $classes[] = 'nk-bg-' . $bg;
+        }
+        $space = sanitize_key((string) ($style['space'] ?? 'normal'));
+        if ($space !== '' && $space !== 'normal') {
+            $classes[] = 'nk-space-' . $space;
+        }
+        foreach (['size' => 'md', 'ratio' => 'auto', 'fit' => 'cover', 'round' => 'md'] as $key => $default) {
+            $value = sanitize_key((string) ($style[$key] ?? $default));
+            if ($value !== '' && $value !== $default) {
+                $classes[] = 'nk-' . $key . '-' . $value;
+            }
+        }
+        if ($classes === []) {
+            return $html;
+        }
+        $add = esc_attr(implode(' ', $classes));
+        $out = preg_replace('/^(<[a-z0-9]+\b[^>]*?\bclass=")([^"]*)(")/i', '${1}${2} ' . $add . '${3}', $html, 1, $count);
+        if ($count === 0) {
+            $out = preg_replace('/^<([a-z0-9]+)/i', '<$1 class="' . $add . '"', $html, 1);
+        }
+        return $out ?? $html;
     }
 
     private static function hero(array $props, array $payload = [], bool $preview = false): string {

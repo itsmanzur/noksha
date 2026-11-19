@@ -959,6 +959,62 @@ a.nk-btn-ghost {
   cursor: default;
 }
 
+/* Section look & feel controls. */
+.nk-style-box {
+  margin-top: 22px;
+  padding-top: 4px;
+  border-top: 1px solid var(--nk-ed-line);
+}
+
+.nk-style-box .nk-group-title {
+  margin-top: 14px;
+}
+
+.nk-style-box .nk-ed-field + .nk-ed-field {
+  margin-top: 14px;
+}
+
+.nk-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nk-swatch {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--nk-ed-line);
+  border-radius: 50%;
+  background: var(--noksha-color-card);
+  cursor: pointer;
+}
+
+.nk-swatch.is-active {
+  outline: 2px solid var(--noksha-color-brand);
+  outline-offset: 2px;
+}
+
+.nk-swatch-none {
+  background: linear-gradient(135deg, transparent 46%, #dc2626 46%, #dc2626 54%, transparent 54%), var(--noksha-color-card);
+}
+
+.nk-swatch-soft { background: color-mix(in srgb, var(--noksha-color-brand) 14%, #fff); }
+.nk-swatch-warm { background: #fde7c2; }
+.nk-swatch-dark { background: #16120f; }
+.nk-swatch-brand { background: var(--noksha-color-brand); }
+.nk-swatch-gradient { background: linear-gradient(135deg, var(--noksha-color-brand), #f59e0b); }
+
+.nk-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .nk-type-group + .nk-type-group {
   margin-top: 18px;
 }

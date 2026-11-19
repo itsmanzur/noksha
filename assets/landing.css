@@ -1122,6 +1122,256 @@
 }
 
 /* -------------------------------------------------------------------------- */
+/* Section looks: layout variants, background bands, spacing                  */
+/* -------------------------------------------------------------------------- */
+
+.noksha-landing-body {
+  overflow-x: clip;
+}
+
+/* Full-bleed colour band behind a section (the section itself stays in the column). */
+.nk-has-band {
+  position: relative;
+  isolation: isolate;
+  margin-block: 0;
+  padding-block: calc(var(--noksha-space, 16px) * 2.25);
+}
+
+.nk-has-band::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: var(--nk-band);
+}
+
+.nk-bg-soft { --nk-band: color-mix(in srgb, var(--noksha-color-brand) 9%, var(--noksha-color-canvas)); }
+.nk-bg-warm { --nk-band: color-mix(in srgb, var(--noksha-color-warning) 16%, var(--noksha-color-canvas)); }
+.nk-bg-dark { --nk-band: #16120f; }
+.nk-bg-brand { --nk-band: var(--noksha-color-brand); }
+.nk-bg-gradient {
+  --nk-band: linear-gradient(
+    135deg,
+    var(--noksha-color-brand),
+    color-mix(in srgb, var(--noksha-color-brand) 55%, var(--noksha-color-accent))
+  );
+}
+
+/* Dark bands: light text and translucent cards. */
+.nk-bg-dark {
+  --noksha-color-text: #fff;
+  --noksha-color-muted: rgba(255, 255, 255, 0.76);
+  --noksha-color-card: rgba(255, 255, 255, 0.08);
+  --noksha-color-border: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* Brand / gradient bands: foreground-coloured text, white button. */
+.nk-bg-brand,
+.nk-bg-gradient {
+  --noksha-color-text: var(--noksha-color-brand-foreground);
+  --noksha-color-muted: color-mix(in srgb, var(--noksha-color-brand-foreground) 80%, transparent);
+  --noksha-color-card: color-mix(in srgb, var(--noksha-color-brand-foreground) 14%, transparent);
+  --noksha-color-border: color-mix(in srgb, var(--noksha-color-brand-foreground) 28%, transparent);
+  color: var(--noksha-color-brand-foreground);
+}
+
+.nk-bg-brand .nk-eyebrow,
+.nk-bg-gradient .nk-eyebrow,
+.nk-bg-brand .nk-price-now,
+.nk-bg-gradient .nk-price-now,
+.nk-bg-brand .nk-benefit-icon,
+.nk-bg-gradient .nk-benefit-icon {
+  color: var(--noksha-color-brand-foreground);
+}
+
+.nk-bg-brand .nk-btn,
+.nk-bg-gradient .nk-btn {
+  background: #fff;
+  color: var(--noksha-color-brand);
+}
+
+.nk-space-compact { padding-block: calc(var(--noksha-space, 16px) * 0.5); }
+.nk-space-roomy { padding-block: calc(var(--noksha-space, 16px) * 3.5); }
+.nk-has-band.nk-space-compact { padding-block: calc(var(--noksha-space, 16px) * 1.1); }
+.nk-has-band.nk-space-roomy { padding-block: calc(var(--noksha-space, 16px) * 4); }
+
+/* Hero: centered (always stacked). */
+.nk-hero.nk-layout-center {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.nk-hero.nk-layout-center .nk-hero-media {
+  order: -1;
+  flex: none;
+  width: min(100%, 640px);
+}
+
+.nk-hero.nk-layout-center .nk-lead {
+  margin-inline: auto;
+}
+
+/* Hero: text over a full-bleed image. */
+.nk-hero.nk-layout-overlay {
+  position: relative;
+  isolation: isolate;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 420px;
+  padding: calc(var(--noksha-space, 16px) * 3) calc(var(--noksha-space, 16px) * 1.5);
+  overflow: hidden;
+  border-radius: calc(var(--noksha-radius) + 4px);
+  color: #fff;
+  text-align: center;
+}
+
+.nk-hero.nk-layout-overlay .nk-hero-media {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  order: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.nk-hero.nk-layout-overlay .nk-hero-media img,
+.nk-hero.nk-layout-overlay .nk-hero-media picture {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.nk-hero.nk-layout-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.7));
+}
+
+.nk-hero.nk-layout-overlay h1,
+.nk-hero.nk-layout-overlay .nk-lead,
+.nk-hero.nk-layout-overlay .nk-eyebrow,
+.nk-hero.nk-layout-overlay .nk-price-now,
+.nk-hero.nk-layout-overlay .nk-price-was,
+.nk-hero.nk-layout-overlay .nk-trust-row {
+  color: #fff;
+}
+
+.nk-hero.nk-layout-overlay .nk-lead {
+  margin-inline: auto;
+}
+
+/* Benefits: plain list. */
+.nk-layout-list .nk-benefits {
+  grid-template-columns: 1fr;
+  max-width: 44rem;
+  margin-inline: auto;
+}
+
+.nk-layout-list .nk-benefits li {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding-inline: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--noksha-color-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.nk-layout-list .nk-benefits li:last-child {
+  border-bottom: 0;
+}
+
+/* Benefits: big numbers. */
+.nk-layout-numbers .nk-benefits {
+  counter-reset: nk-benefit;
+}
+
+.nk-layout-numbers .nk-benefit-icon {
+  display: none;
+}
+
+.nk-layout-numbers .nk-benefits li {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  text-align: center;
+}
+
+.nk-layout-numbers .nk-benefits li::before {
+  counter-increment: nk-benefit;
+  content: counter(nk-benefit, decimal-leading-zero);
+  display: block;
+  margin-block-end: 0.2em;
+  color: var(--noksha-color-brand);
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+[lang="bn"] .nk-layout-numbers .nk-benefits li::before {
+  content: counter(nk-benefit, bengali);
+}
+
+.nk-bg-dark.nk-layout-numbers .nk-benefits li::before { color: var(--noksha-color-accent); }
+.nk-bg-brand.nk-layout-numbers .nk-benefits li::before,
+.nk-bg-gradient.nk-layout-numbers .nk-benefits li::before { color: var(--noksha-color-brand-foreground); }
+
+/* Reviews: grid instead of a swipe row. */
+.nk-layout-grid .nk-reviews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-inline: 0;
+  padding-inline: 0;
+  overflow: visible;
+}
+
+.nk-layout-grid .nk-reviews blockquote {
+  flex: none;
+}
+
+/* Product: image right, or stacked and centered. */
+.nk-product.nk-layout-stacked {
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+.nk-product.nk-layout-stacked .nk-gallery {
+  max-width: 520px;
+  margin-inline: auto;
+}
+
+@media (min-width: 768px) {
+  .nk-product.nk-layout-reverse {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 300px);
+  }
+
+  .nk-product.nk-layout-reverse .nk-gallery {
+    order: 2;
+  }
+}
+
+@media (min-width: 960px) {
+  .nk-product.nk-layout-reverse {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Reduced motion                                                             */
 /* -------------------------------------------------------------------------- */
 
@@ -1146,4 +1396,68 @@
   .nk-btn {
     transition: none;
   }
+}
+
+/* Image + text controls, and hero overflow fix. */
+.nk-hero-media,
+.nk-hero-copy {
+  min-width: 0;
+}
+
+.nk-hero-media img,
+.nk-hero-media picture,
+.nk-product > img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: inherit;
+  object-fit: var(--nk-fit, cover);
+  aspect-ratio: var(--nk-ratio, auto);
+}
+
+.nk-hero-media {
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .nk-hero:not(.nk-layout-center):not(.nk-layout-overlay) > .nk-hero-media,
+  .nk-hero:not(.nk-layout-center):not(.nk-layout-overlay) > .nk-hero-copy {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+  }
+}
+
+.nk-fit-contain { --nk-fit: contain; }
+.nk-ratio-square { --nk-ratio: 1 / 1; }
+.nk-ratio-4-3 { --nk-ratio: 4 / 3; }
+.nk-ratio-16-9 { --nk-ratio: 16 / 9; }
+.nk-ratio-3-4 { --nk-ratio: 3 / 4; }
+
+.nk-round-none,
+.nk-round-none .nk-hero-media,
+.nk-round-none > img { border-radius: 0; }
+.nk-round-lg .nk-hero-media,
+.nk-round-lg > img,
+.nk-hero.nk-round-lg .nk-hero-media { border-radius: 28px; }
+.nk-round-full .nk-hero-media,
+.nk-round-full > img,
+.nk-hero.nk-round-full .nk-hero-media { border-radius: 999px; }
+
+.nk-size-sm { --nk-fs: 0.88; }
+.nk-size-lg { --nk-fs: 1.15; }
+.nk-size-xl { --nk-fs: 1.3; }
+
+.nk-size-sm h1, .nk-size-lg h1, .nk-size-xl h1 {
+  font-size: calc(clamp(1.75rem, 5.5vw, 3.25rem) * var(--nk-fs));
+}
+
+.nk-size-sm h2, .nk-size-lg h2, .nk-size-xl h2 {
+  font-size: calc(clamp(1.35rem, 3.2vw, 2rem) * var(--nk-fs));
+}
+
+.nk-size-sm p, .nk-size-lg p, .nk-size-xl p,
+.nk-size-sm li, .nk-size-lg li, .nk-size-xl li {
+  font-size: calc(1rem * var(--nk-fs));
 }

@@ -815,6 +815,9 @@ final class Controller {
             '"Source Sans 3", "Noto Sans Bengali", sans-serif',
             '"Noto Sans", "Noto Sans Bengali", sans-serif',
             'system-ui, "Noto Sans Bengali", sans-serif',
+            '"Hind Siliguri", "Source Sans 3", sans-serif',
+            '"Anek Bangla", "Source Sans 3", sans-serif',
+            '"Noto Sans Bengali", "Source Sans 3", sans-serif',
         ];
     }
 

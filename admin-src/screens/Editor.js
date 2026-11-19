@@ -527,6 +527,12 @@ export function Editor({ t, id, go }) {
     )));
   }
 
+  function patchSectionStyle(sectionId, style) {
+    setSections((sections) => sections.map((section) => (
+      section.id === sectionId ? { ...section, style: { ...(section.style || {}), ...style } } : section
+    )));
+  }
+
   function reorder(from, to) {
     if (from === to || from < 0 || to < 0) {
       return;
@@ -704,6 +710,7 @@ export function Editor({ t, id, go }) {
                   onBack={() => setView({ kind: 'home' })}
                   onPatch={patch}
                   onPatchSection={patchSection}
+                  onPatchStyle={patchSectionStyle}
                   onOpenSettings={openSettings}
                   onToggleHidden={toggleHidden}
                   onRemoveSection={removeSection}
@@ -807,6 +814,7 @@ function EditorInspector({
   onBack,
   onPatch,
   onPatchSection,
+  onPatchStyle,
   onOpenSettings,
   onToggleHidden,
   onRemoveSection,
@@ -837,6 +845,7 @@ function EditorInspector({
             onChange={(props) => onPatchSection(section.id, props)}
             onOpen={onOpenSettings}
           />
+          <StyleFields t={t} section={section} onChange={(style) => onPatchStyle(section.id, style)} />
           <div className="nk-panel-foot">
             <button type="button" className="nk-btn-ghost nk-btn-icon" onClick={() => onToggleHidden(section.id)}>
               <Icon name={section.hidden ? 'eye' : 'eyeOff'} size={16} /> {section.hidden ? t('editor.showSection') : t('editor.hideSection')}
@@ -1000,6 +1009,93 @@ function Choice({ label, value, options, onChange }) {
       {options.map(([key, text]) => (
         <button key={key} type="button" role="radio" aria-checked={value === key} className={value === key ? 'is-active' : ''} onClick={() => onChange(key)}>{text}</button>
       ))}
+    </div>
+  );
+}
+
+/** Layout variants per section type (first = default). Mirrors Sanitizer::LAYOUTS. */
+const STYLE_LAYOUTS = {
+  hero: ['split', 'center', 'overlay'],
+  benefits: ['cards', 'list', 'numbers'],
+  reviews: ['slider', 'grid'],
+  product: ['side', 'reverse', 'stacked'],
+};
+const STYLE_BACKGROUNDS = ['none', 'soft', 'warm', 'dark', 'brand', 'gradient'];
+const STYLE_SPACINGS = ['compact', 'normal', 'roomy'];
+const STYLE_SIZES = ['sm', 'md', 'lg', 'xl'];
+const STYLE_SIZE_SCALE = { sm: 0.88, md: 1, lg: 1.15, xl: 1.3 };
+const STYLE_RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
+const STYLE_FITS = ['cover', 'contain'];
+const STYLE_ROUNDS = ['none', 'md', 'lg', 'full'];
+const STYLE_IMAGE_TYPES = ['hero', 'product'];
+
+/** Approximate heading size in px at phone and desktop widths, for the size hint. */
+function headingRange(type, size) {
+  const scale = STYLE_SIZE_SCALE[size] || 1;
+  const [low, high] = type === 'hero' ? [28, 52] : [22, 32];
+  return Math.round(low * scale) + '–' + Math.round(high * scale) + 'px';
+}
+
+/** Look & feel: layout variant, background band and spacing for one section. */
+function StyleFields({ t, section, onChange }) {
+  if (section.type === 'order_form') {
+    return null;
+  }
+  const style = section.style || {};
+  const layouts = STYLE_LAYOUTS[section.type] || [];
+  const layout = layouts.includes(style.layout) ? style.layout : layouts[0];
+  const bg = STYLE_BACKGROUNDS.includes(style.bg) ? style.bg : 'none';
+  const space = STYLE_SPACINGS.includes(style.space) ? style.space : 'normal';
+  const size = STYLE_SIZES.includes(style.size) ? style.size : 'md';
+  const ratio = STYLE_RATIOS.includes(style.ratio) ? style.ratio : 'auto';
+  const fit = STYLE_FITS.includes(style.fit) ? style.fit : 'cover';
+  const round = STYLE_ROUNDS.includes(style.round) ? style.round : 'md';
+  const hasImage = STYLE_IMAGE_TYPES.includes(section.type);
+  return (
+    <div className="nk-style-box">
+      <h3 className="nk-group-title">{t('look.title')}</h3>
+      {layouts.length > 1 ? (
+        <Field label={t('look.layout')}>
+          <Choice label={t('look.layout')} value={layout} options={layouts.map((key) => [key, t('look.layout.' + key)])} onChange={(value) => onChange({ layout: value })} />
+        </Field>
+      ) : null}
+      <Field label={t('look.background')}>
+        <div className="nk-swatches" role="radiogroup" aria-label={t('look.background')}>
+          {STYLE_BACKGROUNDS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={bg === key}
+              title={t('look.bg.' + key)}
+              className={`nk-swatch nk-swatch-${key}${bg === key ? ' is-active' : ''}`}
+              onClick={() => onChange({ bg: key })}
+            >
+              <span className="nk-sr">{t('look.bg.' + key)}</span>
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label={t('look.spacing')}>
+        <Choice label={t('look.spacing')} value={space} options={STYLE_SPACINGS.map((key) => [key, t('look.space.' + key)])} onChange={(value) => onChange({ space: value })} />
+      </Field>
+      <Field label={t('look.textSize')} help={t('look.textSizeHint').replace('{range}', headingRange(section.type, size))}>
+        <Choice label={t('look.textSize')} value={size} options={STYLE_SIZES.map((key) => [key, t('look.size.' + key)])} onChange={(value) => onChange({ size: value })} />
+      </Field>
+      {hasImage ? (
+        <>
+          <h3 className="nk-group-title">{t('look.image')}</h3>
+          <Field label={t('look.ratio')}>
+            <Choice label={t('look.ratio')} value={ratio} options={STYLE_RATIOS.map((key) => [key, t('look.ratio.' + key)])} onChange={(value) => onChange({ ratio: value })} />
+          </Field>
+          <Field label={t('look.fit')}>
+            <Choice label={t('look.fit')} value={fit} options={STYLE_FITS.map((key) => [key, t('look.fit.' + key)])} onChange={(value) => onChange({ fit: value })} />
+          </Field>
+          <Field label={t('look.round')}>
+            <Choice label={t('look.round')} value={round} options={STYLE_ROUNDS.map((key) => [key, t('look.round.' + key)])} onChange={(value) => onChange({ round: value })} />
+          </Field>
+        </>
+      ) : null}
     </div>
   );
 }
