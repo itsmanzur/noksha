@@ -1,0 +1,170 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Noksha 0.1.0\n"
+"Language: bn_BD\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Domain: noksha\n"
+
+msgid "Name"
+msgstr "নাম"
+
+msgid "Phone"
+msgstr "ফোন"
+
+msgid "Email"
+msgstr "ইমেইল"
+
+msgid "Division"
+msgstr "বিভাগ"
+
+msgid "District"
+msgstr "জেলা"
+
+msgid "Upazila / Thana"
+msgstr "উপজেলা / থানা"
+
+msgid "Address"
+msgstr "ঠিকানা"
+
+msgid "Note"
+msgstr "নোট"
+
+msgid "Quantity"
+msgstr "পরিমাণ"
+
+msgid "Place order"
+msgstr "অর্ডার করুন"
+
+msgid "Subtotal"
+msgstr "সাবটোটাল"
+
+msgid "Delivery"
+msgstr "ডেলিভারি"
+
+msgid "Total"
+msgstr "মোট"
+
+msgid "Payment"
+msgstr "পেমেন্ট"
+
+msgid "Transaction ID"
+msgstr "ট্রানজ্যাকশন আইডি"
+
+msgid "Select"
+msgstr "বেছে নিন"
+
+msgid "Order received"
+msgstr "অর্ডার পৌঁছেছে"
+
+msgid "We have your order. Keep this number."
+msgstr "অর্ডারটি নেওয়া হয়েছে। এই নম্বরটি রাখুন।"
+
+msgid "Order number"
+msgstr "অর্ডার নম্বর"
+
+msgid "Cash on delivery"
+msgstr "ক্যাশ অন ডেলিভারি"
+
+msgid "bKash"
+msgstr "বিকাশ"
+
+msgid "Nagad"
+msgstr "নগদ"
+
+msgid "Card, bKash, Nagad, or bank"
+msgstr "কার্ড, বিকাশ, নগদ বা ব্যাংক"
+
+msgid "Pay the courier when the parcel arrives."
+msgstr "পার্সেল হাতে পেয়ে কুরিয়ারকে টাকা দেবেন।"
+
+msgid "Send the total to this number, then enter the TrxID."
+msgstr "মোট টাকা এই নম্বরে পাঠিয়ে TrxID দিন।"
+
+msgid "You will pay on the secure SSLCommerz page."
+msgstr "পেমেন্ট হবে নিরাপদ SSLCommerz পেইজে।"
+
+msgid "Secure checkout"
+msgstr "নিরাপদ চেকআউট"
+
+msgid "Nationwide delivery"
+msgstr "সারা দেশে ডেলিভারি"
+
+msgid "Enter a valid Bangladeshi mobile number, 11 digits starting with 01."
+msgstr "সঠিক বাংলাদেশি মোবাইল নম্বর দিন। ০১ দিয়ে শুরু, ১১ সংখ্যা।"
+
+msgid "Enter the customer name."
+msgstr "কাস্টমারের নাম লিখুন।"
+
+msgid "Enter the delivery address."
+msgstr "ডেলিভারির ঠিকানা লিখুন।"
+
+msgid "Choose a division, district, and upazila that match."
+msgstr "বিভাগ, জেলা ও উপজেলা মিলিয়ে বেছে নিন।"
+
+msgid "Enter a valid email address."
+msgstr "সঠিক ইমেইল দিন।"
+
+msgid "Choose a payment method that is turned on."
+msgstr "চালু আছে এমন একটি পেমেন্ট বেছে নিন।"
+
+msgid "Enter the TrxID from the transfer. Use letters and numbers only."
+msgstr "ট্রান্সফারের TrxID লিখুন। শুধু অক্ষর ও সংখ্যা।"
+
+msgid "This page is not taking orders yet."
+msgstr "এই পেইজে এখন অর্ডার নেওয়া হচ্ছে না।"
+
+msgid "SSLCommerz is not configured. Add the store ID and store password."
+msgstr "SSLCommerz কনফিগার করা নেই। স্টোর আইডি ও পাসওয়ার্ড দিন।"
+
+msgid "SSLCommerz could not start the payment. Nothing was marked paid."
+msgstr "SSLCommerz পেমেন্ট শুরু করতে পারেনি। পেইড মার্ক করা হয়নি।"
+
+msgid "The payment was not completed. You can try again."
+msgstr "পেমেন্ট শেষ হয়নি। আবার চেষ্টা করতে পারেন।"
+
+msgid "The payment was cancelled. You can try again."
+msgstr "পেমেন্ট বাতিল হয়েছে। আবার চেষ্টা করতে পারেন।"
+
+msgid "This is a preview. Publish the page to take orders."
+msgstr "এটি প্রিভিউ। অর্ডার নিতে পেইজটি প্রকাশ করুন।"
+
+msgid "This field is required."
+msgstr "এই ঘরটি দরকার।"
+
+msgid "Your order"
+msgstr "আপনার অর্ডার"
+
+msgid "Free"
+msgstr "ফ্রি"
+
+msgid "Was"
+msgstr "আগে"
+
+msgid "Placing order"
+msgstr "অর্ডার হচ্ছে"
+
+msgid "Days"
+msgstr "দিন"
+
+msgid "Hours"
+msgstr "ঘণ্টা"
+
+msgid "Minutes"
+msgstr "মিনিট"
+
+msgid "Seconds"
+msgstr "সেকেন্ড"
+
+msgid "Offer ends in"
+msgstr "অফার শেষ হবে"
+
+msgid "Too many attempts. Wait a minute and try again."
+msgstr "অনেকবার চেষ্টা হয়েছে। এক মিনিট পর আবার চেষ্টা করুন।"
+
+msgid "The form expired. Reload the page and try again."
+msgstr "ফর্মের মেয়াদ শেষ। পেইজ রিলোড করে আবার চেষ্টা করুন।"
+
+msgid "Noksha admin assets are missing. Run npm run build inside the plugin folder."
+msgstr "Noksha-র অ্যাডমিন অ্যাসেট নেই। প্লাগিন ফোল্ডারে npm run build চালান।"

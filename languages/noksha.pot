@@ -1,0 +1,170 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Noksha 0.1.0\n"
+"Language: bn_BD\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Domain: noksha\n"
+
+msgid "Name"
+msgstr ""
+
+msgid "Phone"
+msgstr ""
+
+msgid "Email"
+msgstr ""
+
+msgid "Division"
+msgstr ""
+
+msgid "District"
+msgstr ""
+
+msgid "Upazila / Thana"
+msgstr ""
+
+msgid "Address"
+msgstr ""
+
+msgid "Note"
+msgstr ""
+
+msgid "Quantity"
+msgstr ""
+
+msgid "Place order"
+msgstr ""
+
+msgid "Subtotal"
+msgstr ""
+
+msgid "Delivery"
+msgstr ""
+
+msgid "Total"
+msgstr ""
+
+msgid "Payment"
+msgstr ""
+
+msgid "Transaction ID"
+msgstr ""
+
+msgid "Select"
+msgstr ""
+
+msgid "Order received"
+msgstr ""
+
+msgid "We have your order. Keep this number."
+msgstr ""
+
+msgid "Order number"
+msgstr ""
+
+msgid "Cash on delivery"
+msgstr ""
+
+msgid "bKash"
+msgstr ""
+
+msgid "Nagad"
+msgstr ""
+
+msgid "Card, bKash, Nagad, or bank"
+msgstr ""
+
+msgid "Pay the courier when the parcel arrives."
+msgstr ""
+
+msgid "Send the total to this number, then enter the TrxID."
+msgstr ""
+
+msgid "You will pay on the secure SSLCommerz page."
+msgstr ""
+
+msgid "Secure checkout"
+msgstr ""
+
+msgid "Nationwide delivery"
+msgstr ""
+
+msgid "Enter a valid Bangladeshi mobile number, 11 digits starting with 01."
+msgstr ""
+
+msgid "Enter the customer name."
+msgstr ""
+
+msgid "Enter the delivery address."
+msgstr ""
+
+msgid "Choose a division, district, and upazila that match."
+msgstr ""
+
+msgid "Enter a valid email address."
+msgstr ""
+
+msgid "Choose a payment method that is turned on."
+msgstr ""
+
+msgid "Enter the TrxID from the transfer. Use letters and numbers only."
+msgstr ""
+
+msgid "This page is not taking orders yet."
+msgstr ""
+
+msgid "SSLCommerz is not configured. Add the store ID and store password."
+msgstr ""
+
+msgid "SSLCommerz could not start the payment. Nothing was marked paid."
+msgstr ""
+
+msgid "The payment was not completed. You can try again."
+msgstr ""
+
+msgid "The payment was cancelled. You can try again."
+msgstr ""
+
+msgid "This is a preview. Publish the page to take orders."
+msgstr ""
+
+msgid "This field is required."
+msgstr ""
+
+msgid "Your order"
+msgstr ""
+
+msgid "Free"
+msgstr ""
+
+msgid "Was"
+msgstr ""
+
+msgid "Placing order"
+msgstr ""
+
+msgid "Days"
+msgstr ""
+
+msgid "Hours"
+msgstr ""
+
+msgid "Minutes"
+msgstr ""
+
+msgid "Seconds"
+msgstr ""
+
+msgid "Offer ends in"
+msgstr ""
+
+msgid "Too many attempts. Wait a minute and try again."
+msgstr ""
+
+msgid "The form expired. Reload the page and try again."
+msgstr ""
+
+msgid "Noksha admin assets are missing. Run npm run build inside the plugin folder."
+msgstr ""

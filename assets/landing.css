@@ -1,0 +1,423 @@
+.noksha-landing-body {
+  margin: 0;
+  background: var(--noksha-color-canvas);
+  color: var(--noksha-color-text);
+  font-family: var(--noksha-font-sans);
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.nk-landing {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 12px 20px 64px;
+}
+
+.nk-landing h1,
+.nk-landing h2,
+.nk-landing h3 {
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+}
+
+.nk-landing h1 {
+  font-size: clamp(2.1rem, 5vw, 3.5rem);
+}
+
+.nk-landing h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.nk-landing p {
+  margin: 0 0 12px;
+}
+
+.nk-hero,
+.nk-section,
+.nk-guarantee {
+  margin: 28px 0;
+}
+
+.nk-hero {
+  padding: 48px 8px 12px;
+  text-align: center;
+}
+
+.nk-eyebrow {
+  color: var(--noksha-color-brand);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+}
+
+.nk-lead {
+  max-width: 38rem;
+  margin: 0 auto 20px;
+  color: var(--noksha-color-muted);
+  font-size: 1.15rem;
+}
+
+.nk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--noksha-radius);
+  background: var(--noksha-color-brand);
+  color: var(--noksha-color-brand-foreground);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nk-btn:hover {
+  filter: brightness(1.05);
+}
+
+.nk-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.nk-hero img,
+.nk-product img {
+  width: min(100%, 640px);
+  margin-top: 24px;
+  border-radius: calc(var(--noksha-radius) + 6px);
+  display: block;
+}
+
+.nk-hero img {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.nk-benefits,
+.nk-reviews {
+  display: grid;
+  gap: 14px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.nk-benefits li,
+.nk-reviews blockquote,
+.nk-summary,
+.nk-guarantee,
+.nk-form,
+.nk-pay {
+  background: var(--noksha-color-card);
+  border: 1px solid var(--noksha-color-border);
+  border-radius: var(--noksha-radius);
+  box-shadow: var(--noksha-shadow);
+}
+
+.nk-benefits li,
+.nk-reviews blockquote {
+  padding: 16px;
+}
+
+.nk-benefits h3,
+.nk-reviews footer {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.nk-reviews blockquote p {
+  margin: 0 0 10px;
+}
+
+.nk-reviews footer {
+  color: var(--noksha-color-muted);
+}
+
+.nk-product {
+  display: grid;
+  gap: 20px;
+  align-items: center;
+}
+
+.nk-price {
+  font-size: 1.6rem;
+  color: var(--noksha-color-brand);
+}
+
+.nk-price s {
+  margin-left: 8px;
+  color: var(--noksha-color-muted);
+  font-size: 1rem;
+}
+
+.nk-bullets {
+  padding-left: 18px;
+}
+
+.nk-countdown {
+  text-align: center;
+}
+
+.nk-count {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.nk-count div {
+  min-width: 72px;
+  padding: 10px;
+  background: var(--noksha-color-card);
+  border: 1px solid var(--noksha-color-border);
+  border-radius: var(--noksha-radius);
+}
+
+.nk-count strong {
+  display: block;
+  font-size: 1.6rem;
+}
+
+.nk-count span,
+.nk-note,
+.nk-pay em,
+.nk-pay small {
+  color: var(--noksha-color-muted);
+  font-size: 0.92rem;
+}
+
+.nk-faq-item {
+  border-bottom: 1px solid var(--noksha-color-border);
+}
+
+.nk-faq-item button {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nk-guarantee {
+  padding: 20px;
+  background: color-mix(in srgb, var(--noksha-color-accent) 14%, var(--noksha-color-card));
+}
+
+.nk-html img,
+.nk-html video,
+.nk-html iframe {
+  max-width: 100%;
+}
+
+.nk-html img,
+.nk-html video {
+  height: auto;
+}
+
+.nk-order {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+
+.nk-form,
+.nk-summary {
+  padding: 18px;
+}
+
+.nk-form label,
+.nk-qty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.nk-form input,
+.nk-form select,
+.nk-form textarea,
+.nk-qty input {
+  min-height: 46px;
+  padding: 8px 12px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: var(--noksha-radius);
+  background: var(--noksha-color-card);
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+}
+
+.nk-form input:focus,
+.nk-form select:focus,
+.nk-form textarea:focus,
+.nk-qty input:focus {
+  outline: 2px solid var(--noksha-color-brand);
+  border-color: transparent;
+}
+
+.nk-payments {
+  border: 0;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.nk-payments legend {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.nk-pay {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  margin-bottom: 8px;
+  font-weight: 400;
+}
+
+.nk-pay strong,
+.nk-pay small,
+.nk-pay em {
+  display: block;
+}
+
+.nk-pay em {
+  font-style: normal;
+}
+
+.nk-form .nk-btn {
+  width: 100%;
+}
+
+.nk-summary dl {
+  margin: 0;
+}
+
+.nk-summary dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--noksha-color-border);
+}
+
+.nk-summary dt {
+  color: var(--noksha-color-muted);
+}
+
+.nk-summary dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.nk-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 12px 0 0;
+  list-style: none;
+}
+
+.nk-trust li {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--noksha-color-brand) 10%, var(--noksha-color-card));
+  color: var(--noksha-color-brand);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.nk-banner,
+.nk-form-error {
+  padding: 10px 12px;
+  border-radius: var(--noksha-radius);
+  background: color-mix(in srgb, var(--noksha-color-danger) 12%, var(--noksha-color-card));
+  color: var(--noksha-color-danger);
+}
+
+.nk-bump {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: var(--noksha-radius);
+  background: color-mix(in srgb, var(--noksha-color-accent) 8%, var(--noksha-color-card));
+  cursor: pointer;
+}
+
+.nk-bump strong {
+  display: block;
+}
+
+.nk-bump em {
+  color: var(--noksha-color-muted);
+  font-style: normal;
+  font-size: 0.9rem;
+}
+
+.nk-otp {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px dashed var(--noksha-color-border);
+  border-radius: var(--noksha-radius);
+}
+
+.nk-otp[hidden] {
+  display: none;
+}
+
+.nk-btn-ghost {
+  border: 1px solid var(--noksha-color-border);
+  background: transparent;
+  color: var(--noksha-color-text);
+  border-radius: var(--noksha-radius);
+  padding: 8px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.nk-thanks h3 {
+  color: var(--noksha-color-success);
+}
+
+.nk-hp {
+  position: absolute;
+  left: -9999px;
+  height: 0;
+  overflow: hidden;
+}
+
+@media (min-width: 800px) {
+  .nk-benefits,
+  .nk-reviews {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .nk-product {
+    grid-template-columns: 280px 1fr;
+  }
+
+  .nk-order-right,
+  .nk-order-left {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .nk-order-left .nk-summary {
+    order: -1;
+  }
+}

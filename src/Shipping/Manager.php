@@ -1,0 +1,91 @@
+<?php
+/**
+ * Books parcels with the configured courier.
+ *
+ * @package Noksha
+ */
+
+namespace Noksha\Shipping;
+
+use Noksha\Notify\Sms;
+use Noksha\Options;
+use Noksha\Orders\Repository as Orders;
+
+final class Manager {
+    public function get(string $id): ?Courier {
+        return match ($id) {
+            'steadfast' => new SteadfastCourier(),
+            'pathao' => new PathaoCourier(),
+            'redx' => new RedxCourier(),
+            default => null,
+        };
+    }
+
+    public function available(): array {
+        $ready = [];
+        foreach (['steadfast', 'pathao', 'redx'] as $id) {
+            $courier = $this->get($id);
+            if ($courier && $courier->ready()) {
+                $ready[] = $id;
+            }
+        }
+        return $ready;
+    }
+
+    public function book(int $order_id, string $courier_id): array|\WP_Error {
+        $order = Orders::find($order_id);
+        if (!$order) {
+            return new \WP_Error('noksha_not_found', 'Order not found.', ['status' => 404]);
+        }
+        $courier = $this->get($courier_id);
+        if (!$courier || !$courier->ready()) {
+            return new \WP_Error('noksha_courier_not_ready', 'Courier is not configured.', ['status' => 400]);
+        }
+        $result = $courier->book($order);
+        if (empty($result['ok'])) {
+            return new \WP_Error('noksha_' . ($result['error'] ?? 'courier_failed'), 'Courier booking failed.', [
+                'status' => 422,
+                'raw' => $result['raw'] ?? '',
+            ]);
+        }
+        Orders::update($order_id, [
+            'status' => 'shipped',
+            'courier' => $courier_id,
+            'consignment_id' => $result['consignment_id'] ?? '',
+            'tracking_code' => $result['tracking_code'] ?? '',
+            'courier_status' => 'booked',
+        ]);
+        $fresh = Orders::find($order_id);
+        if ($fresh) {
+            Sms::order_shipped($fresh);
+        }
+        return Orders::detail($fresh ?: $order);
+    }
+
+    public static function public_status(): array {
+        $settings = Options::settings();
+        $secrets = Options::secrets();
+        return [
+            'available' => (new self())->available(),
+            'couriers' => [
+                'steadfast' => [
+                    'enabled' => !empty($settings['couriers']['steadfast']['enabled']),
+                    'ready' => (new SteadfastCourier())->ready(),
+                    'has_keys' => ($secrets['steadfast_api_key'] ?? '') !== '' && ($secrets['steadfast_secret_key'] ?? '') !== '',
+                ],
+                'pathao' => [
+                    'enabled' => !empty($settings['couriers']['pathao']['enabled']),
+                    'ready' => (new PathaoCourier())->ready(),
+                    'store_id' => (string) ($settings['couriers']['pathao']['store_id'] ?? ''),
+                    'has_keys' => ($secrets['pathao_client_id'] ?? '') !== '',
+                ],
+                'redx' => [
+                    'enabled' => !empty($settings['couriers']['redx']['enabled']),
+                    'ready' => (new RedxCourier())->ready(),
+                    'store_id' => (string) ($settings['couriers']['redx']['store_id'] ?? ''),
+                    'has_keys' => ($secrets['redx_api_key'] ?? '') !== '',
+                ],
+            ],
+        ];
+    }
+}

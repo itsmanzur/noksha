@@ -1,0 +1,13 @@
+{
+  "name": "noksha",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start"
+  },
+  "devDependencies": {
+    "@wordpress/env": "^10.24.0",
+    "@wordpress/scripts": "30.24.0"
+  }
+}
