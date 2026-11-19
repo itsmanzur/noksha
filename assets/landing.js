@@ -1259,3 +1259,34 @@
     });
   });
 })();
+
+/* ---- Lively motion: reveal sections as they scroll into view ---- */
+(function () {
+  var cfg = window.nokshaFront || {};
+  var landing = document.querySelector('.nk-landing.nk-motion-lively');
+  if (!landing || cfg.preview || typeof IntersectionObserver === 'undefined') {
+    return;
+  }
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return;
+  }
+  var items = Array.prototype.filter.call(landing.children, function (el) {
+    return !el.classList.contains('nk-hero') && !el.classList.contains('nk-sticky-cta') && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE';
+  });
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('nk-in');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -6% 0px' });
+  items.forEach(function (el) {
+    el.classList.add('nk-reveal');
+    io.observe(el);
+  });
+  /* Safety net: never leave content hidden if the observer is slow. */
+  window.setTimeout(function () {
+    items.forEach(function (el) { el.classList.add('nk-in'); });
+  }, 6000);
+})();

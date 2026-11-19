@@ -1461,3 +1461,77 @@
 .nk-size-sm li, .nk-size-lg li, .nk-size-xl li {
   font-size: calc(1rem * var(--nk-fs));
 }
+
+/* Lively motion (opt-in per page). Simple pages get none of this. */
+@keyframes nk-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes nk-zoom-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes nk-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--noksha-color-brand) 45%, transparent); }
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--noksha-color-brand) 0%, transparent); }
+}
+
+.nk-motion-lively .nk-hero-media { animation: nk-zoom-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.nk-motion-lively .nk-hero-copy > * { animation: nk-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.nk-motion-lively .nk-hero-copy > :nth-child(2) { animation-delay: 0.08s; }
+.nk-motion-lively .nk-hero-copy > :nth-child(3) { animation-delay: 0.16s; }
+.nk-motion-lively .nk-hero-copy > :nth-child(4) { animation-delay: 0.24s; }
+.nk-motion-lively .nk-hero-copy > :nth-child(5) { animation-delay: 0.32s; }
+.nk-motion-lively .nk-hero-copy > :nth-child(6) { animation-delay: 0.4s; }
+
+.nk-motion-lively .nk-hero .nk-btn,
+.nk-motion-lively .nk-sticky-cta .nk-btn { animation: nk-pulse 2.4s ease-in-out 1.2s infinite; }
+
+.nk-motion-lively .nk-btn { transition: transform 0.18s ease, filter 0.18s ease; }
+.nk-motion-lively .nk-btn:hover { transform: translateY(-2px) scale(1.03); }
+
+.nk-motion-lively .nk-benefit-card,
+.nk-motion-lively .nk-product > img {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.nk-motion-lively .nk-benefit-card:hover { transform: translateY(-5px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12); }
+.nk-motion-lively .nk-product > img:hover { transform: scale(1.02); }
+
+/* Scroll reveal: the classes are added by landing.js, so no script means no hidden content. */
+.nk-reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.nk-reveal.nk-in { opacity: 1; transform: none; }
+
+.nk-reveal .nk-benefit-card {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s ease, transform 0.5s ease, box-shadow 0.25s ease;
+}
+
+.nk-reveal.nk-in .nk-benefit-card { opacity: 1; transform: none; }
+.nk-reveal.nk-in .nk-benefit-card:nth-child(2) { transition-delay: 0.1s; }
+.nk-reveal.nk-in .nk-benefit-card:nth-child(3) { transition-delay: 0.2s; }
+.nk-reveal.nk-in .nk-benefit-card:nth-child(4) { transition-delay: 0.3s; }
+.nk-reveal.nk-in .nk-benefit-card:nth-child(5) { transition-delay: 0.4s; }
+.nk-reveal.nk-in .nk-benefit-card:nth-child(6) { transition-delay: 0.5s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nk-motion-lively *,
+  .nk-reveal,
+  .nk-reveal * {
+    animation: none !important;
+  }
+
+  .nk-reveal,
+  .nk-reveal .nk-benefit-card {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

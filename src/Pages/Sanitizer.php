@@ -49,6 +49,9 @@ final class Sanitizer {
         $tokens = array_key_exists('tokens', $input)
             ? Tokens::sanitize_override($input['tokens'])
             : ($fallback['tokens'] ?? null);
+        $motion = array_key_exists('motion', $input)
+            ? ($input['motion'] === 'lively' ? 'lively' : 'simple')
+            : (($fallback['motion'] ?? 'simple') === 'lively' ? 'lively' : 'simple');
         $seo = array_key_exists('seo', $input)
             ? self::seo(is_array($input['seo']) ? $input['seo'] : [])
             : (is_array($fallback['seo'] ?? null) ? $fallback['seo'] : self::seo([]));
@@ -58,6 +61,7 @@ final class Sanitizer {
 
         return [
             'language' => $language,
+            'motion' => $motion,
             'offer' => $offer,
             'checkout' => $checkout,
             'sections' => $sections,

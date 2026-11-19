@@ -142,7 +142,8 @@ final class Renderer {
         $lang = ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
         $tokens = Tokens::merge(is_array($payload['tokens'] ?? null) ? $payload['tokens'] : null);
         $style = esc_attr(Tokens::declarations($tokens));
-        $html = '<article class="nk-landing" lang="' . esc_attr($lang === 'bn' ? 'bn' : 'en') . '" style="' . $style . '">';
+        $motion = ($payload['motion'] ?? 'simple') === 'lively' ? ' nk-motion-lively' : '';
+        $html = '<article class="nk-landing' . $motion . '" lang="' . esc_attr($lang === 'bn' ? 'bn' : 'en') . '" style="' . $style . '">';
         $has_form = false;
         foreach ($payload['sections'] as $section) {
             if (!empty($section['hidden'])) {

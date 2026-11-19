@@ -1489,6 +1489,14 @@ function PageMetaFields({ t, page, onChange, onDelete }) {
         <p className="nk-help">{t('editor.languageHelp')}</p>
       </div>
       <div className="nk-ed-field">
+        <span className="nk-ed-label">{t('editor.motion')}</span>
+        <Choice label={t('editor.motion')} value={page.motion === 'lively' ? 'lively' : 'simple'} onChange={(motion) => onChange({ motion })} options={[
+          ['simple', t('editor.motion.simple')],
+          ['lively', t('editor.motion.lively')],
+        ]} />
+        <p className="nk-help">{t('editor.motionHelp')}</p>
+      </div>
+      <div className="nk-ed-field">
         <span className="nk-ed-label">{t('editor.status')}</span>
         <Choice label={t('editor.status')} value={page.status} onChange={(value) => onChange({ status: value })} options={[
           ['draft', t('pages.draft')],

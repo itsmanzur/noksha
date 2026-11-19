@@ -77,6 +77,7 @@ final class Repository {
             'previewLink' => get_preview_post_link($post),
             'updatedAt' => get_post_modified_time('c', true, $post),
             'language' => $doc['language'],
+            'motion' => $doc['motion'],
             'offer' => $doc['offer'],
             'checkout' => $doc['checkout'],
             'sections' => $doc['sections'],
@@ -89,6 +90,7 @@ final class Repository {
 
     public static function document(int $id): array {
         $language = get_post_meta($id, '_noksha_language', true);
+        $motion = get_post_meta($id, '_noksha_motion', true);
         $sections = get_post_meta($id, '_noksha_sections', true);
         $checkout = get_post_meta($id, '_noksha_checkout', true);
         $offer = get_post_meta($id, '_noksha_offer', true);
@@ -97,6 +99,7 @@ final class Repository {
         $ab = get_post_meta($id, '_noksha_ab', true);
         return Sanitizer::document([
             'language' => is_string($language) ? $language : 'en',
+            'motion' => is_string($motion) ? $motion : 'simple',
             'sections' => is_array($sections) ? $sections : [],
             'checkout' => is_array($checkout) ? $checkout : [],
             'offer' => is_array($offer) ? $offer : [],
@@ -108,6 +111,7 @@ final class Repository {
 
     private static function write_meta(int $id, array $doc): void {
         update_post_meta($id, '_noksha_language', $doc['language']);
+        update_post_meta($id, '_noksha_motion', $doc['motion']);
         update_post_meta($id, '_noksha_sections', $doc['sections']);
         update_post_meta($id, '_noksha_checkout', $doc['checkout']);
         update_post_meta($id, '_noksha_offer', $doc['offer']);
