@@ -153,7 +153,8 @@ export function Editor({ t, id, go }) {
   const [redoStack, setRedoStack] = useState([]);
   const [settingsTab, setSettingsTab] = useState('offer');
   const [addOpen, setAddOpen] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  // Focus mode by default: hides the WP admin menu/bar so the preview gets the full width.
+  const [fullscreen, setFullscreen] = useState(true);
 
   const frameRef = useRef(null);
   const scrollRef = useRef(0);
@@ -285,7 +286,11 @@ export function Editor({ t, id, go }) {
 
   useEffect(() => {
     document.body.classList.toggle('noksha-fullscreen', fullscreen);
-    return () => document.body.classList.remove('noksha-fullscreen');
+    document.documentElement.classList.toggle('noksha-fullscreen', fullscreen);
+    return () => {
+      document.body.classList.remove('noksha-fullscreen');
+      document.documentElement.classList.remove('noksha-fullscreen');
+    };
   }, [fullscreen]);
 
   const selectedId = view.kind === 'section' ? view.id : '';
@@ -513,7 +518,7 @@ export function Editor({ t, id, go }) {
 
   function openSettings(tab) {
     setSettingsTab(tab);
-    setView({ kind: 'home' });
+    setView({ kind: 'settings' });
   }
 
   function patchSection(sectionId, props) {
@@ -676,15 +681,36 @@ export function Editor({ t, id, go }) {
           {error ? <div className="nk-banner nk-ed-error" role="alert">{error}</div> : null}
           <div className="nk-editor-cols nk-ed-body">
             <aside className="nk-editor-pane nk-ed-side">
-              <EditorSectionList
-                t={t}
-                page={page}
-                selectedId={selectedId}
-                onOpen={(sectionId) => setView({ kind: 'section', id: sectionId })}
-                onToggle={toggleHidden}
-                onReorder={reorder}
-                onAdd={() => setAddOpen(true)}
-              />
+              {view.kind === 'home' ? (
+                <EditorSectionList
+                  t={t}
+                  page={page}
+                  selectedId={selectedId}
+                  onOpen={(sectionId) => setView({ kind: 'section', id: sectionId })}
+                  onToggle={toggleHidden}
+                  onReorder={reorder}
+                  onAdd={() => setAddOpen(true)}
+                  onOpenSettings={() => openSettings(settingsTab)}
+                />
+              ) : (
+                <EditorInspector
+                  t={t}
+                  view={view}
+                  section={section}
+                  page={page}
+                  settings={settings}
+                  settingsTab={settingsTab}
+                  onSettingsTab={setSettingsTab}
+                  onBack={() => setView({ kind: 'home' })}
+                  onPatch={patch}
+                  onPatchSection={patchSection}
+                  onOpenSettings={openSettings}
+                  onToggleHidden={toggleHidden}
+                  onRemoveSection={removeSection}
+                  onRemovePage={removePage}
+                  onLeave={leave}
+                />
+              )}
             </aside>
             <section className="nk-editor-preview nk-ed-stage" aria-label={t('editor.preview')}>
               <div className="nk-ed-stage-bar">
@@ -736,25 +762,6 @@ export function Editor({ t, id, go }) {
                 ) : null}
               </div>
             </section>
-            <aside className="nk-editor-pane is-inspector nk-ed-side">
-              <EditorInspector
-                t={t}
-                view={view}
-                section={section}
-                page={page}
-                settings={settings}
-                settingsTab={settingsTab}
-                onSettingsTab={setSettingsTab}
-                onBackToSettings={() => setView({ kind: 'home' })}
-                onPatch={patch}
-                onPatchSection={patchSection}
-                onOpenSettings={openSettings}
-                onToggleHidden={toggleHidden}
-                onRemoveSection={removeSection}
-                onRemovePage={removePage}
-                onLeave={leave}
-              />
-            </aside>
           </div>
           <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('editor.addTitle')} size="lg">
             <p className="nk-muted">
@@ -797,7 +804,7 @@ function EditorInspector({
   settings,
   settingsTab,
   onSettingsTab,
-  onBackToSettings,
+  onBack,
   onPatch,
   onPatchSection,
   onOpenSettings,
@@ -810,8 +817,8 @@ function EditorInspector({
     return (
       <div className="nk-panel-view">
         <div className="nk-panel-head">
-          <button type="button" className="nk-link-back" onClick={onBackToSettings}>
-            <Icon name="back" size={16} /> {t('editor.pageSettings')}
+          <button type="button" className="nk-link-back" onClick={onBack}>
+            <Icon name="back" size={16} /> {t('editor.sections')}
           </button>
           <h2>
             <span className="nk-head-icon"><Icon name={SECTION_ICONS[section.type]} /></span>
@@ -897,6 +904,9 @@ function EditorInspector({
   return (
     <div className="nk-panel-view nk-editor-inspector">
       <div className="nk-panel-head">
+        <button type="button" className="nk-link-back" onClick={onBack}>
+          <Icon name="back" size={16} /> {t('editor.sections')}
+        </button>
         <h2>{t('editor.pageSettings')}</h2>
         <p className="nk-muted">{t('editor.settingsHelp')}</p>
       </div>

@@ -353,6 +353,10 @@ body.noksha-fullscreen #adminmenuback {
   display: none !important;
 }
 
+html.noksha-fullscreen.wp-toolbar {
+  padding-top: 0 !important;
+}
+
 body.noksha-fullscreen #wpcontent,
 body.noksha-fullscreen #wpbody-content {
   margin-left: 0 !important;
@@ -542,10 +546,10 @@ a.nk-btn-ghost {
   margin: 12px 16px 0;
 }
 
-/* Three columns: sections list | live preview | page settings / section inspector. */
+/* Two panes: one side panel (sections list -> section / page settings) | live preview. */
 .nk-ed-body {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 340px;
+  grid-template-columns: 340px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
@@ -560,14 +564,9 @@ a.nk-btn-ghost {
   border-right: 1px solid var(--nk-ed-line);
 }
 
-.nk-ed-side.is-inspector {
-  border-right: 0;
-  border-left: 1px solid var(--nk-ed-line);
-}
-
 @container nked (max-width: 1100px) {
   .nk-ed-body {
-    grid-template-columns: 240px minmax(0, 1fr) 300px;
+    grid-template-columns: 300px minmax(0, 1fr);
   }
 }
 
@@ -745,6 +744,38 @@ a.nk-btn-ghost {
 /* Section list: compact, single-line rows. Reorder arrows only on hover/focus (drag also works). */
 .nk-editor-sections .nk-panel-body {
   padding: 12px 14px 0;
+}
+
+.nk-settings-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--nk-ed-line);
+  border-radius: 12px;
+  background: var(--nk-ed-soft);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nk-settings-entry:hover {
+  border-color: var(--noksha-color-brand);
+}
+
+.nk-settings-entry .nk-block-text {
+  flex: 1;
+}
+
+.nk-settings-entry small {
+  overflow: hidden;
+  color: var(--noksha-color-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .nk-editor-sections .nk-section-row {
@@ -1705,6 +1736,7 @@ a.nk-btn-ghost {
 }
 
 .nk-device-fit > .nk-device {
+  position: relative; /* offsetParent for the iframe, used to place the floating toolbar */
   height: 100%;
   margin: 0 auto;
 }
@@ -1780,7 +1812,7 @@ a.nk-btn-ghost {
 
 @container nked (max-width: 1180px) {
   .nk-ed-body {
-    grid-template-columns: 240px minmax(0, 1fr) 300px;
+    grid-template-columns: 320px minmax(0, 1fr);
   }
 
   .nk-block-tools .nk-icon-btn:not(:last-child) {

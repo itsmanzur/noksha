@@ -1,5 +1,6 @@
 const ICONS = {
   back: <polyline points="15 18 9 12 15 6" />,
+  chevron: <polyline points="9 18 15 12 9 6" />,
   next: <polyline points="9 18 15 12 9 6" />,
   up: <polyline points="18 15 12 9 6 15" />,
   down: <polyline points="6 9 12 15 18 9" />,
