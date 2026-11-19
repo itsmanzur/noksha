@@ -376,9 +376,12 @@ body.noksha-fullscreen .nk-editor-shell {
   container: nked / inline-size;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 88px);
+  /* #wpcontent/#wpbody-content already have no padding on Noksha screens (see shell.css),
+     so no negative margin — it pushed the editor under the admin menu and past the right edge. */
+  height: calc(100vh - var(--wp-admin--admin-bar--height, 32px));
   min-height: 560px;
-  margin: -20px;
+  margin: 0;
+  max-width: 100%;
 }
 
 .nk-ed-top {
@@ -539,17 +542,33 @@ a.nk-btn-ghost {
   margin: 12px 16px 0;
 }
 
+/* Three columns: sections list | live preview | page settings / section inspector. */
 .nk-ed-body {
   display: grid;
-  grid-template-columns: 380px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr) 340px;
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .nk-ed-side {
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   background: var(--noksha-color-card);
   border-right: 1px solid var(--nk-ed-line);
+}
+
+.nk-ed-side.is-inspector {
+  border-right: 0;
+  border-left: 1px solid var(--nk-ed-line);
+}
+
+@container nked (max-width: 1100px) {
+  .nk-ed-body {
+    grid-template-columns: 240px minmax(0, 1fr) 300px;
+  }
 }
 
 .nk-panel-head {
@@ -723,6 +742,98 @@ a.nk-btn-ghost {
   opacity: 1;
 }
 
+/* Section list: compact, single-line rows. Reorder arrows only on hover/focus (drag also works). */
+.nk-editor-sections .nk-panel-body {
+  padding: 12px 14px 0;
+}
+
+.nk-editor-sections .nk-section-row {
+  padding: 2px 4px 2px 0;
+}
+
+.nk-editor-sections .nk-block-main {
+  gap: 8px;
+  padding: 6px 4px;
+}
+
+.nk-editor-sections .nk-block-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.nk-editor-sections .nk-block-text strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.nk-editor-sections .nk-block-tools {
+  opacity: 1;
+}
+
+.nk-editor-sections .nk-block-tools .nk-icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.nk-editor-sections .nk-block-tools .nk-icon-btn:not(:last-child) {
+  display: none;
+}
+
+.nk-editor-sections .nk-block:hover .nk-block-tools .nk-icon-btn,
+.nk-editor-sections .nk-block:focus-within .nk-block-tools .nk-icon-btn {
+  display: inline-grid;
+}
+
+.nk-editor-sections .nk-block.is-active {
+  border-color: var(--noksha-color-brand);
+  box-shadow: 0 0 0 1px var(--noksha-color-brand);
+}
+
+/* "Add section" stays visible while the list scrolls. */
+.nk-editor-sections .nk-add-block {
+  position: sticky;
+  bottom: 0;
+  margin: 4px 0 12px;
+  background: var(--noksha-color-card);
+  box-shadow: 0 -8px 10px 2px var(--noksha-color-card), 0 12px 0 0 var(--noksha-color-card);
+}
+
+/* Page settings: pill tabs that wrap cleanly, and breathing room around the fields. */
+.nk-editor-inspector > .nk-ui-tabs {
+  padding: 14px 20px 28px;
+}
+
+.nk-editor-inspector .nk-ui-tabs-list {
+  gap: 6px;
+  margin-bottom: 14px;
+  border-bottom: 0;
+}
+
+.nk-editor-inspector .nk-ui-tab {
+  margin: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--nk-ed-line);
+  border-radius: 999px;
+  background: var(--noksha-color-card);
+  white-space: nowrap;
+}
+
+.nk-editor-inspector .nk-ui-tab.is-active {
+  border-color: var(--noksha-color-brand);
+  background: var(--nk-ed-soft);
+}
+
+.nk-ed-field input,
+.nk-ed-field textarea,
+.nk-ed-field select {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
 .nk-add-block,
 .nk-add-row {
   display: flex;
@@ -816,6 +927,96 @@ a.nk-btn-ghost {
   opacity: 0.5;
   cursor: default;
 }
+
+.nk-type-group + .nk-type-group {
+  margin-top: 18px;
+}
+
+.nk-type-group-title {
+  margin: 14px 0 8px;
+  color: var(--noksha-color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nk-type {
+  gap: 8px;
+  padding: 10px;
+}
+
+.nk-type-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nk-type-title .nk-type-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
+
+/* Wireframe thumbnails: three bars rearranged per section type. */
+.nk-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 64px;
+  padding: 8px 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--nk-ed-soft);
+}
+
+.nk-thumb i {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--noksha-color-brand) 28%, transparent);
+}
+
+.nk-thumb-hero i:nth-child(1) { width: 34%; height: 4px; }
+.nk-thumb-hero i:nth-child(2) { width: 78%; height: 10px; }
+.nk-thumb-hero i:nth-child(3) { width: 30%; height: 11px; border-radius: 6px; background: var(--noksha-color-brand); }
+
+.nk-thumb-benefits,
+.nk-thumb-reviews,
+.nk-thumb-countdown,
+.nk-thumb-product { flex-direction: row; gap: 6px; }
+
+.nk-thumb-benefits i,
+.nk-thumb-reviews i { flex: 1; height: 40px; border-radius: 6px; }
+.nk-thumb-reviews i { background: color-mix(in srgb, #f59e0b 30%, transparent); }
+
+.nk-thumb-countdown i { width: 26px; height: 30px; border-radius: 6px; background: var(--noksha-color-brand); opacity: 0.8; }
+
+.nk-thumb-product i:nth-child(1) { width: 36%; height: 42px; border-radius: 6px; }
+.nk-thumb-product i:nth-child(2) { width: 26%; height: 8px; }
+.nk-thumb-product i:nth-child(3) { width: 18%; height: 8px; background: var(--noksha-color-brand); }
+
+.nk-thumb-faq { align-items: stretch; }
+.nk-thumb-faq i { height: 10px; border-radius: 5px; }
+.nk-thumb-faq i:nth-child(2) { width: 80%; }
+
+.nk-thumb-guarantee i:nth-child(1) { width: 22px; height: 22px; border-radius: 50%; background: var(--noksha-color-brand); opacity: 0.8; }
+.nk-thumb-guarantee i:nth-child(2) { width: 60%; }
+.nk-thumb-guarantee i:nth-child(3) { width: 40%; }
+
+.nk-thumb-html { align-items: flex-start; }
+.nk-thumb-html i { height: 5px; background: color-mix(in srgb, var(--noksha-color-muted) 40%, transparent); }
+.nk-thumb-html i:nth-child(1) { width: 50%; }
+.nk-thumb-html i:nth-child(2) { width: 75%; margin-left: 14px; }
+.nk-thumb-html i:nth-child(3) { width: 35%; }
+
+.nk-thumb-order_form { align-items: stretch; }
+.nk-thumb-order_form i { height: 9px; border-radius: 4px; background: #fff; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--noksha-color-brand) 30%, transparent); }
+.nk-thumb-order_form i:nth-child(3) { background: var(--noksha-color-brand); box-shadow: none; }
 
 .nk-type small {
   color: var(--noksha-color-muted);
@@ -1484,9 +1685,36 @@ a.nk-btn-ghost {
   border-radius: 38px;
 }
 
-.nk-device.is-desk {
+.nk-device.is-tablet {
+  width: 768px;
+  max-width: calc(100% - 40px);
+  border-radius: 16px;
+}
+
+.nk-device.is-desktop {
   width: calc(100% - 40px);
   border-radius: 12px;
+}
+
+/* Fit wrapper: desktop/tablet previews are laid out at their real width, then scaled down to the stage. */
+.nk-device-fit {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 8px 0 20px;
+}
+
+.nk-device-fit > .nk-device {
+  height: 100%;
+  margin: 0 auto;
+}
+
+.nk-device-fit.is-scaled > .nk-device {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  margin: 0;
+  transform-origin: top center;
 }
 
 .nk-device-bar {
@@ -1539,6 +1767,7 @@ a.nk-btn-ghost {
 }
 
 .nk-canvas-bar .nk-btn-ghost {
+  background: transparent;
   color: #fff;
   border-color: rgba(255, 255, 255, 0.2);
   padding: 4px 8px;
@@ -1551,7 +1780,7 @@ a.nk-btn-ghost {
 
 @container nked (max-width: 1180px) {
   .nk-ed-body {
-    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-columns: 240px minmax(0, 1fr) 300px;
   }
 
   .nk-block-tools .nk-icon-btn:not(:last-child) {

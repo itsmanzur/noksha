@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from '@wordpress/element';
+import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 import { api, AsyncView, money } from '../api';
 import { useConfirm } from '../providers';
 import { Modal, Tabs } from '../ui';
@@ -6,7 +6,49 @@ import { EditorTopBar } from './EditorTopBar';
 import { EditorSectionList } from './EditorSectionList';
 import { Icon, IconButton, SECTION_ICONS } from './editorShared';
 
-const TYPES = ['hero', 'benefits', 'product', 'countdown', 'reviews', 'faq', 'guarantee', 'html', 'order_form'];
+/** Width the page is laid out at in the desktop/tablet preview; the frame is scaled down to fit the stage. */
+const VIRTUAL_WIDTH = { desktop: 1100, tablet: 768 };
+
+function previewScale(device, fit) {
+  const virtual = VIRTUAL_WIDTH[device];
+  if (!virtual || !fit.w) {
+    return 1;
+  }
+  return Math.min(1, Math.max(0.3, (fit.w - 40) / virtual));
+}
+
+/** Section picker groups, ordered by what the seller is trying to do. */
+const TYPE_GROUPS = [
+  { key: 'attention', types: ['hero', 'countdown'] },
+  { key: 'trust', types: ['benefits', 'reviews', 'guarantee', 'faq'] },
+  { key: 'product', types: ['product', 'order_form'] },
+  { key: 'advanced', types: ['html'] },
+];
+
+/** Tiny CSS wireframe so sellers can see what a section looks like before adding it. */
+function SectionThumb({ type }) {
+  return (
+    <span className={`nk-thumb nk-thumb-${type}`} aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
+/** Index where a new section goes: after the selected one, else above the order form. */
+function insertIndex(sections, type, selectedId) {
+  const formIndex = sections.findIndex((item) => item.type === 'order_form');
+  if (type === 'order_form') {
+    return sections.length;
+  }
+  const selectedIndex = selectedId ? sections.findIndex((item) => item.id === selectedId) : -1;
+  if (selectedIndex >= 0) {
+    const after = selectedIndex + 1;
+    return formIndex >= 0 && after > formIndex ? formIndex : after;
+  }
+  return formIndex >= 0 ? formIndex : sections.length;
+}
 const HTML_LIMIT = 20000;
 const METHODS = ['cod', 'manual_bkash', 'manual_nagad', 'sslcommerz'];
 const FIELD_KEYS = ['name', 'phone', 'email', 'division', 'district', 'upazila', 'address', 'note'];
@@ -123,6 +165,24 @@ export function Editor({ t, id, go }) {
   const skipHistoryRef = useRef(false);
   const editingRef = useRef(false);
   const [toolbar, setToolbar] = useState(null);
+  const deviceRef = useRef(null);
+  const fitObserver = useRef(null);
+  const [fit, setFit] = useState({ w: 0, h: 0 });
+  const fitRef = useCallback((node) => {
+    if (fitObserver.current) {
+      fitObserver.current.disconnect();
+      fitObserver.current = null;
+    }
+    if (!node || !window.ResizeObserver) {
+      return;
+    }
+    const measure = () => setFit((prev) => (
+      prev.w === node.clientWidth && prev.h === node.clientHeight ? prev : { w: node.clientWidth, h: node.clientHeight }
+    ));
+    fitObserver.current = new window.ResizeObserver(measure);
+    fitObserver.current.observe(node);
+    measure();
+  }, []);
 
   const dirty = page ? JSON.stringify(page) !== saved : false;
   pageRef.current = page;
@@ -233,7 +293,7 @@ export function Editor({ t, id, go }) {
     selectedRef.current = selectedId;
     markSelected(selectedId, view.from !== 'preview');
     placeToolbar(selectedId);
-  }, [selectedId, html]);
+  }, [selectedId, html, device, fit.w, fit.h]);
 
   function frameDoc() {
     try {
@@ -258,7 +318,11 @@ export function Editor({ t, id, go }) {
     }
     node.classList.add('nk-ed-sel');
     if (scroll) {
-      node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Scroll only the preview iframe — scrollIntoView would also scroll the whole WP admin page.
+      const win = doc.defaultView;
+      if (win) {
+        win.scrollTo({ top: Math.max(0, node.getBoundingClientRect().top + win.scrollY - 12), behavior: 'smooth' });
+      }
     }
   }
 
@@ -292,12 +356,16 @@ export function Editor({ t, id, go }) {
       setToolbar(null);
       return;
     }
-    const frameRect = frame.getBoundingClientRect();
+    // Coordinates are relative to the .nk-device-fit wrapper; the toolbar sits outside the scaled frame.
+    const scale = previewScale(device, fit);
+    const deviceEl = deviceRef.current;
     const nodeRect = node.getBoundingClientRect();
+    const originX = scale < 1 ? (fit.w - VIRTUAL_WIDTH[device] * scale) / 2 : (deviceEl ? deviceEl.offsetLeft : 0);
+    const originY = scale < 1 ? 0 : (deviceEl ? deviceEl.offsetTop : 0);
     setToolbar({
       id: sectionId,
-      top: Math.max(8, nodeRect.top - frameRect.top + 8),
-      left: Math.max(8, nodeRect.left - frameRect.left + 8),
+      top: Math.min(Math.max(8, originY + (frame.offsetTop + nodeRect.top) * scale + 8), Math.max(8, fit.h - 48)),
+      left: Math.max(8, originX + (frame.offsetLeft + nodeRect.left) * scale + 8),
     });
   }
 
@@ -309,6 +377,17 @@ export function Editor({ t, id, go }) {
     const style = doc.createElement('style');
     style.textContent = PREVIEW_CSS;
     doc.head.appendChild(style);
+    // Keep the floating toolbar glued to the selected section while the preview scrolls (incl. smooth scroll).
+    let scrollFrame = 0;
+    doc.addEventListener('scroll', () => {
+      if (scrollFrame) {
+        return;
+      }
+      scrollFrame = window.requestAnimationFrame(() => {
+        scrollFrame = 0;
+        actionsRef.current.place();
+      });
+    }, { passive: true });
     doc.addEventListener('click', (event) => {
       const editable = event.target && event.target.closest ? event.target.closest('[data-nk-prop]') : null;
       if (editable) {
@@ -479,13 +558,10 @@ export function Editor({ t, id, go }) {
 
   function addSection(type) {
     const created = blankSection(type, t);
+    const anchorId = selectedRef.current;
     setSections((sections) => {
-      const formIndex = sections.findIndex((item) => item.type === 'order_form');
-      if (formIndex < 0 || type === 'order_form') {
-        return sections.concat(created);
-      }
       const next = sections.slice();
-      next.splice(formIndex, 0, created);
+      next.splice(insertIndex(sections, type, anchorId), 0, created);
       return next;
     });
     setView({ kind: 'section', id: created.id });
@@ -560,8 +636,10 @@ export function Editor({ t, id, go }) {
     undo,
     redo,
     pick: (sectionId) => setView({ kind: 'section', id: sectionId, from: 'preview' }),
+    place: () => placeToolbar(selectedRef.current),
   };
 
+  const scale = previewScale(device, fit);
   const deviceClass = device === 'tablet' ? 'is-tablet' : (device === 'desktop' ? 'is-desktop' : 'is-phone');
 
   const section = page && selectedId ? page.sections.find((item) => item.id === selectedId) : null;
@@ -613,7 +691,19 @@ export function Editor({ t, id, go }) {
                 <span className="nk-muted">{t('editor.previewHint')}</span>
                 {previewBusy ? <span className="nk-ed-busy">{t('editor.previewUpdating')}</span> : null}
               </div>
-              <div className={`nk-editor-frame nk-device ${deviceClass}`} style={{ position: 'relative' }}>
+              <div ref={fitRef} className={`nk-device-fit${scale < 1 ? ' is-scaled' : ''}`}>
+              <div
+                ref={deviceRef}
+                className={`nk-editor-frame nk-device ${deviceClass}`}
+                style={scale < 1
+                  ? {
+                    width: VIRTUAL_WIDTH[device],
+                    maxWidth: 'none',
+                    height: fit.h / scale,
+                    transform: `translateX(-50%) scale(${scale})`,
+                  }
+                  : undefined}
+              >
                 {device === 'desktop' ? (
                   <div className="nk-device-bar" aria-hidden="true">
                     <i /><i /><i />
@@ -625,6 +715,7 @@ export function Editor({ t, id, go }) {
                 ) : (
                   <iframe ref={frameRef} className="nk-editor-iframe" title={t('editor.preview')} srcDoc={html} onLoad={onFrameLoad} />
                 )}
+              </div>
                 {toolbar && section ? (
                   <div className="nk-canvas-bar" style={{ top: toolbar.top, left: toolbar.left }}>
                     <button type="button" className="nk-btn-ghost" onClick={() => {
@@ -666,19 +757,31 @@ export function Editor({ t, id, go }) {
             </aside>
           </div>
           <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('editor.addTitle')} size="lg">
-            <p className="nk-muted">{t('editor.addHelp')}</p>
-            <div className="nk-type-grid">
-              {TYPES.map((type) => {
-                const taken = type === 'order_form' && page.sections.some((item) => item.type === 'order_form');
-                return (
-                  <button key={type} type="button" className="nk-type" disabled={taken} onClick={() => addSection(type)}>
-                    <span className="nk-type-icon"><Icon name={SECTION_ICONS[type]} size={20} /></span>
-                    <strong>{t('section.' + type)}</strong>
-                    <small>{taken ? t('editor.alreadyAdded') : t('sectionHelp.' + type)}</small>
-                  </button>
-                );
-              })}
-            </div>
+            <p className="nk-muted">
+              {section && section.type !== 'order_form'
+                ? `${t('editor.addAfter')} ${t('section.' + section.type)}`
+                : t('editor.addHelp')}
+            </p>
+            {TYPE_GROUPS.map((group) => (
+              <div key={group.key} className="nk-type-group">
+                <h3 className="nk-type-group-title">{t('editor.group.' + group.key)}</h3>
+                <div className="nk-type-grid">
+                  {group.types.map((type) => {
+                    const taken = type === 'order_form' && page.sections.some((item) => item.type === 'order_form');
+                    return (
+                      <button key={type} type="button" className="nk-type" disabled={taken} onClick={() => addSection(type)}>
+                        <SectionThumb type={type} />
+                        <span className="nk-type-title">
+                          <span className="nk-type-icon"><Icon name={SECTION_ICONS[type]} size={16} /></span>
+                          <strong>{t('section.' + type)}</strong>
+                        </span>
+                        <small>{taken ? t('editor.alreadyAdded') : t('sectionHelp.' + type)}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </Modal>
         </div>
       ) : null}
