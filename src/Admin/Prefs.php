@@ -29,21 +29,17 @@ final class Prefs {
 
     public static function shell_counts(): array {
         global $wpdb;
-        $orders = $wpdb->prefix . 'noksha_orders';
-        $leads = $wpdb->prefix . 'noksha_leads';
         $needs = 0;
         $leads_today = 0;
-        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($orders)));
-        if ($found === $orders) {
+        if (\Noksha\Activator::has_table('orders')) {
             $needs = (int) $wpdb->get_var(
-                "SELECT COUNT(*) FROM {$orders} WHERE status IN ('pending','no_answer')"
+                'SELECT COUNT(*) FROM ' . $wpdb->prefix . "noksha_orders WHERE status IN ('pending','no_answer')"
             );
         }
-        $found_leads = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($leads)));
-        if ($found_leads === $leads) {
+        if (\Noksha\Activator::has_table('leads')) {
             $today = wp_date('Y-m-d');
             $leads_today = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$leads} WHERE converted = 0 AND updated_at >= %s",
+                'SELECT COUNT(*) FROM ' . $wpdb->prefix . 'noksha_leads WHERE converted = 0 AND updated_at >= %s',
                 $today . ' 00:00:00'
             ));
         }

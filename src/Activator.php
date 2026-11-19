@@ -17,8 +17,8 @@ final class Activator {
         'payments' => 1,
         'events' => 1,
         'leads' => 2,
-        'order_notes' => 5,
-        'blacklist' => 6,
+        'order_notes' => 7,
+        'blacklist' => 7,
     ];
 
     /**
