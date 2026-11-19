@@ -1271,7 +1271,7 @@
     return;
   }
   var items = Array.prototype.filter.call(landing.children, function (el) {
-    return !el.classList.contains('nk-hero') && !el.classList.contains('nk-sticky-cta') && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE';
+    return !el.classList.contains('nk-hero') && !el.classList.contains('nk-sticky-cta') && !el.classList.contains('nk-wa-float') && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE';
   });
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
@@ -1289,4 +1289,34 @@
   window.setTimeout(function () {
     items.forEach(function (el) { el.classList.add('nk-in'); });
   }, 6000);
+})();
+
+/* ---- Video section: load the player only after a tap (keeps pages light) ---- */
+(function () {
+  var cfg = window.nokshaFront || {};
+  if (cfg.preview) {
+    return;
+  }
+  document.querySelectorAll('.nk-video-frame[data-nk-video]').forEach(function (frame) {
+    var button = frame.querySelector('.nk-video-play');
+    if (!button) {
+      return;
+    }
+    button.addEventListener('click', function () {
+      var id = frame.getAttribute('data-id') || '';
+      var kind = frame.getAttribute('data-nk-video');
+      if (!/^[\w-]+$/.test(id)) {
+        return;
+      }
+      var frameEl = document.createElement('iframe');
+      frameEl.src = kind === 'vimeo'
+        ? 'https://player.vimeo.com/video/' + id + '?autoplay=1'
+        : 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0';
+      frameEl.allow = 'autoplay; fullscreen; picture-in-picture';
+      frameEl.allowFullscreen = true;
+      frameEl.title = button.getAttribute('aria-label') || 'Video';
+      frame.innerHTML = '';
+      frame.appendChild(frameEl);
+    });
+  });
 })();

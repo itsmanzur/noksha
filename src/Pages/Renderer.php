@@ -235,6 +235,11 @@ final class Renderer {
             'faq' => self::faq($props, $preview),
             'guarantee' => self::guarantee($props, $preview),
             'order_form' => self::order_form($props, $payload, $preview),
+            'gallery' => self::gallery($props, $preview),
+            'video' => self::video($props, $preview),
+            'steps' => self::steps($props, $preview),
+            'compare' => self::compare($props, $preview),
+            'whatsapp' => self::whatsapp($props, $payload),
             'html' => ($props['html'] ?? '') !== ''
                 ? '<section class="nk-section nk-html"><div class="nk-html-inner">' . Sanitizer::clean_html((string) $props['html']) . '</div></section>'
                 : '',
@@ -407,6 +412,114 @@ final class Renderer {
         }
         return '<section class="nk-section">' . self::editable('h2', 'title', $props['title'], '', $preview)
             . '<div class="nk-faq nk-faq-one">' . $items . '</div></section>';
+    }
+
+    private static function gallery(array $props, bool $preview): string {
+        $figures = '';
+        foreach ($props['images'] as $image) {
+            $alt = $image['alt'] !== '' ? $image['alt'] : $props['title'];
+            $figures .= '<figure class="nk-photo">' . self::image($image['url'], $alt, false) . '</figure>';
+        }
+        if ($figures === '' && !$preview) {
+            return '';
+        }
+        return '<section class="nk-section nk-photos">' . self::editable('h2', 'title', $props['title'], '', $preview)
+            . '<div class="nk-photo-track">' . $figures . '</div></section>';
+    }
+
+    /** @return array{0:string,1:string}|null Provider and video id. */
+    private static function video_embed(string $url): ?array {
+        $parts = wp_parse_url($url);
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        $host = preg_replace('/^(www|m)\./', '', $host) ?? '';
+        $path = (string) ($parts['path'] ?? '');
+        if ($host === 'youtu.be') {
+            $id = trim($path, '/');
+        } elseif ($host === 'youtube.com' || $host === 'youtube-nocookie.com') {
+            $id = '';
+            if ($path === '/watch') {
+                parse_str((string) ($parts['query'] ?? ''), $query);
+                $id = (string) ($query['v'] ?? '');
+            } elseif (preg_match('#^/(?:embed|shorts|live)/([\w-]{6,20})#', $path, $m)) {
+                $id = $m[1];
+            }
+        } elseif ($host === 'vimeo.com' || $host === 'player.vimeo.com') {
+            return preg_match('#/(\d{6,12})(?:/|$)#', $path, $m) ? ['vimeo', $m[1]] : null;
+        } else {
+            return null;
+        }
+        return preg_match('/^[\w-]{6,20}$/', $id) ? ['youtube', $id] : null;
+    }
+
+    private static function video(array $props, bool $preview): string {
+        $embed = $props['url'] !== '' ? self::video_embed($props['url']) : null;
+        if ($embed === null && !$preview) {
+            return '';
+        }
+        $title = self::editable('h2', 'title', $props['title'], '', $preview);
+        if ($embed === null) {
+            return '<section class="nk-section nk-video">' . $title . '<div class="nk-video-frame nk-video-empty">▶</div></section>';
+        }
+        [$kind, $id] = $embed;
+        $thumb = $kind === 'youtube'
+            ? '<img src="' . esc_url('https://i.ytimg.com/vi/' . $id . '/hqdefault.jpg') . '" alt="" loading="lazy" decoding="async" width="480" height="360">'
+            : '';
+        $caption = $props['caption'] !== '' ? self::editable('p', 'caption', $props['caption'], 'nk-video-caption', $preview) : '';
+        return '<section class="nk-section nk-video">' . $title
+            . '<div class="nk-video-frame" data-nk-video="' . esc_attr($kind) . '" data-id="' . esc_attr($id) . '">'
+            . '<button type="button" class="nk-video-play" aria-label="' . esc_attr($props['title'] !== '' ? $props['title'] : 'Play video') . '">'
+            . $thumb . '<span class="nk-video-icon" aria-hidden="true">▶</span></button></div>'
+            . $caption . '</section>';
+    }
+
+    private static function steps(array $props, bool $preview): string {
+        $items = '';
+        foreach ($props['items'] as $index => $item) {
+            $items .= '<li class="nk-step"><span class="nk-step-num" aria-hidden="true"></span><div>'
+                . self::editable('h3', 'items.' . $index . '.title', $item['title'], '', $preview)
+                . self::editable('p', 'items.' . $index . '.text', $item['text'], '', $preview)
+                . '</div></li>';
+        }
+        return '<section class="nk-section nk-steps-section">' . self::editable('h2', 'title', $props['title'], '', $preview)
+            . '<ol class="nk-steps">' . $items . '</ol></section>';
+    }
+
+    private static function compare(array $props, bool $preview): string {
+        $rows = '';
+        foreach ($props['rows'] as $index => $row) {
+            $cells = '';
+            foreach (['us' => 'nk-us', 'them' => 'nk-them'] as $key => $class) {
+                $value = $row[$key];
+                $mark = $value === '✓' ? ' nk-yes' : ($value === '✗' ? ' nk-no' : '');
+                $cells .= self::editable('td', 'rows.' . $index . '.' . $key, $value, $class . $mark, $preview);
+            }
+            $rows .= '<tr>' . self::editable('th', 'rows.' . $index . '.label', $row['label'], '', $preview, ['scope' => 'row']) . $cells . '</tr>';
+        }
+        $head = '<thead><tr><td></td>'
+            . self::editable('th', 'usLabel', $props['usLabel'], 'nk-us', $preview, ['scope' => 'col'])
+            . self::editable('th', 'themLabel', $props['themLabel'], 'nk-them', $preview, ['scope' => 'col'])
+            . '</tr></thead>';
+        return '<section class="nk-section nk-compare">' . self::editable('h2', 'title', $props['title'], '', $preview)
+            . '<div class="nk-compare-scroll"><table class="nk-compare-table">' . $head . '<tbody>' . $rows . '</tbody></table></div></section>';
+    }
+
+    private static function whatsapp(array $props, array $payload): string {
+        $number = (string) ($props['number'] ?? '');
+        if ($number === '') {
+            $number = preg_replace('/\D+/', '', (string) (Options::settings()['whatsapp'] ?? '')) ?? '';
+        }
+        if (preg_match('/^01\d{9}$/', $number)) {
+            $number = '88' . $number;
+        }
+        if ($number === '') {
+            return '';
+        }
+        $lang = ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
+        $label = $props['label'] !== '' ? $props['label'] : Catalog::line($lang, 'whatsapp_us');
+        $href = 'https://wa.me/' . $number . ($props['message'] !== '' ? '?text=' . rawurlencode($props['message']) : '');
+        return '<a class="nk-wa-float" href="' . esc_url($href) . '" target="_blank" rel="noopener" aria-label="' . esc_attr($label) . '">'
+            . '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12.04 2a9.9 9.9 0 0 0-8.43 15.1L2 22l5.05-1.32A9.9 9.9 0 1 0 12.04 2zm5.8 14.1c-.25.7-1.45 1.33-2 1.4-.52.07-1.17.1-1.89-.12-.43-.14-.98-.32-1.69-.63-2.97-1.28-4.9-4.27-5.05-4.47-.15-.2-1.2-1.6-1.2-3.05s.76-2.16 1.03-2.46c.27-.3.58-.37.78-.37h.56c.18 0 .43-.07.67.51.25.6.85 2.07.92 2.22.08.15.13.32.03.52-.1.2-.15.32-.3.5-.15.17-.31.38-.45.51-.15.15-.3.31-.13.6.17.3.77 1.27 1.65 2.05 1.13 1 2.09 1.31 2.39 1.46.3.15.47.13.65-.08.17-.2.74-.86.94-1.16.2-.3.4-.25.67-.15.27.1 1.72.81 2.02.96.3.15.5.22.57.35.08.12.08.72-.17 1.42z"/></svg>'
+            . '<span>' . esc_html($label) . '</span></a>';
     }
 
     private static function guarantee(array $props, bool $preview = false): string {

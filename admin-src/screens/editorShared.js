@@ -27,6 +27,10 @@ const ICONS = {
   link: <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>,
   drop: <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />,
   alert: <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>,
+  play: <polygon points="5 3 19 12 5 21 5 3" />,
+  list: <><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>,
+  columns: <><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="12" y1="3" x2="12" y2="21" /></>,
+  chat: <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />,
 };
 
 export const SECTION_ICONS = {
@@ -39,6 +43,11 @@ export const SECTION_ICONS = {
   guarantee: 'shield',
   html: 'code',
   order_form: 'cart',
+  gallery: 'image',
+  video: 'play',
+  steps: 'list',
+  compare: 'columns',
+  whatsapp: 'chat',
 };
 
 export function Icon({ name, size = 18 }) {
@@ -61,7 +70,7 @@ export function summaryOf(section, t) {
   const props = section.props || {};
   const text = section.type === 'html'
     ? String(props.html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-    : String(props.title || props.eyebrow || props.text || '').trim();
+    : String(props.title || props.eyebrow || props.text || props.label || '').trim();
   if (!text) {
     return t('editor.untitled');
   }

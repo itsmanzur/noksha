@@ -19,9 +19,9 @@ function previewScale(device, fit) {
 
 /** Section picker groups, ordered by what the seller is trying to do. */
 const TYPE_GROUPS = [
-  { key: 'attention', types: ['hero', 'countdown'] },
-  { key: 'trust', types: ['benefits', 'reviews', 'guarantee', 'faq'] },
-  { key: 'product', types: ['product', 'order_form'] },
+  { key: 'attention', types: ['hero', 'countdown', 'whatsapp'] },
+  { key: 'trust', types: ['benefits', 'reviews', 'guarantee', 'faq', 'compare'] },
+  { key: 'product', types: ['product', 'gallery', 'video', 'steps', 'order_form'] },
   { key: 'advanced', types: ['html'] },
 ];
 
@@ -52,7 +52,8 @@ function insertIndex(sections, type, selectedId) {
 const HTML_LIMIT = 20000;
 const METHODS = ['cod', 'manual_bkash', 'manual_nagad', 'sslcommerz'];
 const FIELD_KEYS = ['name', 'phone', 'email', 'division', 'district', 'upazila', 'address', 'note'];
-const ITEM_LIMITS = { benefits: 6, reviews: 8, faq: 12 };
+const ITEM_LIMITS = { benefits: 6, reviews: 8, faq: 12, steps: 6 };
+const SINGLE_TYPES = ['order_form', 'whatsapp'];
 const BULLET_LIMIT = 8;
 const COLOR_GROUPS = [
   ['colors.main', ['brand', 'brandForeground', 'accent']],
@@ -95,6 +96,19 @@ function blankSection(type, t) {
     guarantee: { title: t('section.guarantee'), text: '' },
     html: { html: '' },
     order_form: { title: t('section.order_form'), buttonLabel: t('editor.orderNow') },
+    gallery: { title: t('section.gallery'), images: [] },
+    video: { title: t('section.video'), url: '', caption: '' },
+    steps: {
+      title: t('section.steps'),
+      items: [{ title: t('steps.s1'), text: '' }, { title: t('steps.s2'), text: '' }, { title: t('steps.s3'), text: '' }],
+    },
+    compare: {
+      title: t('section.compare'),
+      usLabel: t('compare.us'),
+      themLabel: t('compare.them'),
+      rows: [{ label: '', us: '✓', them: '✗' }],
+    },
+    whatsapp: { number: '', label: '', message: '' },
   };
   return {
     id: 's_' + Math.random().toString(36).slice(2, 10),
@@ -781,7 +795,7 @@ export function Editor({ t, id, go }) {
                 <h3 className="nk-type-group-title">{t('editor.group.' + group.key)}</h3>
                 <div className="nk-type-grid">
                   {group.types.map((type) => {
-                    const taken = type === 'order_form' && page.sections.some((item) => item.type === 'order_form');
+                    const taken = SINGLE_TYPES.includes(type) && page.sections.some((item) => item.type === type);
                     return (
                       <button key={type} type="button" className="nk-type" disabled={taken} onClick={() => addSection(type)}>
                         <SectionThumb type={type} />
@@ -1019,6 +1033,7 @@ const STYLE_LAYOUTS = {
   benefits: ['cards', 'list', 'numbers'],
   reviews: ['slider', 'grid'],
   product: ['side', 'reverse', 'stacked'],
+  gallery: ['slider', 'grid'],
 };
 const STYLE_BACKGROUNDS = ['none', 'soft', 'warm', 'dark', 'brand', 'gradient'];
 const STYLE_SPACINGS = ['compact', 'normal', 'roomy'];
@@ -1027,7 +1042,7 @@ const STYLE_SIZE_SCALE = { sm: 0.88, md: 1, lg: 1.15, xl: 1.3 };
 const STYLE_RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
 const STYLE_FITS = ['cover', 'contain'];
 const STYLE_ROUNDS = ['none', 'md', 'lg', 'full'];
-const STYLE_IMAGE_TYPES = ['hero', 'product'];
+const STYLE_IMAGE_TYPES = ['hero', 'product', 'gallery'];
 
 /** Approximate heading size in px at phone and desktop widths, for the size hint. */
 function headingRange(type, size) {
@@ -1038,7 +1053,7 @@ function headingRange(type, size) {
 
 /** Look & feel: layout variant, background band and spacing for one section. */
 function StyleFields({ t, section, onChange }) {
-  if (section.type === 'order_form') {
+  if (SINGLE_TYPES.includes(section.type)) {
     return null;
   }
   const style = section.style || {};
@@ -1148,6 +1163,36 @@ function SectionFields({ t, section, onChange, onOpen }) {
           </button>
         </>
       ) : null}
+      {type === 'gallery' ? (
+        <>
+          <TextField label={t('prop.sectionTitle')} value={props.title} onChange={(title) => onChange({ title })} />
+          <GalleryEditor t={t} images={props.images || []} onChange={(images) => onChange({ images })} />
+        </>
+      ) : null}
+      {type === 'video' ? (
+        <>
+          <TextField label={t('prop.sectionTitle')} value={props.title} onChange={(title) => onChange({ title })} />
+          <TextField label={t('prop.videoUrl')} help={t('help.videoUrl')} value={props.url} maxLength={300} onChange={(url) => onChange({ url })} />
+          <TextField label={t('prop.caption')} value={props.caption} maxLength={160} onChange={(caption) => onChange({ caption })} />
+        </>
+      ) : null}
+      {type === 'compare' ? (
+        <>
+          <TextField label={t('prop.sectionTitle')} value={props.title} onChange={(title) => onChange({ title })} />
+          <div className="nk-two">
+            <TextField label={t('prop.usLabel')} value={props.usLabel} maxLength={40} onChange={(usLabel) => onChange({ usLabel })} />
+            <TextField label={t('prop.themLabel')} value={props.themLabel} maxLength={40} onChange={(themLabel) => onChange({ themLabel })} />
+          </div>
+          <CompareEditor t={t} rows={props.rows || []} onChange={(rows) => onChange({ rows })} />
+        </>
+      ) : null}
+      {type === 'whatsapp' ? (
+        <>
+          <TextField label={t('prop.waNumber')} help={t('help.waNumber')} value={props.number} maxLength={20} onChange={(number) => onChange({ number })} />
+          <TextField label={t('prop.waLabel')} value={props.label} maxLength={40} onChange={(label) => onChange({ label })} />
+          <TextField label={t('prop.waMessage')} help={t('help.waMessage')} value={props.message} multiline maxLength={200} onChange={(message) => onChange({ message })} />
+        </>
+      ) : null}
       {type === 'html' ? (
         <Field label={t('prop.html')} help={t('help.htmlSafe')}>
           <textarea
@@ -1162,12 +1207,73 @@ function SectionFields({ t, section, onChange, onOpen }) {
           />
         </Field>
       ) : null}
-      {type === 'benefits' || type === 'reviews' || type === 'faq' ? (
+      {type === 'benefits' || type === 'reviews' || type === 'faq' || type === 'steps' ? (
         <>
           <TextField label={t('prop.sectionTitle')} value={props.title} onChange={(title) => onChange({ title })} />
           <ItemsEditor t={t} type={type} items={props.items || []} onChange={(items) => onChange({ items })} />
         </>
       ) : null}
+    </div>
+  );
+}
+
+function GalleryEditor({ t, images, onChange }) {
+  const limit = 8;
+  function add() {
+    if (!chooseImage((url) => onChange(images.concat({ url, alt: '' })))) {
+      const url = window.prompt('https://');
+      if (url) {
+        onChange(images.concat({ url, alt: '' }));
+      }
+    }
+  }
+  return (
+    <div className="nk-ed-field">
+      <span className="nk-ed-label">{t('prop.photos')}</span>
+      <div className="nk-photo-grid">
+        {images.map((image, index) => (
+          <div key={index} className="nk-photo-cell">
+            <img src={image.url} alt="" />
+            <IconButton icon="trash" danger label={t('editor.remove')} onClick={() => onChange(images.filter((_, i) => i !== index))} />
+          </div>
+        ))}
+      </div>
+      {images.length < limit ? (
+        <button type="button" className="nk-add-row" onClick={add}><Icon name="plus" size={16} /> {t('prop.addPhoto')}</button>
+      ) : (
+        <p className="nk-help">{t('items.limit').replace('{n}', String(limit))}</p>
+      )}
+    </div>
+  );
+}
+
+function CompareEditor({ t, rows, onChange }) {
+  const limit = 8;
+  function update(index, partial) {
+    onChange(rows.map((row, i) => (i === index ? { ...row, ...partial } : row)));
+  }
+  return (
+    <div className="nk-ed-field">
+      <span className="nk-ed-label">{t('prop.rows')}</span>
+      <div className="nk-items">
+        {rows.map((row, index) => (
+          <div key={index} className="nk-item is-open">
+            <div className="nk-item-body">
+              <TextField label={t('prop.feature')} value={row.label} maxLength={80} onChange={(label) => update(index, { label })} />
+              <div className="nk-two">
+                <TextField label={t('prop.us')} value={row.us} maxLength={30} onChange={(us) => update(index, { us })} />
+                <TextField label={t('prop.them')} value={row.them} maxLength={30} onChange={(them) => update(index, { them })} />
+              </div>
+              <button type="button" className="nk-text-btn" onClick={() => onChange(rows.filter((_, i) => i !== index))}>{t('editor.remove')}</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {rows.length < limit ? (
+        <button type="button" className="nk-add-row" onClick={() => onChange(rows.concat({ label: '', us: '✓', them: '✗' }))}><Icon name="plus" size={16} /> {t('prop.addRow')}</button>
+      ) : (
+        <p className="nk-help">{t('items.limit').replace('{n}', String(limit))}</p>
+      )}
     </div>
   );
 }
@@ -1246,7 +1352,7 @@ function ItemsEditor({ t, type, items, onChange }) {
               </div>
               {isOpen ? (
                 <div className="nk-item-body">
-                  {type === 'benefits' ? (
+                  {type === 'benefits' || type === 'steps' ? (
                     <>
                       <TextField label={t('prop.itemTitle')} value={item.title} onChange={(title) => update(index, { title })} />
                       <TextField label={t('prop.itemText')} value={item.text} multiline maxLength={800} onChange={(text) => update(index, { text })} />

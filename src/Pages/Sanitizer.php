@@ -19,6 +19,7 @@ final class Sanitizer {
             : (($fallback['language'] ?? 'en') === 'bn' ? 'bn' : 'en');
         $sections = [];
         $seen_order = false;
+        $seen_whatsapp = false;
         $raw_sections = is_array($input['sections'] ?? null) ? $input['sections'] : [];
         foreach (array_slice($raw_sections, 0, 24) as $section) {
             if (!is_array($section)) {
@@ -33,6 +34,12 @@ final class Sanitizer {
                     continue;
                 }
                 $seen_order = true;
+            }
+            if ($clean['type'] === 'whatsapp') {
+                if ($seen_whatsapp) {
+                    continue;
+                }
+                $seen_whatsapp = true;
             }
             $sections[] = $clean;
         }
@@ -85,6 +92,7 @@ final class Sanitizer {
         'benefits' => ['cards', 'list', 'numbers'],
         'reviews' => ['slider', 'grid'],
         'product' => ['side', 'reverse', 'stacked'],
+        'gallery' => ['slider', 'grid'],
     ];
 
     public const BACKGROUNDS = ['none', 'soft', 'warm', 'dark', 'brand', 'gradient'];
@@ -94,7 +102,8 @@ final class Sanitizer {
     public const RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
     public const FITS = ['cover', 'contain'];
     public const ROUNDS = ['none', 'md', 'lg', 'full'];
-    public const IMAGE_TYPES = ['hero', 'product'];
+    public const IMAGE_TYPES = ['hero', 'product', 'gallery'];
+    public const SINGLE_TYPES = ['order_form', 'whatsapp'];
 
     /**
      * Per-section look: layout variant, background band, vertical spacing.
@@ -104,7 +113,7 @@ final class Sanitizer {
      */
     public static function style(string $type, $raw): array {
         $raw = is_array($raw) ? $raw : [];
-        if ($type === 'order_form') {
+        if (in_array($type, self::SINGLE_TYPES, true)) {
             return ['layout' => '', 'bg' => 'none', 'space' => 'normal', 'size' => 'md', 'ratio' => 'auto', 'fit' => 'cover', 'round' => 'md'];
         }
         $layouts = self::LAYOUTS[$type] ?? [];
@@ -176,6 +185,30 @@ final class Sanitizer {
             'order_form' => [
                 'title' => self::short($props['title'] ?? ''),
                 'buttonLabel' => self::short($props['buttonLabel'] ?? '', 40),
+            ],
+            'gallery' => [
+                'title' => self::short($props['title'] ?? ''),
+                'images' => self::gallery_images($props['images'] ?? []),
+            ],
+            'video' => [
+                'title' => self::short($props['title'] ?? ''),
+                'url' => self::video_url($props['url'] ?? ''),
+                'caption' => self::short($props['caption'] ?? '', 160),
+            ],
+            'steps' => [
+                'title' => self::short($props['title'] ?? ''),
+                'items' => self::pairs($props['items'] ?? [], 'title', 'text', 6),
+            ],
+            'compare' => [
+                'title' => self::short($props['title'] ?? ''),
+                'usLabel' => self::short($props['usLabel'] ?? '', 40),
+                'themLabel' => self::short($props['themLabel'] ?? '', 40),
+                'rows' => self::compare_rows($props['rows'] ?? []),
+            ],
+            'whatsapp' => [
+                'number' => substr(preg_replace('/[^0-9]/', '', (string) ($props['number'] ?? '')) ?? '', 0, 15),
+                'label' => self::short($props['label'] ?? '', 40),
+                'message' => self::long($props['message'] ?? '', 200),
             ],
             'html' => [
                 'html' => self::html($props['html'] ?? '', $stored),
@@ -478,6 +511,55 @@ final class Sanitizer {
             }
             $clean[] = $line;
             if (count($clean) >= $max) {
+                break;
+            }
+        }
+        return $clean;
+    }
+
+    private static function gallery_images($items): array {
+        $clean = [];
+        foreach ((array) $items as $item) {
+            $url = self::url(is_array($item) ? ($item['url'] ?? '') : $item);
+            if ($url === '') {
+                continue;
+            }
+            $clean[] = ['url' => $url, 'alt' => is_array($item) ? self::short($item['alt'] ?? '', 120) : ''];
+            if (count($clean) >= 8) {
+                break;
+            }
+        }
+        return $clean;
+    }
+
+    /** Only YouTube and Vimeo links are kept; anything else is dropped. */
+    private static function video_url($value): string {
+        $url = self::url($value);
+        if ($url === '') {
+            return '';
+        }
+        $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+        $host = preg_replace('/^(www|m)\./', '', $host) ?? '';
+        $allowed = ['youtube.com', 'youtu.be', 'youtube-nocookie.com', 'vimeo.com', 'player.vimeo.com'];
+        return in_array($host, $allowed, true) ? $url : '';
+    }
+
+    private static function compare_rows($items): array {
+        $clean = [];
+        foreach ((array) $items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $row = [
+                'label' => self::short($item['label'] ?? '', 80),
+                'us' => self::short($item['us'] ?? '', 30),
+                'them' => self::short($item['them'] ?? '', 30),
+            ];
+            if ($row['label'] === '' && $row['us'] === '' && $row['them'] === '') {
+                continue;
+            }
+            $clean[] = $row;
+            if (count($clean) >= 8) {
                 break;
             }
         }

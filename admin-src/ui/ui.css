@@ -671,6 +671,18 @@
 	border-radius: var(--nk-radius-lg);
 	box-shadow: var(--nk-shadow-md);
 	outline: none;
+	display: flex;
+	flex-direction: column;
+	max-height: calc(100vh - 10vh - 24px);
+}
+
+.nk-ui-modal-header,
+.nk-ui-modal-footer {
+	flex: none;
+}
+
+.nk-ui-modal-body {
+	min-height: 0;
 }
 
 .nk-ui-modal.is-sm {
