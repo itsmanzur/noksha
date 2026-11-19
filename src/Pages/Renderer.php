@@ -427,7 +427,7 @@ final class Renderer {
             . '<div class="nk-photo-track">' . $figures . '</div></section>';
     }
 
-    /** @return array{0:string,1:string}|null Provider and video id. */
+    /** @return array{0:string,1:string,2:string}|null Provider, video id and optional Vimeo privacy hash. */
     private static function video_embed(string $url): ?array {
         $parts = wp_parse_url($url);
         $host = strtolower((string) ($parts['host'] ?? ''));
@@ -444,11 +444,19 @@ final class Renderer {
                 $id = $m[1];
             }
         } elseif ($host === 'vimeo.com' || $host === 'player.vimeo.com') {
-            return preg_match('#/(\d{6,12})(?:/|$)#', $path, $m) ? ['vimeo', $m[1]] : null;
+            if (!preg_match('#/(\d{6,12})(?:/([0-9a-f]{6,20}))?(?:/|$)#', $path, $m)) {
+                return null;
+            }
+            $hash = $m[2] ?? '';
+            if ($hash === '') {
+                parse_str((string) ($parts['query'] ?? ''), $query);
+                $hash = (string) ($query['h'] ?? '');
+            }
+            return ['vimeo', $m[1], preg_match('/^[0-9a-f]{6,20}$/', $hash) ? $hash : ''];
         } else {
             return null;
         }
-        return preg_match('/^[\w-]{6,20}$/', $id) ? ['youtube', $id] : null;
+        return preg_match('/^[\w-]{6,20}$/', $id) ? ['youtube', $id, ''] : null;
     }
 
     private static function video(array $props, bool $preview): string {
@@ -460,13 +468,13 @@ final class Renderer {
         if ($embed === null) {
             return '<section class="nk-section nk-video">' . $title . '<div class="nk-video-frame nk-video-empty">▶</div></section>';
         }
-        [$kind, $id] = $embed;
+        [$kind, $id, $hash] = $embed;
         $thumb = $kind === 'youtube'
             ? '<img src="' . esc_url('https://i.ytimg.com/vi/' . $id . '/hqdefault.jpg') . '" alt="" loading="lazy" decoding="async" width="480" height="360">'
             : '';
         $caption = $props['caption'] !== '' ? self::editable('p', 'caption', $props['caption'], 'nk-video-caption', $preview) : '';
         return '<section class="nk-section nk-video">' . $title
-            . '<div class="nk-video-frame" data-nk-video="' . esc_attr($kind) . '" data-id="' . esc_attr($id) . '">'
+            . '<div class="nk-video-frame" data-nk-video="' . esc_attr($kind) . '" data-id="' . esc_attr($id) . '"' . ($hash !== '' ? ' data-hash="' . esc_attr($hash) . '"' : '') . '>'
             . '<button type="button" class="nk-video-play" aria-label="' . esc_attr($props['title'] !== '' ? $props['title'] : 'Play video') . '">'
             . $thumb . '<span class="nk-video-icon" aria-hidden="true">▶</span></button></div>'
             . $caption . '</section>';

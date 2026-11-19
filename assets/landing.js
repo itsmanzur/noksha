@@ -1309,8 +1309,9 @@
         return;
       }
       var frameEl = document.createElement('iframe');
+      var hash = frame.getAttribute('data-hash') || '';
       frameEl.src = kind === 'vimeo'
-        ? 'https://player.vimeo.com/video/' + id + '?autoplay=1'
+        ? 'https://player.vimeo.com/video/' + id + '?autoplay=1' + (/^[0-9a-f]+$/.test(hash) ? '&h=' + hash : '')
         : 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0';
       frameEl.allow = 'autoplay; fullscreen; picture-in-picture';
       frameEl.allowFullscreen = true;
