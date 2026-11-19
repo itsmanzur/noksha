@@ -76,7 +76,85 @@ final class Tracker {
             'recentOrders' => Orders::query('', '', 8)['orders'],
             'ab' => self::ab_split($start),
             'codReconcile' => self::cod_reconcile($start),
+            'byDistrict' => self::ops_by('district_name', $start),
+            'byPage' => self::ops_by_page($start),
         ];
+    }
+
+    private static function ops_by(string $column, string $start): array {
+        global $wpdb;
+        $allowed = ['district_name', 'upazila_name', 'division_name'];
+        if (!in_array($column, $allowed, true)) {
+            return [];
+        }
+        $table = Orders::table();
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT
+                CASE WHEN {$column} = '' OR {$column} IS NULL THEN '—' ELSE {$column} END AS label,
+                COUNT(*) placed,
+                SUM(CASE WHEN status IN ('confirmed','paid','shipped','delivered') THEN 1 ELSE 0 END) confirmed,
+                SUM(CASE WHEN status IN ('shipped','delivered','returned') THEN 1 ELSE 0 END) shipped,
+                SUM(CASE WHEN status = 'returned' THEN 1 ELSE 0 END) returned
+             FROM {$table}
+             WHERE created_at >= %s AND status <> 'cancelled'
+             GROUP BY label
+             ORDER BY placed DESC
+             LIMIT 12",
+            $start
+        ), ARRAY_A);
+        $out = [];
+        foreach ((array) $rows as $row) {
+            $placed = (int) $row['placed'];
+            $confirmed = (int) $row['confirmed'];
+            $shipped = (int) $row['shipped'];
+            $returned = (int) $row['returned'];
+            $out[] = [
+                'label' => (string) $row['label'],
+                'placed' => $placed,
+                'confirmed' => $confirmed,
+                'returned' => $returned,
+                'confirmRate' => $placed > 0 ? round($confirmed / $placed * 100, 1) : 0,
+                'returnRate' => $shipped > 0 ? round($returned / $shipped * 100, 1) : 0,
+            ];
+        }
+        return $out;
+    }
+
+    private static function ops_by_page(string $start): array {
+        global $wpdb;
+        $table = Orders::table();
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT page_id,
+                COUNT(*) placed,
+                SUM(CASE WHEN status IN ('confirmed','paid','shipped','delivered') THEN 1 ELSE 0 END) confirmed,
+                SUM(CASE WHEN status IN ('shipped','delivered','returned') THEN 1 ELSE 0 END) shipped,
+                SUM(CASE WHEN status = 'returned' THEN 1 ELSE 0 END) returned
+             FROM {$table}
+             WHERE created_at >= %s AND status <> 'cancelled'
+             GROUP BY page_id
+             ORDER BY placed DESC
+             LIMIT 12",
+            $start
+        ), ARRAY_A);
+        $out = [];
+        foreach ((array) $rows as $row) {
+            $id = (int) $row['page_id'];
+            $post = get_post($id);
+            $placed = (int) $row['placed'];
+            $confirmed = (int) $row['confirmed'];
+            $shipped = (int) $row['shipped'];
+            $returned = (int) $row['returned'];
+            $out[] = [
+                'id' => $id,
+                'title' => $post ? $post->post_title : '#' . $id,
+                'placed' => $placed,
+                'confirmed' => $confirmed,
+                'returned' => $returned,
+                'confirmRate' => $placed > 0 ? round($confirmed / $placed * 100, 1) : 0,
+                'returnRate' => $shipped > 0 ? round($returned / $shipped * 100, 1) : 0,
+            ];
+        }
+        return $out;
     }
 
     private static function ab_split(string $start): array {

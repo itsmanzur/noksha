@@ -92,6 +92,26 @@ export function Payments({ t, onSandbox }) {
                 <>
                   <label className="nk-field">{t('payments.number')}<input value={settings.gateways[id].number || ''} onChange={(event) => patchGateway(id, { number: event.target.value })} /></label>
                   <label className="nk-field">{t('payments.instructions')}<textarea rows="3" value={settings.gateways[id].instructions || ''} onChange={(event) => patchGateway(id, { instructions: event.target.value })} /></label>
+                  <label className="nk-check">
+                    <input type="checkbox" checked={Boolean(settings.gateways[id].auto_verify)} onChange={(event) => patchGateway(id, { auto_verify: event.target.checked })} />
+                    {t('payments.autoVerify')}
+                  </label>
+                  <p className="nk-muted">{t('payments.autoVerifyHelp')}</p>
+                  {id === 'manual_bkash' ? (
+                    <>
+                      <label className="nk-field">{t('payments.bkashAppKey')}<input type="password" value={courierSecrets.bkash_app_key || ''} placeholder={settings.has_bkash_api ? t('payments.secretSet') : ''} onChange={(event) => setCourierSecrets({ ...courierSecrets, bkash_app_key: event.target.value })} /></label>
+                      <label className="nk-field">{t('payments.bkashAppSecret')}<input type="password" value={courierSecrets.bkash_app_secret || ''} onChange={(event) => setCourierSecrets({ ...courierSecrets, bkash_app_secret: event.target.value })} /></label>
+                      <label className="nk-field">{t('payments.bkashUser')}<input type="password" value={courierSecrets.bkash_username || ''} onChange={(event) => setCourierSecrets({ ...courierSecrets, bkash_username: event.target.value })} /></label>
+                      <label className="nk-field">{t('payments.bkashPass')}<input type="password" value={courierSecrets.bkash_password || ''} onChange={(event) => setCourierSecrets({ ...courierSecrets, bkash_password: event.target.value })} /></label>
+                      {settings.walletVerify?.bkash ? <p className="nk-banner is-ok">{t('payments.walletReady')}</p> : null}
+                    </>
+                  ) : (
+                    <>
+                      <label className="nk-field">{t('payments.nagadMerchant')}<input type="password" value={courierSecrets.nagad_merchant_id || ''} placeholder={settings.has_nagad_api ? t('payments.secretSet') : ''} onChange={(event) => setCourierSecrets({ ...courierSecrets, nagad_merchant_id: event.target.value })} /></label>
+                      <label className="nk-field">{t('payments.nagadVerifyUrl')}<input value={courierSecrets.nagad_verify_url || ''} onChange={(event) => setCourierSecrets({ ...courierSecrets, nagad_verify_url: event.target.value })} /></label>
+                      {settings.walletVerify?.nagad ? <p className="nk-banner is-ok">{t('payments.walletReady')}</p> : null}
+                    </>
+                  )}
                 </>
               ) : null}
               {id === 'sslcommerz' ? (
@@ -121,6 +141,13 @@ export function Payments({ t, onSandbox }) {
             </select>
           </label>
           <p className="nk-muted">{t('payments.otpHelp')}</p>
+
+          <h2>{t('payments.webhooks')}</h2>
+          <p className="nk-muted">{t('payments.webhooksHelp')}</p>
+          <label className="nk-field">{t('payments.webhookSecret')}<input type="password" value={courierSecrets.courier_webhook_secret || ''} placeholder={settings.has_courier_webhook_secret ? t('payments.secretSet') : ''} onChange={(event) => setCourierSecrets({ ...courierSecrets, courier_webhook_secret: event.target.value })} /></label>
+          {(settings.webhookUrls ? Object.entries(settings.webhookUrls) : []).map(([id, url]) => (
+            <label key={id} className="nk-field">{t('courier.' + id)}<input readOnly value={url} onFocus={(event) => event.target.select()} /></label>
+          ))}
 
           <h2>{t('payments.couriers')}</h2>
           <p className="nk-muted">{t('payments.couriersHelp')}</p>

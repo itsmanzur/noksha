@@ -129,6 +129,19 @@ export function Orders({ t, go, orderId }) {
     }).catch((err) => setError(err.message));
   }
 
+  function verifyTrx() {
+    api('orders/' + detail.id + '/verify-trx', { method: 'POST', body: {} }).then((data) => {
+      setDetail(data);
+      if (data.verify?.verified) {
+        setNote(t('orders.verifyOk'));
+        setCollect(String(data.collectAmount != null ? data.collectAmount : collect));
+      } else {
+        setNote(data.verify?.message || t('orders.verifyPending'));
+      }
+      load();
+    }).catch((err) => setError(err.message));
+  }
+
   function toggle(id) {
     setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : current.concat(id)));
   }
@@ -205,6 +218,7 @@ export function Orders({ t, go, orderId }) {
           {(detail.method === 'manual_bkash' || detail.method === 'manual_nagad') && detail.trxId && !detail.trxVerified ? (
             <>
               <button type="button" className="nk-btn" onClick={confirmTrx}>{t('orders.confirmTrx')}</button>
+              <button type="button" className="nk-btn-ghost" onClick={verifyTrx}>{t('orders.verifyTrx')}</button>
               <button type="button" className="nk-btn-ghost" onClick={rejectTrx}>{t('orders.rejectTrx')}</button>
             </>
           ) : null}

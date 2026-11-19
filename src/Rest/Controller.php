@@ -23,7 +23,9 @@ use Noksha\Pages\Sanitizer;
 use Noksha\Payments\SslCommerzGateway;
 use Noksha\Region\Geo;
 use Noksha\Region\Phone;
+use Noksha\Payments\WalletVerifier;
 use Noksha\Shipping\Manager as Shipping;
+use Noksha\Shipping\Webhooks;
 
 final class Controller {
     public function register(): void {
@@ -117,6 +119,15 @@ final class Controller {
             'callback' => [$this, 'settle_cod'],
             'permission_callback' => [$this, 'can_manage'],
         ]);
+        register_rest_route('noksha/v1', '/orders/(?P<id>\d+)/verify-trx', [
+            'methods' => 'POST',
+            'callback' => [$this, 'verify_trx'],
+            'permission_callback' => [$this, 'can_manage'],
+        ]);
+        register_rest_route('noksha/v1', '/webhooks/(?P<courier>steadfast|pathao|redx)', [
+            'methods' => 'POST',
+            'callback' => [$this, 'courier_webhook'],
+        ] + $public);
         register_rest_route('noksha/v1', '/otp/send', [
             'methods' => 'POST',
             'callback' => [$this, 'send_otp'],
@@ -540,6 +551,24 @@ final class Controller {
         }
         $lang = ($params['lang'] ?? '') === 'bn' ? 'bn' : 'en';
         return \Noksha\Notify\Otp::send((string) ($params['phone'] ?? ''), $lang);
+    }
+
+    public function verify_trx(\WP_REST_Request $request) {
+        $result = WalletVerifier::verify_order((int) $request['id']);
+        if (empty($result['ok'])) {
+            return new \WP_Error('noksha_verify_failed', (string) ($result['message'] ?? 'Verify failed.'), ['status' => 400]);
+        }
+        $order = Orders::find((int) $request['id']);
+        if (!$order) {
+            return new \WP_Error('noksha_not_found', 'Order not found.', ['status' => 404]);
+        }
+        $detail = Orders::detail($order);
+        $detail['verify'] = $result;
+        return $detail;
+    }
+
+    public function courier_webhook(\WP_REST_Request $request) {
+        return Webhooks::handle((string) $request['courier'], $request);
     }
 
     public function settle_cod(\WP_REST_Request $request) {

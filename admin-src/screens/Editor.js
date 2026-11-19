@@ -25,7 +25,28 @@ const SECTION_ICONS = {
 };
 const PREVIEW_CSS = '[data-nk-section]{cursor:pointer;outline:2px solid transparent;outline-offset:-2px;transition:outline-color .15s}'
   + '[data-nk-section]:hover{outline-color:rgba(34,113,177,.45)}'
-  + '[data-nk-section].nk-ed-sel{outline-color:#2271B1}';
+  + '[data-nk-section].nk-ed-sel{outline-color:#2271B1}'
+  + '[data-nk-prop]{outline:1px dashed transparent;outline-offset:2px;min-width:1ch}'
+  + '[data-nk-prop]:hover,[data-nk-prop]:focus{outline-color:rgba(34,113,177,.55);background:rgba(34,113,177,.06)}'
+  + '[data-nk-prop][contenteditable="true"]{cursor:text}';
+
+function setByPath(source, path, value) {
+  const parts = String(path || '').split('.').filter(Boolean);
+  if (parts.length === 0) {
+    return source;
+  }
+  const clone = Array.isArray(source) ? source.slice() : { ...(source || {}) };
+  let cursor = clone;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const key = parts[i];
+    const next = cursor[key];
+    const copy = Array.isArray(next) ? next.slice() : { ...(next || {}) };
+    cursor[key] = copy;
+    cursor = copy;
+  }
+  cursor[parts[parts.length - 1]] = value;
+  return clone;
+}
 
 const ICONS = {
   back: <polyline points="15 18 9 12 15 6" />,
@@ -159,6 +180,8 @@ export function Editor({ t, id, go }) {
   const actionsRef = useRef({});
   const autosaveRef = useRef(0);
   const skipHistoryRef = useRef(false);
+  const editingRef = useRef(false);
+  const [toolbar, setToolbar] = useState(null);
 
   const dirty = page ? JSON.stringify(page) !== saved : false;
   pageRef.current = page;
@@ -184,14 +207,18 @@ export function Editor({ t, id, go }) {
   }, []);
 
   useEffect(() => {
-    if (!page) {
+    if (!page || editingRef.current) {
       return undefined;
     }
     setPreviewBusy(true);
     const handle = window.setTimeout(() => {
+      if (editingRef.current) {
+        setPreviewBusy(false);
+        return;
+      }
       const request = ++requestRef.current;
       api('preview', { method: 'POST', body: page }).then((data) => {
-        if (request !== requestRef.current) {
+        if (request !== requestRef.current || editingRef.current) {
           return;
         }
         try {
@@ -260,7 +287,8 @@ export function Editor({ t, id, go }) {
   useEffect(() => {
     selectedRef.current = selectedId;
     markSelected(selectedId, view.from !== 'preview');
-  }, [selectedId]);
+    placeToolbar(selectedId);
+  }, [selectedId, html]);
 
   function frameDoc() {
     try {
@@ -289,6 +317,45 @@ export function Editor({ t, id, go }) {
     }
   }
 
+  function applyPropPath(sectionId, path, value) {
+    setPage((current) => {
+      if (!current) {
+        return current;
+      }
+      pushHistory(current);
+      return {
+        ...current,
+        sections: current.sections.map((section) => {
+          if (section.id !== sectionId) {
+            return section;
+          }
+          return { ...section, props: setByPath(section.props || {}, path, value) };
+        }),
+      };
+    });
+  }
+
+  function placeToolbar(sectionId) {
+    const doc = frameDoc();
+    const frame = frameRef.current;
+    if (!doc || !frame || !sectionId) {
+      setToolbar(null);
+      return;
+    }
+    const node = doc.querySelector('[data-nk-section="' + sectionId + '"]');
+    if (!node) {
+      setToolbar(null);
+      return;
+    }
+    const frameRect = frame.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    setToolbar({
+      id: sectionId,
+      top: Math.max(8, nodeRect.top - frameRect.top + 8),
+      left: Math.max(8, nodeRect.left - frameRect.left + 8),
+    });
+  }
+
   function onFrameLoad() {
     const doc = frameDoc();
     if (!doc || !doc.head) {
@@ -298,12 +365,53 @@ export function Editor({ t, id, go }) {
     style.textContent = PREVIEW_CSS;
     doc.head.appendChild(style);
     doc.addEventListener('click', (event) => {
+      const editable = event.target && event.target.closest ? event.target.closest('[data-nk-prop]') : null;
+      if (editable) {
+        const sectionNode = editable.closest('[data-nk-section]');
+        if (sectionNode) {
+          actionsRef.current.pick(sectionNode.getAttribute('data-nk-section'));
+        }
+        return;
+      }
       const node = event.target && event.target.closest ? event.target.closest('[data-nk-section]') : null;
       if (!node) {
         return;
       }
       event.preventDefault();
       actionsRef.current.pick(node.getAttribute('data-nk-section'));
+    }, true);
+    doc.addEventListener('focusin', (event) => {
+      const editable = event.target && event.target.closest ? event.target.closest('[data-nk-prop]') : null;
+      if (!editable) {
+        return;
+      }
+      editingRef.current = true;
+      editable.setAttribute('contenteditable', 'true');
+    }, true);
+    doc.addEventListener('focusout', (event) => {
+      const editable = event.target && event.target.closest ? event.target.closest('[data-nk-prop]') : null;
+      if (!editable) {
+        return;
+      }
+      const sectionNode = editable.closest('[data-nk-section]');
+      const sectionId = sectionNode ? sectionNode.getAttribute('data-nk-section') : '';
+      const path = editable.getAttribute('data-nk-prop') || '';
+      const value = (editable.textContent || '').trim();
+      editable.removeAttribute('contenteditable');
+      editingRef.current = false;
+      if (sectionId && path) {
+        applyPropPath(sectionId, path, value);
+      }
+    }, true);
+    doc.addEventListener('keydown', (event) => {
+      const editable = event.target && event.target.closest ? event.target.closest('[data-nk-prop]') : null;
+      if (!editable) {
+        return;
+      }
+      if (event.key === 'Enter' && editable.tagName !== 'P' && !editable.closest('.nk-lead')) {
+        event.preventDefault();
+        editable.blur();
+      }
     }, true);
     doc.addEventListener('submit', (event) => event.preventDefault(), true);
     try {
@@ -312,6 +420,7 @@ export function Editor({ t, id, go }) {
       // The preview is same-origin; ignore if the browser blocks it.
     }
     markSelected(selectedRef.current, false);
+    placeToolbar(selectedRef.current);
   }
 
   function pushHistory(snapshot) {
@@ -575,7 +684,7 @@ export function Editor({ t, id, go }) {
                 <span className="nk-muted">{t('editor.previewHint')}</span>
                 {previewBusy ? <span className="nk-ed-busy">{t('editor.previewUpdating')}</span> : null}
               </div>
-              <div className={`nk-device ${device === 'phone' ? 'is-phone' : 'is-desk'}`}>
+              <div className={`nk-device ${device === 'phone' ? 'is-phone' : 'is-desk'}`} style={{ position: 'relative' }}>
                 {device === 'desk' ? (
                   <div className="nk-device-bar" aria-hidden="true">
                     <i /><i /><i />
@@ -587,6 +696,24 @@ export function Editor({ t, id, go }) {
                 ) : (
                   <iframe ref={frameRef} title={t('editor.preview')} srcDoc={html} onLoad={onFrameLoad} />
                 )}
+                {toolbar && section ? (
+                  <div className="nk-canvas-bar" style={{ top: toolbar.top, left: toolbar.left }}>
+                    <button type="button" className="nk-btn-ghost" onClick={() => {
+                      const index = page.sections.findIndex((item) => item.id === section.id);
+                      reorder(index, index - 1);
+                    }}>{t('editor.up')}</button>
+                    <button type="button" className="nk-btn-ghost" onClick={() => {
+                      const index = page.sections.findIndex((item) => item.id === section.id);
+                      reorder(index, index + 1);
+                    }}>{t('editor.down')}</button>
+                    <button type="button" className="nk-btn-ghost" onClick={() => toggleHidden(section.id)}>
+                      {section.hidden ? t('editor.showSection') : t('editor.hideSection')}
+                    </button>
+                    <button type="button" className="nk-btn-ghost" onClick={() => setView({ kind: 'section', id: section.id })}>
+                      {t('editor.section')}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </section>
           </div>

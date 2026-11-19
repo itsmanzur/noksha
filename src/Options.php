@@ -29,11 +29,13 @@ final class Options {
                     'enabled' => true,
                     'number' => '',
                     'instructions' => '',
+                    'auto_verify' => false,
                 ],
                 'manual_nagad' => [
                     'enabled' => true,
                     'number' => '',
                     'instructions' => '',
+                    'auto_verify' => false,
                 ],
                 'sslcommerz' => ['enabled' => false],
             ],
@@ -64,6 +66,15 @@ final class Options {
             'pathao_username' => '',
             'pathao_password' => '',
             'redx_api_key' => '',
+            'courier_webhook_secret' => '',
+            'bkash_app_key' => '',
+            'bkash_app_secret' => '',
+            'bkash_username' => '',
+            'bkash_password' => '',
+            'nagad_merchant_id' => '',
+            'nagad_merchant_private_key' => '',
+            'nagad_pg_public_key' => '',
+            'nagad_verify_url' => '',
         ];
     }
 
@@ -206,13 +217,24 @@ final class Options {
             'pathao_username',
             'pathao_password',
             'redx_api_key',
+            'courier_webhook_secret',
+            'bkash_app_key',
+            'bkash_app_secret',
+            'bkash_username',
+            'bkash_password',
+            'nagad_merchant_id',
+            'nagad_merchant_private_key',
+            'nagad_pg_public_key',
+            'nagad_verify_url',
         ] as $secret_key) {
             if (!array_key_exists($secret_key, $input)) {
                 continue;
             }
             $value = trim((string) $input[$secret_key]);
             if ($value !== '') {
-                $secrets[$secret_key] = sanitize_text_field($value);
+                $secrets[$secret_key] = $secret_key === 'nagad_verify_url'
+                    ? esc_url_raw($value)
+                    : sanitize_text_field($value);
             }
         }
         update_option(self::SECRETS, $secrets, false);
@@ -239,6 +261,18 @@ final class Options {
         $settings['ssl_ready'] = $settings['has_ssl_password'] && $settings['sslcommerz_store_id'] !== '';
         $settings['has_meta_capi_token'] = ($secrets['meta_capi_token'] ?? '') !== '';
         $settings['has_sms_key'] = ($secrets['sms_api_key'] ?? '') !== '';
+        $settings['has_bkash_api'] = ($secrets['bkash_app_key'] ?? '') !== '' && ($secrets['bkash_app_secret'] ?? '') !== '';
+        $settings['has_nagad_api'] = ($secrets['nagad_merchant_id'] ?? '') !== '';
+        $settings['has_courier_webhook_secret'] = ($secrets['courier_webhook_secret'] ?? '') !== '';
+        $settings['walletVerify'] = [
+            'bkash' => \Noksha\Payments\WalletVerifier::ready('manual_bkash'),
+            'nagad' => \Noksha\Payments\WalletVerifier::ready('manual_nagad'),
+        ];
+        $settings['webhookUrls'] = [
+            'steadfast' => rest_url('noksha/v1/webhooks/steadfast'),
+            'pathao' => rest_url('noksha/v1/webhooks/pathao'),
+            'redx' => rest_url('noksha/v1/webhooks/redx'),
+        ];
         $settings['shipping'] = \Noksha\Shipping\Manager::public_status();
         $settings['onboarding'] = self::onboarding();
         $settings['can_settings'] = Caps::can_settings();
@@ -253,7 +287,10 @@ final class Options {
         return [
             'enabled' => !empty($input['enabled']),
             'number' => $number,
-            'instructions' => sanitize_textarea_field((string) ($input['instructions'] ?? '')),
+            'instructions' => sanitize_textarea_field((string) ($input['instructions'] ?? ($current['instructions'] ?? ''))),
+            'auto_verify' => array_key_exists('auto_verify', $input)
+                ? !empty($input['auto_verify'])
+                : !empty($current['auto_verify']),
         ];
     }
 

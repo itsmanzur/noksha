@@ -18,6 +18,7 @@ use Noksha\Pages\PostType;
 use Noksha\Pages\Renderer;
 use Noksha\Pages\Repository as Pages;
 use Noksha\Payments\Manager;
+use Noksha\Payments\WalletVerifier;
 use Noksha\Region\Geo;
 use Noksha\Region\Phone;
 
@@ -204,9 +205,12 @@ final class Checkout {
             'status' => $result['status'],
             'trx_id' => $result['transaction_id'] ?? '',
         ]);
+        if (in_array($method, ['manual_bkash', 'manual_nagad'], true)) {
+            WalletVerifier::maybe_auto_verify($id);
+        }
         Tracker::record($page_id, 'order_placed', $session, $variant);
         Tracker::ensure($page_id, 'checkout_start', $session, $variant);
-        $order = Repository::find($id);
+        $order = Repository::find($id) ?: $order;
         if ($method !== 'sslcommerz' && ($order['status'] ?? '') !== 'cancelled') {
             Capi::purchase($order, $doc['offer']);
         }

@@ -1670,6 +1670,25 @@ a.nk-btn-ghost {
   background: var(--noksha-color-card);
 }
 
+.nk-canvas-bar {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+}
+
+.nk-canvas-bar .nk-btn-ghost {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
 .nk-device .nk-banner {
   margin: 16px;
 }

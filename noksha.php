@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Noksha
  * Description: Bangladesh-first landing pages with checkout, payments, and analytics.
- * Version: 0.1.4
+ * Version: 0.1.5
  * Requires at least: 6.6
  * Requires PHP: 8.1
  * Author: Noksha
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('NOKSHA_VERSION', '0.1.4');
+define('NOKSHA_VERSION', '0.1.5');
 define('NOKSHA_FILE', __FILE__);
 define('NOKSHA_DIR', plugin_dir_path(__FILE__));
 define('NOKSHA_URL', plugin_dir_url(__FILE__));

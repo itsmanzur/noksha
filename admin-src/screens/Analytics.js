@@ -92,6 +92,56 @@ export function Analytics({ t }) {
                 </div>
               </div>
             ) : null}
+            {(data.byDistrict || []).length > 0 ? (
+              <div className="nk-card" style={{ marginTop: 12 }}>
+                <h2>{t('analytics.byDistrict')}</h2>
+                <table className="nk-table">
+                  <thead>
+                    <tr>
+                      <th>{t('analytics.area')}</th>
+                      <th>{t('analytics.placed')}</th>
+                      <th>{t('analytics.confirmRate')}</th>
+                      <th>{t('analytics.returnRate')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.byDistrict.map((row) => (
+                      <tr key={row.label}>
+                        <td>{row.label}</td>
+                        <td>{row.placed}</td>
+                        <td>{row.confirmRate}%</td>
+                        <td>{row.returnRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {(data.byPage || []).length > 0 ? (
+              <div className="nk-card" style={{ marginTop: 12 }}>
+                <h2>{t('analytics.byPage')}</h2>
+                <table className="nk-table">
+                  <thead>
+                    <tr>
+                      <th>{t('pages.name')}</th>
+                      <th>{t('analytics.placed')}</th>
+                      <th>{t('analytics.confirmRate')}</th>
+                      <th>{t('analytics.returnRate')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.byPage.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.title}</td>
+                        <td>{row.placed}</td>
+                        <td>{row.confirmRate}%</td>
+                        <td>{row.returnRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
             <div className="nk-card" style={{ marginTop: 12 }}>
               <h2>{t('analytics.top')}</h2>
               {data.topPages.length === 0 ? <p className="nk-muted">{t('home.emptyPages')}</p> : (

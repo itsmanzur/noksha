@@ -190,13 +190,13 @@ final class Renderer {
         $type = $section['type'];
         $props = $section['props'];
         $html = match ($type) {
-            'hero' => self::hero($props),
-            'benefits' => self::benefits($props),
-            'product' => self::product($props, $payload),
-            'countdown' => self::countdown($props, $payload),
-            'reviews' => self::reviews($props),
-            'faq' => self::faq($props),
-            'guarantee' => self::guarantee($props),
+            'hero' => self::hero($props, $preview),
+            'benefits' => self::benefits($props, $preview),
+            'product' => self::product($props, $payload, $preview),
+            'countdown' => self::countdown($props, $payload, $preview),
+            'reviews' => self::reviews($props, $preview),
+            'faq' => self::faq($props, $preview),
+            'guarantee' => self::guarantee($props, $preview),
             'order_form' => self::order_form($props, $payload, $preview),
             'html' => ($props['html'] ?? '') !== '' ? '<section class="nk-section nk-html">' . Sanitizer::clean_html((string) $props['html']) . '</section>' : '',
             default => '',
@@ -207,31 +207,35 @@ final class Renderer {
         return $html;
     }
 
-    private static function hero(array $props): string {
+    private static function hero(array $props, bool $preview = false): string {
         $media = self::image($props['imageUrl'] ?? '', $props['title'] ?? '');
         return '<header class="nk-hero">'
-            . ($props['eyebrow'] !== '' ? '<p class="nk-eyebrow">' . esc_html($props['eyebrow']) . '</p>' : '')
-            . '<h1>' . esc_html($props['title']) . '</h1>'
-            . ($props['subtitle'] !== '' ? '<p class="nk-lead">' . esc_html($props['subtitle']) . '</p>' : '')
-            . ($props['buttonLabel'] !== '' ? '<a class="nk-btn" href="#nk-order">' . esc_html($props['buttonLabel']) . '</a>' : '')
+            . ($props['eyebrow'] !== '' ? self::editable('p', 'eyebrow', $props['eyebrow'], 'nk-eyebrow', $preview) : '')
+            . self::editable('h1', 'title', $props['title'], '', $preview)
+            . ($props['subtitle'] !== '' ? self::editable('p', 'subtitle', $props['subtitle'], 'nk-lead', $preview) : '')
+            . ($props['buttonLabel'] !== '' ? self::editable('a', 'buttonLabel', $props['buttonLabel'], 'nk-btn', $preview, ['href' => '#nk-order']) : '')
             . $media
             . '</header>';
     }
 
-    private static function benefits(array $props): string {
+    private static function benefits(array $props, bool $preview = false): string {
         $items = '';
-        foreach ($props['items'] as $item) {
-            $items .= '<li><h3>' . esc_html($item['title']) . '</h3><p>' . esc_html($item['text']) . '</p></li>';
+        foreach ($props['items'] as $index => $item) {
+            $items .= '<li>'
+                . self::editable('h3', 'items.' . $index . '.title', $item['title'], '', $preview)
+                . self::editable('p', 'items.' . $index . '.text', $item['text'], '', $preview)
+                . '</li>';
         }
-        return '<section class="nk-section"><h2>' . esc_html($props['title']) . '</h2><ul class="nk-benefits">' . $items . '</ul></section>';
+        return '<section class="nk-section">' . self::editable('h2', 'title', $props['title'], '', $preview)
+            . '<ul class="nk-benefits">' . $items . '</ul></section>';
     }
 
-    private static function product(array $props, array $payload): string {
+    private static function product(array $props, array $payload, bool $preview = false): string {
         $lang = $payload['language'];
         $offer = $payload['offer'];
         $bullets = '';
-        foreach ($props['bullets'] as $bullet) {
-            $bullets .= '<li>' . esc_html($bullet) . '</li>';
+        foreach ($props['bullets'] as $index => $bullet) {
+            $bullets .= self::editable('li', 'bullets.' . $index, $bullet, '', $preview);
         }
         $price = esc_html(self::money((float) $offer['price'], $lang));
         $compare = '';
@@ -240,14 +244,14 @@ final class Renderer {
         }
         return '<section class="nk-section nk-product">'
             . self::image($props['imageUrl'] ?: ($offer['imageUrl'] ?? ''), $props['title'])
-            . '<div><h2>' . esc_html($props['title']) . '</h2>'
+            . '<div>' . self::editable('h2', 'title', $props['title'], '', $preview)
             . '<p class="nk-price"><strong>' . $price . '</strong>' . $compare . '</p>'
-            . '<p>' . esc_html($props['text']) . '</p>'
+            . self::editable('p', 'text', $props['text'], '', $preview)
             . ($bullets !== '' ? '<ul class="nk-bullets">' . $bullets . '</ul>' : '')
             . '</div></section>';
     }
 
-    private static function countdown(array $props, array $payload): string {
+    private static function countdown(array $props, array $payload, bool $preview = false): string {
         $lang = $payload['language'];
         if ($props['endsAt'] === '') {
             return '';
@@ -256,32 +260,55 @@ final class Renderer {
         foreach (['days', 'hours', 'minutes', 'seconds'] as $unit) {
             $units .= '<div><strong data-unit="' . esc_attr($unit) . '">00</strong><span>' . esc_html(Catalog::line($lang, $unit)) . '</span></div>';
         }
-        return '<section class="nk-section nk-countdown"><h2>' . esc_html($props['title']) . '</h2>'
+        return '<section class="nk-section nk-countdown">' . self::editable('h2', 'title', $props['title'], '', $preview)
             . '<p>' . esc_html(Catalog::line($lang, 'offer_ends')) . '</p>'
             . '<div class="nk-count" data-ends="' . esc_attr($props['endsAt']) . '">' . $units . '</div></section>';
     }
 
-    private static function reviews(array $props): string {
+    private static function reviews(array $props, bool $preview = false): string {
         $items = '';
-        foreach ($props['items'] as $item) {
+        foreach ($props['items'] as $index => $item) {
             $stars = str_repeat('★', (int) $item['rating']) . str_repeat('☆', 5 - (int) $item['rating']);
-            $items .= '<blockquote><p>' . esc_html($item['text']) . '</p><footer><span aria-hidden="true">' . esc_html($stars) . '</span> '
-                . esc_html($item['name']) . '</footer></blockquote>';
+            $items .= '<blockquote>'
+                . self::editable('p', 'items.' . $index . '.text', $item['text'], '', $preview)
+                . '<footer><span aria-hidden="true">' . esc_html($stars) . '</span> '
+                . self::editable('span', 'items.' . $index . '.name', $item['name'], '', $preview)
+                . '</footer></blockquote>';
         }
-        return '<section class="nk-section"><h2>' . esc_html($props['title']) . '</h2><div class="nk-reviews">' . $items . '</div></section>';
+        return '<section class="nk-section">' . self::editable('h2', 'title', $props['title'], '', $preview)
+            . '<div class="nk-reviews">' . $items . '</div></section>';
     }
 
-    private static function faq(array $props): string {
+    private static function faq(array $props, bool $preview = false): string {
         $items = '';
-        foreach ($props['items'] as $item) {
-            $items .= '<div class="nk-faq-item"><button type="button" aria-expanded="false">' . esc_html($item['q'])
-                . '</button><div hidden><p>' . esc_html($item['a']) . '</p></div></div>';
+        foreach ($props['items'] as $index => $item) {
+            $items .= '<div class="nk-faq-item"><button type="button" aria-expanded="false" data-nk-prop="items.' . esc_attr((string) $index) . '.q">'
+                . esc_html($item['q'])
+                . '</button><div hidden>' . self::editable('p', 'items.' . $index . '.a', $item['a'], '', $preview) . '</div></div>';
         }
-        return '<section class="nk-section"><h2>' . esc_html($props['title']) . '</h2><div class="nk-faq">' . $items . '</div></section>';
+        return '<section class="nk-section">' . self::editable('h2', 'title', $props['title'], '', $preview)
+            . '<div class="nk-faq">' . $items . '</div></section>';
     }
 
-    private static function guarantee(array $props): string {
-        return '<section class="nk-guarantee"><h2>' . esc_html($props['title']) . '</h2><p>' . esc_html($props['text']) . '</p></section>';
+    private static function guarantee(array $props, bool $preview = false): string {
+        return '<section class="nk-guarantee">'
+            . self::editable('h2', 'title', $props['title'], '', $preview)
+            . self::editable('p', 'text', $props['text'], '', $preview)
+            . '</section>';
+    }
+
+    private static function editable(string $tag, string $prop, string $value, string $class, bool $preview, array $attrs = []): string {
+        $attr = '';
+        foreach ($attrs as $key => $val) {
+            $attr .= ' ' . $key . '="' . esc_attr((string) $val) . '"';
+        }
+        if ($class !== '') {
+            $attr .= ' class="' . esc_attr($class) . '"';
+        }
+        if ($preview) {
+            $attr .= ' data-nk-prop="' . esc_attr($prop) . '"';
+        }
+        return '<' . $tag . $attr . '>' . esc_html($value) . '</' . $tag . '>';
     }
 
     private static function order_form(array $props, array $payload, bool $preview): string {
