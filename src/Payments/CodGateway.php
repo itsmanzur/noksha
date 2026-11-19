@@ -13,8 +13,9 @@ final class CodGateway implements Gateway {
     }
 
     public function start(array $order, array $input): array {
+        // Needs a confirmation call before packing / courier booking.
         return [
-            'status' => 'confirmed',
+            'status' => 'pending',
             'payment_status' => 'due',
         ];
     }

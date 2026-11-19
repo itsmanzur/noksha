@@ -7,6 +7,7 @@
 
 namespace Noksha\Rest;
 
+use Noksha\Admin\Prefs;
 use Noksha\Analytics\Tracker;
 use Noksha\Brand\Tokens;
 use Noksha\Caps;
@@ -26,6 +27,7 @@ use Noksha\Region\Phone;
 use Noksha\Payments\WalletVerifier;
 use Noksha\Shipping\Manager as Shipping;
 use Noksha\Shipping\Webhooks;
+use Noksha\Support\RateLimit;
 
 final class Controller {
     public function register(): void {
@@ -43,6 +45,15 @@ final class Controller {
         register_rest_route('noksha/v1', '/locale', [
             'methods' => 'POST',
             'callback' => [$this, 'locale'],
+            'permission_callback' => [$this, 'can_manage'],
+        ]);
+        register_rest_route('noksha/v1', '/prefs', [
+            ['methods' => 'GET', 'callback' => [$this, 'get_prefs']] + $admin,
+            ['methods' => 'PUT', 'callback' => [$this, 'put_prefs']] + $admin,
+        ]);
+        register_rest_route('noksha/v1', '/shell', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_shell'],
             'permission_callback' => [$this, 'can_manage'],
         ]);
         register_rest_route('noksha/v1', '/settings', [
@@ -166,6 +177,10 @@ final class Controller {
             'methods' => 'POST',
             'callback' => [$this, 'event'],
         ] + $public);
+        register_rest_route('noksha/v1', '/nonce', [
+            'methods' => 'GET',
+            'callback' => [$this, 'public_nonce'],
+        ] + $public);
         register_rest_route('noksha/v1', '/checkout', [
             'methods' => 'POST',
             'callback' => [$this, 'checkout'],
@@ -194,6 +209,20 @@ final class Controller {
         return ['locale' => $locale];
     }
 
+    public function get_prefs(): array {
+        return ['theme' => Prefs::theme()];
+    }
+
+    public function put_prefs(\WP_REST_Request $request): array {
+        $params = $this->params($request);
+        $theme = Prefs::persist_theme((string) ($params['theme'] ?? Prefs::theme()));
+        return ['theme' => $theme];
+    }
+
+    public function get_shell(): array {
+        return Prefs::shell_counts();
+    }
+
     public function get_settings(): array {
         return Options::public_settings();
     }
@@ -217,14 +246,18 @@ final class Controller {
         return ['tokens' => $tokens];
     }
 
-    public function list_pages(): array {
-        $posts = get_posts([
+    public function list_pages(\WP_REST_Request $request): array {
+        $page = max(1, (int) $request->get_param('page'));
+        $per_page = max(1, min(100, (int) ($request->get_param('per_page') ?: 50)));
+        $query = new \WP_Query([
             'post_type' => PostType::TYPE,
             'post_status' => ['publish', 'draft'],
-            'posts_per_page' => 100,
+            'posts_per_page' => $per_page,
+            'paged' => $page,
             'orderby' => 'modified',
             'order' => 'DESC',
         ]);
+        $posts = $query->posts;
         $ids = array_map(static fn ($post) => (int) $post->ID, $posts);
         $counts = Tracker::page_counts($ids);
         $pages = [];
@@ -243,7 +276,14 @@ final class Controller {
                 'updatedAt' => get_post_modified_time('c', true, $post),
             ];
         }
-        return ['pages' => $pages];
+        $total = (int) $query->found_posts;
+        return [
+            'pages' => $pages,
+            'total' => $total,
+            'page' => $page,
+            'perPage' => $per_page,
+            'totalPages' => max(1, (int) ceil($total / $per_page)),
+        ];
     }
 
     public function create_page(\WP_REST_Request $request) {
@@ -285,9 +325,15 @@ final class Controller {
     }
 
     public function list_orders(\WP_REST_Request $request): array {
-        $search = sanitize_text_field((string) $request->get_param('search'));
-        $status = sanitize_key((string) $request->get_param('status'));
-        return Orders::query($search, $status, 50);
+        return Orders::query([
+            'search' => sanitize_text_field((string) $request->get_param('search')),
+            'status' => sanitize_key((string) $request->get_param('status')),
+            'page' => (int) $request->get_param('page'),
+            'per_page' => (int) ($request->get_param('per_page') ?: 50),
+            'from' => sanitize_text_field((string) $request->get_param('from')),
+            'to' => sanitize_text_field((string) $request->get_param('to')),
+            'payment_method' => sanitize_key((string) $request->get_param('payment_method')),
+        ]);
     }
 
     public function get_order(\WP_REST_Request $request) {
@@ -303,25 +349,82 @@ final class Controller {
         if (!$order) {
             return new \WP_Error('noksha_not_found', 'Order not found.', ['status' => 404]);
         }
+        $params = $this->params($request);
         $fields = [];
-        $status = sanitize_key((string) $request->get_param('status'));
+        $status = sanitize_key((string) ($params['status'] ?? $request->get_param('status') ?? ''));
         if ($status !== '') {
             if (!in_array($status, Orders::STATUSES, true)) {
                 return new \WP_Error('noksha_invalid_status', 'Unknown status.', ['status' => 400]);
             }
+            if (!Orders::can_transition((string) $order['status'], $status)) {
+                return new \WP_Error('noksha_bad_transition', 'That status change is not allowed.', ['status' => 400]);
+            }
             $fields['status'] = $status;
         }
-        if ($request->has_param('collect_amount')) {
-            $collect = round((float) $request->get_param('collect_amount'), 2);
+        if (array_key_exists('collect_amount', $params) || $request->has_param('collect_amount')) {
+            $collect = round((float) ($params['collect_amount'] ?? $request->get_param('collect_amount')), 2);
             if ($collect < 0 || $collect > (float) $order['total']) {
                 return new \WP_Error('noksha_invalid_collect', 'Collect amount must be between 0 and the order total.', ['status' => 400]);
             }
             $fields['collect_amount'] = $collect;
         }
-        if ($fields === []) {
+        $customer_in = [];
+        foreach ([
+            'name' => 'customer_name',
+            'customer_name' => 'customer_name',
+            'phone' => 'phone',
+            'email' => 'email',
+            'address' => 'address',
+            'divisionId' => 'division_id',
+            'division_id' => 'division_id',
+            'districtId' => 'district_id',
+            'district_id' => 'district_id',
+            'upazilaId' => 'upazila_id',
+            'upazila_id' => 'upazila_id',
+            'division' => 'division_name',
+            'division_name' => 'division_name',
+            'district' => 'district_name',
+            'district_name' => 'district_name',
+            'upazila' => 'upazila_name',
+            'upazila_name' => 'upazila_name',
+        ] as $in => $out) {
+            if (array_key_exists($in, $params)) {
+                $customer_in[$out] = $params[$in];
+            }
+        }
+        if ($customer_in !== []) {
+            $customer = Orders::validate_customer_fields($customer_in);
+            if (is_wp_error($customer)) {
+                return $customer;
+            }
+            $fields = array_merge($fields, $customer);
+        }
+        if (array_key_exists('note', $params) && is_string($params['note']) && trim($params['note']) !== '') {
+            Orders::add_note((int) $order['id'], sanitize_textarea_field($params['note']));
+        }
+        if ($fields === [] && !array_key_exists('note', $params)) {
             return new \WP_Error('noksha_empty', 'Nothing to update.', ['status' => 400]);
         }
-        Orders::update((int) $order['id'], $fields);
+        if ($fields !== []) {
+            $changed = [];
+            foreach ($fields as $key => $value) {
+                if ((string) ($order[$key] ?? '') !== (string) $value) {
+                    $changed[$key] = true;
+                }
+            }
+            Orders::update((int) $order['id'], $fields);
+            if ($customer_in !== [] && $changed !== []) {
+                $bits = [];
+                foreach (array_keys($customer_in) as $key) {
+                    if (isset($changed[$key])) {
+                        $bits[] = $key;
+                    }
+                }
+                if ($bits !== []) {
+                    Orders::add_note((int) $order['id'], 'Customer updated: ' . implode(', ', $bits));
+                }
+            }
+        }
         return Orders::detail(Orders::find((int) $order['id']));
     }
 
@@ -336,9 +439,10 @@ final class Controller {
         if (Orders::trx_exists($order['trx_id'], (int) $order['id'])) {
             return new \WP_Error('noksha_trx_duplicate', 'This TrxID is already used on another order.', ['status' => 409]);
         }
+        // Wallet already paid in full by default — courier must not collect the total again.
         $collect = $request->has_param('collect_amount')
             ? round((float) $request->get_param('collect_amount'), 2)
-            : max(0, (float) $order['total']);
+            : 0.0;
         if ($collect < 0 || $collect > (float) $order['total']) {
             return new \WP_Error('noksha_invalid_collect', 'Collect amount must be between 0 and the order total.', ['status' => 400]);
         }
@@ -383,6 +487,13 @@ final class Controller {
         return ['ok' => true, 'updated' => $updated];
     }
 
+    public function public_nonce(): array {
+        return [
+            'nonce' => wp_create_nonce('noksha_public'),
+            'createdAt' => time(),
+        ];
+    }
+
     public function export_orders(\WP_REST_Request $request) {
         $search = sanitize_text_field((string) $request->get_param('search'));
         $status = sanitize_key((string) $request->get_param('status'));
@@ -416,9 +527,10 @@ final class Controller {
                 $row['created_at'],
             ]);
         }
+        // UTF-8 BOM so Excel opens Bangla correctly.
         return [
             'filename' => 'noksha-orders.csv',
-            'csv' => implode("\n", $lines),
+            'csv' => "\xEF\xBB\xBF" . implode("\n", $lines),
         ];
     }
 
@@ -431,25 +543,60 @@ final class Controller {
     }
 
     public function ship_order(\WP_REST_Request $request) {
-        $courier = sanitize_key((string) ($this->params($request)['courier'] ?? ''));
-        return (new Shipping())->book((int) $request['id'], $courier);
+        $params = $this->params($request);
+        $courier = sanitize_key((string) ($params['courier'] ?? ''));
+        $force = !empty($params['force']);
+        return (new Shipping())->book((int) $request['id'], $courier, $force);
     }
 
     public function print_order(\WP_REST_Request $request) {
-        $order = Orders::find((int) $request['id']);
-        if (!$order) {
+        $ids = [(int) $request['id']];
+        $extra = $request->get_param('ids');
+        if (is_array($extra)) {
+            foreach ($extra as $id) {
+                $ids[] = (int) $id;
+            }
+        } elseif (is_string($extra) && $extra !== '') {
+            foreach (explode(',', $extra) as $part) {
+                $ids[] = (int) trim($part);
+            }
+        }
+        $ids = array_values(array_unique(array_filter($ids, static fn (int $id): bool => $id > 0)));
+
+        $details = [];
+        foreach ($ids as $id) {
+            $order = Orders::find($id);
+            if (!$order) {
+                continue;
+            }
+            $details[] = Orders::detail($order);
+        }
+        if ($details === []) {
             return new \WP_Error('noksha_not_found', 'Order not found.', ['status' => 404]);
         }
-        $detail = Orders::detail($order);
+
+        $layout = sanitize_key((string) ($request->get_param('layout') ?: 'a4'));
+        if (!in_array($layout, ['a4', 'labels'], true)) {
+            $layout = 'a4';
+        }
+
         ob_start();
-        $noksha_order = $detail;
+        if (count($details) === 1) {
+            $noksha_order = $details[0];
+        } else {
+            $noksha_orders = $details;
+        }
+        $noksha_layout = $layout;
         include NOKSHA_DIR . 'templates/packing-slip.php';
         $html = (string) ob_get_clean();
         return ['html' => $html];
     }
 
-    public function list_leads(): array {
-        return ['leads' => Leads::query(200)];
+    public function list_leads(\WP_REST_Request $request): array {
+        return Leads::query([
+            'page' => (int) $request->get_param('page'),
+            'per_page' => (int) ($request->get_param('per_page') ?: 50),
+        ]);
     }
 
     public function capture_lead(\WP_REST_Request $request) {
@@ -501,6 +648,10 @@ final class Controller {
         $out = [];
         foreach ($fields as $field) {
             $value = (string) $field;
+            // Formula injection guard for Excel/Sheets.
+            if ($value !== '' && preg_match('/^[=+\-@\t\r]/', $value)) {
+                $value = "'" . $value;
+            }
             if (str_contains($value, '"') || str_contains($value, ',') || str_contains($value, "\n")) {
                 $value = '"' . str_replace('"', '""', $value) . '"';
             }
@@ -515,7 +666,7 @@ final class Controller {
     }
 
     public function event(\WP_REST_Request $request) {
-        if ($this->limited('event', 60)) {
+        if (RateLimit::hit('event')) {
             return new \WP_Error('noksha_rate', 'Too many events.', ['status' => 429]);
         }
         $params = $this->params($request);
@@ -542,7 +693,7 @@ final class Controller {
     }
 
     public function send_otp(\WP_REST_Request $request) {
-        if ($this->limited('otp', 8)) {
+        if (RateLimit::hit('otp')) {
             return new \WP_Error('noksha_rate', 'Too many OTP requests.', ['status' => 429]);
         }
         $params = $this->params($request);
@@ -580,19 +731,31 @@ final class Controller {
             return new \WP_Error('noksha_not_cod', 'Only COD orders can be settled.', ['status' => 400]);
         }
         $params = $this->params($request);
+        $expected = (float) ($order['collect_amount'] ?? $order['total']);
         $received = $request->has_param('received') || array_key_exists('received', $params)
             ? round((float) ($params['received'] ?? $request->get_param('received')), 2)
-            : (float) ($order['collect_amount'] ?? $order['total']);
+            : $expected;
         if ($received < 0 || $received > ((float) $order['total'] + 1)) {
             return new \WP_Error('noksha_invalid_collect', 'Received amount looks invalid.', ['status' => 400]);
         }
-        Orders::update((int) $order['id'], [
+        $short = max(0, round($expected - $received, 2));
+        $fields = [
             'cod_received' => $received,
             'cod_settled' => 1,
             'cod_settled_at' => current_time('mysql'),
+            'cod_short' => $short,
             'collect_amount' => $received,
-            'status' => in_array($order['status'], ['delivered', 'paid'], true) ? $order['status'] : 'delivered',
-        ]);
+        ];
+        // Never flip a returned order back to delivered.
+        if (($order['status'] ?? '') !== 'returned' && !in_array($order['status'], ['delivered', 'paid'], true)) {
+            if (Orders::can_transition((string) $order['status'], 'delivered')) {
+                $fields['status'] = 'delivered';
+            }
+        }
+        Orders::update((int) $order['id'], $fields);
+        if ($short > 0) {
+            Orders::add_note((int) $order['id'], sprintf('COD short: ৳%.2f (expected ৳%.2f, received ৳%.2f)', $short, $expected, $received));
+        }
         return Orders::detail(Orders::find((int) $order['id']));
     }
 
@@ -625,14 +788,4 @@ final class Controller {
         ];
     }
 
-    private function limited(string $bucket, int $max): bool {
-        $ip = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0';
-        $key = 'noksha_rl_' . md5($bucket . '|' . $ip);
-        $count = (int) get_transient($key);
-        if ($count >= $max) {
-            return true;
-        }
-        set_transient($key, $count + 1, 10 * MINUTE_IN_SECONDS);
-        return false;
-    }
 }

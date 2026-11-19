@@ -1,167 +1,264 @@
-import { useEffect, useState } from '@wordpress/element';
-import { api, AsyncView, money } from '../api';
+import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
+import { api, money } from '../api';
+import { formatNumber, formatMoney } from '../format';
+import {
+  Button,
+  Card,
+  DateRangePicker,
+  EmptyState,
+  Skeleton,
+  StatCard,
+  Table,
+} from '../ui';
 
-export function Analytics({ t }) {
+const RANGE_PRESETS = [
+  { id: '7d', days: 7, labelKey: 'analytics.days7' },
+  { id: '14d', days: 14, labelKey: 'analytics.days14' },
+  { id: '30d', days: 30, labelKey: 'analytics.days30' },
+];
+
+function funnelExtras(data) {
+  const funnel = data?.funnel || {};
+  const byPage = data?.byPage || [];
+  const confirmed = Number(funnel.confirmed);
+  const delivered = Number(funnel.delivered);
+  const summedConfirmed = byPage.reduce((sum, row) => sum + (Number(row.confirmed) || 0), 0);
+  return {
+    confirmed: Number.isFinite(confirmed) && confirmed > 0 ? confirmed : summedConfirmed,
+    delivered: Number.isFinite(delivered) ? delivered : 0,
+  };
+}
+
+export function Analytics({ t, locale }) {
   const [range, setRange] = useState(7);
+  const [rangePreset, setRangePreset] = useState('7d');
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
 
-  function load(next = range) {
+  const load = useCallback((days = range) => {
     setStatus('loading');
-    api('analytics?range=' + next).then((report) => {
-      setData(report);
-      setStatus('ready');
-    }).catch((err) => {
-      setError(err.message);
-      setStatus('error');
-    });
+    setError('');
+    api(`analytics?range=${days}`)
+      .then((report) => {
+        setData(report);
+        setStatus('ready');
+      })
+      .catch((err) => {
+        setError(err.message || t('common.error'));
+        setStatus('error');
+      });
+  }, [range, t]);
+
+  useEffect(() => {
+    load(7);
+  }, []);
+
+  const funnel = data?.funnel;
+  const extras = useMemo(() => (data ? funnelExtras(data) : { confirmed: 0, delivered: 0 }), [data]);
+
+  const funnelSteps = useMemo(() => {
+    if (!funnel) {
+      return [];
+    }
+    return [
+      { key: 'visits', label: t('analytics.visits'), value: funnel.visits || 0 },
+      { key: 'checkouts', label: t('analytics.checkouts'), value: funnel.checkouts || 0 },
+      { key: 'orders', label: t('analytics.orders'), value: funnel.orders || 0 },
+      { key: 'confirmed', label: t('analytics.confirmed'), value: extras.confirmed },
+      { key: 'delivered', label: t('analytics.delivered'), value: extras.delivered },
+    ];
+  }, [funnel, extras, t]);
+
+  const maxFunnel = Math.max(1, ...funnelSteps.map((step) => step.value));
+
+  const datePresets = useMemo(
+    () => RANGE_PRESETS.map((p) => ({ id: p.id, label: t(p.labelKey) })),
+    [t],
+  );
+
+  function onRangePick(next) {
+    const preset = next?.preset || rangePreset;
+    const match = RANGE_PRESETS.find((p) => p.id === preset);
+    if (match) {
+      setRange(match.days);
+      setRangePreset(match.id);
+      load(match.days);
+    }
   }
 
-  useEffect(() => { load(7); }, []);
-  const funnel = data ? data.funnel : null;
-  const max = funnel ? Math.max(funnel.visits, funnel.checkouts, funnel.orders, 1) : 1;
+  const series = data?.series || [];
+  const seriesMax = Math.max(1, ...series.map((day) => day.revenue));
+
+  if (status === 'error') {
+    return (
+      <div className="nk-screen">
+        <header className="nk-screen-header">
+          <h1>{t('analytics.title')}</h1>
+        </header>
+        <EmptyState
+          title={t('common.error')}
+          description={error}
+          action={<Button onClick={() => load()}>{t('common.retry')}</Button>}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div className="nk-toolbar">
+    <div className="nk-screen">
+      <header className="nk-screen-header">
         <h1>{t('analytics.title')}</h1>
-        <div className="nk-seg">
-          {[7, 30].map((days) => (
-            <button key={days} type="button" className={range === days ? 'is-active' : ''} onClick={() => { setRange(days); load(days); }}>{t(days === 7 ? 'analytics.days7' : 'analytics.days30')}</button>
+        <div className="nk-screen-actions">
+          <DateRangePicker
+            presets={datePresets}
+            value={{ preset: rangePreset }}
+            onChange={onRangePick}
+          />
+        </div>
+      </header>
+
+      {status === 'loading' && !data ? (
+        <div className="nk-kpi-row">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} height={72} />
           ))}
         </div>
-      </div>
-      <AsyncView status={status} error={error} t={t} onRetry={() => load()}>
-        {funnel ? (
-          <>
-            <div className="nk-stats">
-              <div className="nk-stat"><span>{t('analytics.visits')}</span><strong>{funnel.visits}</strong></div>
-              <div className="nk-stat"><span>{t('analytics.checkouts')}</span><strong>{funnel.checkouts}</strong></div>
-              <div className="nk-stat"><span>{t('analytics.orders')}</span><strong>{funnel.orders}</strong></div>
-              <div className="nk-stat"><span>{t('analytics.revenue')}</span><strong>{money(funnel.revenue)}</strong></div>
+      ) : null}
+
+      {funnel ? (
+        <>
+          <div className="nk-kpi-row">
+            <StatCard label={t('analytics.visits')} value={formatNumber(funnel.visits, locale)} />
+            <StatCard label={t('analytics.checkouts')} value={formatNumber(funnel.checkouts, locale)} />
+            <StatCard label={t('analytics.orders')} value={formatNumber(funnel.orders, locale)} />
+            <StatCard label={t('analytics.revenue')} value={formatMoney(funnel.revenue, locale)} />
+          </div>
+
+          <Card title={t('analytics.funnel')}>
+            <div className="nk-funnel">
+              {funnelSteps.map((step) => (
+                <div key={step.key} className="nk-funnel-step">
+                  <span>{step.label}</span>
+                  <div className="nk-funnel-bar">
+                    <span style={{ width: `${Math.max(4, (step.value / maxFunnel) * 100)}%` }} />
+                  </div>
+                  <strong>{formatNumber(step.value, locale)}</strong>
+                </div>
+              ))}
             </div>
-            <div className="nk-card">
-              <h2>{t('analytics.funnel')}</h2>
-              <div className="nk-funnel">
-                {[
-                  ['analytics.visits', funnel.visits],
-                  ['analytics.checkouts', funnel.checkouts],
-                  ['analytics.orders', funnel.orders],
-                ].map(([key, value]) => (
-                  <div key={key}><span>{t(key)}</span><i style={{ width: `${Math.max(4, (value / max) * 100)}%` }} /><strong>{value}</strong></div>
+            <p className="nk-muted">
+              {t('analytics.conversion')}: {formatNumber(funnel.conversion, locale)}%
+              {' · '}
+              {t('analytics.cod')}: {formatNumber(funnel.cod, locale)}
+              {' · '}
+              {t('analytics.prepaid')}: {formatNumber(funnel.prepaid, locale)}
+            </p>
+          </Card>
+
+          <Card title={t('home.chart')}>
+            {status === 'loading' ? (
+              <Skeleton height={220} />
+            ) : series.length === 0 ? (
+              <p className="nk-muted">{t('home.emptyPages')}</p>
+            ) : (
+              <div className="nk-bars" style={{ height: 220, alignItems: 'flex-end' }}>
+                {series.map((day) => (
+                  <i
+                    key={day.date}
+                    title={`${day.date} ${money(day.revenue)}`}
+                    style={{ height: `${Math.max(2, (day.revenue / seriesMax) * 100)}%`, flex: 1 }}
+                  />
                 ))}
               </div>
-              <p>{t('analytics.conversion')}: {funnel.conversion}% · {t('analytics.cod')}: {funnel.cod} · {t('analytics.prepaid')}: {funnel.prepaid}</p>
-            </div>
-            <div className="nk-card" style={{ marginTop: 12 }}>
-              <h2>{t('analytics.ab')}</h2>
-              <table className="nk-table">
-                <thead>
-                  <tr>
-                    <th>{t('analytics.variant')}</th>
-                    <th>{t('analytics.visits')}</th>
-                    <th>{t('analytics.orders')}</th>
-                    <th>{t('analytics.conversion')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {['a', 'b'].map((key) => {
-                    const row = (data.ab && data.ab[key]) || { visits: 0, orders: 0 };
-                    const rate = row.visits > 0 ? ((row.orders / row.visits) * 100).toFixed(1) : '0.0';
-                    return (
-                      <tr key={key}>
-                        <td>{key.toUpperCase()}</td>
-                        <td>{row.visits}</td>
-                        <td>{row.orders}</td>
-                        <td>{rate}%</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {data.codReconcile ? (
-              <div className="nk-card" style={{ marginTop: 12 }}>
-                <h2>{t('analytics.codReconcile')}</h2>
-                <div className="nk-stats">
-                  <div className="nk-stat"><span>{t('analytics.codExpected')}</span><strong>{money(data.codReconcile.expected)}</strong></div>
-                  <div className="nk-stat"><span>{t('analytics.codReceived')}</span><strong>{money(data.codReconcile.received)}</strong></div>
-                  <div className="nk-stat"><span>{t('analytics.codUnsettled')}</span><strong>{money(data.codReconcile.unsettled)}</strong></div>
-                  <div className="nk-stat"><span>{t('analytics.codOpen')}</span><strong>{data.codReconcile.open}</strong></div>
-                </div>
+            )}
+          </Card>
+
+          <Card title={t('analytics.ab')}>
+            {status === 'loading' ? (
+              <Skeleton height={120} />
+            ) : (
+              <Table
+                columns={[
+                  { key: 'variant', label: t('analytics.variant') },
+                  { key: 'visits', label: t('analytics.visits'), render: (row) => formatNumber(row.visits, locale) },
+                  { key: 'orders', label: t('analytics.orders'), render: (row) => formatNumber(row.orders, locale) },
+                  {
+                    key: 'conversion',
+                    label: t('analytics.conversion'),
+                    render: (row) => `${formatNumber(row.rate, locale)}%`,
+                  },
+                ]}
+                rows={['a', 'b'].map((key) => {
+                  const row = (data.ab && data.ab[key]) || { visits: 0, orders: 0 };
+                  const rate = row.visits > 0 ? ((row.orders / row.visits) * 100).toFixed(1) : '0.0';
+                  return { variant: key.toUpperCase(), visits: row.visits, orders: row.orders, rate };
+                })}
+                rowKey={(row) => row.variant}
+                emptyTitle={t('uikit.empty')}
+              />
+            )}
+          </Card>
+
+          {data.codReconcile ? (
+            <Card title={t('analytics.codReconcile')}>
+              <div className="nk-kpi-row">
+                <StatCard label={t('analytics.codExpected')} value={formatMoney(data.codReconcile.expected, locale)} />
+                <StatCard label={t('analytics.codReceived')} value={formatMoney(data.codReconcile.received, locale)} />
+                <StatCard label={t('analytics.codUnsettled')} value={formatMoney(data.codReconcile.unsettled, locale)} />
+                <StatCard label={t('analytics.codOpen')} value={formatNumber(data.codReconcile.open, locale)} />
               </div>
-            ) : null}
-            {(data.byDistrict || []).length > 0 ? (
-              <div className="nk-card" style={{ marginTop: 12 }}>
-                <h2>{t('analytics.byDistrict')}</h2>
-                <table className="nk-table">
-                  <thead>
-                    <tr>
-                      <th>{t('analytics.area')}</th>
-                      <th>{t('analytics.placed')}</th>
-                      <th>{t('analytics.confirmRate')}</th>
-                      <th>{t('analytics.returnRate')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.byDistrict.map((row) => (
-                      <tr key={row.label}>
-                        <td>{row.label}</td>
-                        <td>{row.placed}</td>
-                        <td>{row.confirmRate}%</td>
-                        <td>{row.returnRate}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-            {(data.byPage || []).length > 0 ? (
-              <div className="nk-card" style={{ marginTop: 12 }}>
-                <h2>{t('analytics.byPage')}</h2>
-                <table className="nk-table">
-                  <thead>
-                    <tr>
-                      <th>{t('pages.name')}</th>
-                      <th>{t('analytics.placed')}</th>
-                      <th>{t('analytics.confirmRate')}</th>
-                      <th>{t('analytics.returnRate')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.byPage.map((row) => (
-                      <tr key={row.id}>
-                        <td>{row.title}</td>
-                        <td>{row.placed}</td>
-                        <td>{row.confirmRate}%</td>
-                        <td>{row.returnRate}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-            <div className="nk-card" style={{ marginTop: 12 }}>
-              <h2>{t('analytics.top')}</h2>
-              {data.topPages.length === 0 ? <p className="nk-muted">{t('home.emptyPages')}</p> : (
-                <table className="nk-table">
-                  <tbody>
-                    {data.topPages.map((page) => (
-                      <tr key={page.id}>
-                        <td>{page.title}</td>
-                        <td>{page.visits} {t('analytics.visits')}</td>
-                        <td>{page.orders}</td>
-                        <td>{money(page.revenue)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </>
-        ) : null}
-      </AsyncView>
+            </Card>
+          ) : null}
+
+          {(data.byDistrict || []).length > 0 ? (
+            <Card title={t('analytics.byDistrict')}>
+              <Table
+                columns={[
+                  { key: 'label', label: t('analytics.area') },
+                  { key: 'placed', label: t('analytics.placed'), render: (row) => formatNumber(row.placed, locale) },
+                  { key: 'confirmRate', label: t('analytics.confirmRate'), render: (row) => `${formatNumber(row.confirmRate, locale)}%` },
+                  { key: 'returnRate', label: t('analytics.returnRate'), render: (row) => `${formatNumber(row.returnRate, locale)}%` },
+                ]}
+                rows={data.byDistrict}
+                rowKey={(row) => row.label}
+              />
+            </Card>
+          ) : null}
+
+          {(data.byPage || []).length > 0 ? (
+            <Card title={t('analytics.byPage')}>
+              <Table
+                columns={[
+                  { key: 'title', label: t('pages.name') },
+                  { key: 'placed', label: t('analytics.placed'), render: (row) => formatNumber(row.placed, locale) },
+                  { key: 'confirmRate', label: t('analytics.confirmRate'), render: (row) => `${formatNumber(row.confirmRate, locale)}%` },
+                  { key: 'returnRate', label: t('analytics.returnRate'), render: (row) => `${formatNumber(row.returnRate, locale)}%` },
+                ]}
+                rows={data.byPage}
+                rowKey={(row) => row.id}
+              />
+            </Card>
+          ) : null}
+
+          <Card title={t('analytics.top')}>
+            <Table
+              loading={status === 'loading'}
+              emptyTitle={t('home.emptyPages')}
+              columns={[
+                { key: 'title', label: t('pages.name') },
+                { key: 'visits', label: t('analytics.visits'), render: (row) => formatNumber(row.visits, locale) },
+                { key: 'orders', label: t('analytics.orders'), render: (row) => formatNumber(row.orders, locale) },
+                { key: 'revenue', label: t('analytics.revenue'), render: (row) => formatMoney(row.revenue, locale) },
+              ]}
+              rows={data.topPages || []}
+              rowKey={(row) => row.id}
+            />
+          </Card>
+        </>
+      ) : status === 'loading' ? (
+        <Skeleton height={240} />
+      ) : null}
     </div>
   );
 }

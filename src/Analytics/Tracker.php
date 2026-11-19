@@ -62,22 +62,115 @@ final class Tracker {
     }
 
     public static function report(int $days): array {
-        $days = in_array($days, [7, 14, 30], true) ? $days : 7;
+        $days = in_array($days, [1, 7, 14, 30], true) ? $days : 7;
         $now = current_time('timestamp');
         $start = wp_date('Y-m-d 00:00:00', $now - ($days - 1) * DAY_IN_SECONDS);
         $today = wp_date('Y-m-d 00:00:00', $now);
+        $prev_start = wp_date('Y-m-d 00:00:00', $now - (2 * $days - 1) * DAY_IN_SECONDS);
+        $funnel = self::funnel($start);
+        $prev = self::funnel_before($prev_start, $start);
+        $today_totals = self::totals($today);
+        $yesterday = self::totals_before(
+            wp_date('Y-m-d 00:00:00', $now - DAY_IN_SECONDS),
+            $today
+        );
 
         return [
             'range' => $days,
-            'today' => self::totals($today),
-            'funnel' => self::funnel($start),
+            'today' => $today_totals,
+            'funnel' => $funnel,
+            'deltas' => [
+                'orders' => self::pct_delta((float) $funnel['orders'], (float) $prev['orders']),
+                'revenue' => self::pct_delta((float) $funnel['revenue'], (float) $prev['revenue']),
+                'conversion' => self::pct_delta((float) $funnel['conversion'], (float) $prev['conversion']),
+            ],
+            'todayDeltas' => [
+                'orders' => self::pct_delta((float) $today_totals['orders'], (float) $yesterday['orders']),
+                'revenue' => self::pct_delta((float) $today_totals['revenue'], (float) $yesterday['revenue']),
+                'conversion' => self::pct_delta((float) $today_totals['conversion'], (float) $yesterday['conversion']),
+            ],
             'series' => self::series($start, $days),
             'topPages' => self::top_pages($start),
-            'recentOrders' => Orders::query('', '', 8)['orders'],
+            'recentOrders' => Orders::query(['per_page' => 8, 'page' => 1])['orders'],
             'ab' => self::ab_split($start),
             'codReconcile' => self::cod_reconcile($start),
+            'codOpen' => self::cod_open_balance(),
             'byDistrict' => self::ops_by('district_name', $start),
             'byPage' => self::ops_by_page($start),
+        ];
+    }
+
+    private static function pct_delta(float $current, float $previous): ?int {
+        if ($previous <= 0) {
+            return null;
+        }
+        return (int) round(($current - $previous) / $previous * 100);
+    }
+
+    private static function funnel_before(string $start, string $end): array {
+        global $wpdb;
+        $statuses = self::status_sql();
+        $row = $wpdb->get_row($wpdb->prepare(
+            'SELECT COUNT(*) orders, COALESCE(SUM(total),0) revenue, SUM(CASE WHEN payment_method = %s THEN 1 ELSE 0 END) cod FROM ' . Orders::table() . " WHERE created_at >= %s AND created_at < %s AND status IN ($statuses)",
+            'cod',
+            $start,
+            $end
+        ), ARRAY_A);
+        $orders = (int) ($row['orders'] ?? 0);
+        $visits = self::stage_sessions_between('page_view', $start, $end);
+        $buyers = self::buyer_sessions_between($start, $end);
+        return [
+            'orders' => $orders,
+            'revenue' => (float) ($row['revenue'] ?? 0),
+            'conversion' => $visits > 0 ? round($buyers / $visits * 100, 1) : 0,
+        ];
+    }
+
+    private static function totals_before(string $start, string $end): array {
+        return self::funnel_before($start, $end);
+    }
+
+    private static function stage_sessions_between(string $event, string $start, string $end): int {
+        global $wpdb;
+        $statuses = self::status_sql();
+        $sql = 'SELECT session_id FROM ' . self::table() . ' WHERE event_name = %s AND created_at >= %s AND created_at < %s AND session_id <> %s'
+            . ' UNION SELECT session_id FROM ' . Orders::table() . " WHERE created_at >= %s AND created_at < %s AND session_id <> %s AND status IN ($statuses)";
+        return (int) $wpdb->get_var($wpdb->prepare(
+            $sql,
+            $event,
+            $start,
+            $end,
+            '',
+            $start,
+            $end,
+            ''
+        ));
+    }
+
+    private static function buyer_sessions_between(string $start, string $end): int {
+        global $wpdb;
+        $statuses = self::status_sql();
+        return (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(DISTINCT session_id) FROM ' . Orders::table() . " WHERE created_at >= %s AND created_at < %s AND session_id <> %s AND status IN ($statuses)",
+            $start,
+            $end,
+            ''
+        ));
+    }
+
+    private static function cod_open_balance(): array {
+        global $wpdb;
+        $row = $wpdb->get_row(
+            "SELECT COUNT(*) open_count,
+                COALESCE(SUM(CASE WHEN IFNULL(cod_settled, 0) = 0 THEN COALESCE(NULLIF(collect_amount, 0), total) ELSE 0 END), 0) unsettled
+             FROM " . Orders::table() . "
+             WHERE payment_method = 'cod'
+               AND status IN ('confirmed','paid','shipped','delivered')",
+            ARRAY_A
+        );
+        return [
+            'unsettled' => (float) ($row['unsettled'] ?? 0),
+            'open' => (int) ($row['open_count'] ?? 0),
         ];
     }
 
@@ -184,9 +277,9 @@ final class Tracker {
         global $wpdb;
         $row = $wpdb->get_row($wpdb->prepare(
             "SELECT COUNT(*) open_count,
-                COALESCE(SUM(collect_amount),0) expected,
-                COALESCE(SUM(CASE WHEN cod_settled = 1 THEN COALESCE(cod_received, collect_amount) ELSE 0 END),0) received,
-                COALESCE(SUM(CASE WHEN cod_settled = 0 THEN collect_amount ELSE 0 END),0) unsettled
+                COALESCE(SUM(COALESCE(NULLIF(collect_amount, 0), total)),0) expected,
+                COALESCE(SUM(CASE WHEN IFNULL(cod_settled, 0) = 1 THEN COALESCE(cod_received, NULLIF(collect_amount, 0), total) ELSE 0 END),0) received,
+                COALESCE(SUM(CASE WHEN IFNULL(cod_settled, 0) = 0 THEN COALESCE(NULLIF(collect_amount, 0), total) ELSE 0 END),0) unsettled
              FROM " . Orders::table() . "
              WHERE payment_method = 'cod' AND created_at >= %s AND status IN ('shipped','delivered','paid','confirmed')",
             $start
@@ -284,12 +377,15 @@ final class Tracker {
         global $wpdb;
         $statuses = self::status_sql();
         $rows = $wpdb->get_results($wpdb->prepare(
-            'SELECT DATE(created_at) day, COALESCE(SUM(total),0) revenue FROM ' . Orders::table() . " WHERE created_at >= %s AND status IN ($statuses) GROUP BY DATE(created_at)",
+            'SELECT DATE(created_at) day, COUNT(*) orders, COALESCE(SUM(total),0) revenue FROM ' . Orders::table() . " WHERE created_at >= %s AND status IN ($statuses) GROUP BY DATE(created_at)",
             $start
         ), ARRAY_A);
         $map = [];
         foreach ((array) $rows as $row) {
-            $map[$row['day']] = (float) $row['revenue'];
+            $map[$row['day']] = [
+                'orders' => (int) $row['orders'],
+                'revenue' => (float) $row['revenue'],
+            ];
         }
         $series = [];
         $stamp = strtotime($start);
@@ -297,7 +393,8 @@ final class Tracker {
             $day = wp_date('Y-m-d', $stamp + $i * DAY_IN_SECONDS);
             $series[] = [
                 'date' => $day,
-                'revenue' => $map[$day] ?? 0,
+                'orders' => $map[$day]['orders'] ?? 0,
+                'revenue' => $map[$day]['revenue'] ?? 0,
             ];
         }
         return $series;

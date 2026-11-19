@@ -28,6 +28,9 @@ final class SanitizerTest extends TestCase {
         $this->assertSame(60.0, $offer['shippingInside']);
         $this->assertSame(80.0, $offer['shippingOutside']);
         $this->assertSame(80.0, $offer['shipping']);
+        $this->assertSame(80.0, $offer['shippingDefault']);
+        $this->assertCount(2, $offer['shippingZones']);
+        $this->assertSame(['47'], $offer['shippingZones'][0]['districtIds']);
     }
 
     public function test_seo_limits(): void {

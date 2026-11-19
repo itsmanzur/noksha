@@ -1,13 +1,18 @@
 {
   "name": "noksha",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.5",
   "scripts": {
     "build": "wp-scripts build",
-    "start": "wp-scripts start"
+    "start": "wp-scripts start",
+    "zip": "node bin/make-zip.js"
   },
   "devDependencies": {
     "@wordpress/env": "^10.24.0",
-    "@wordpress/scripts": "30.24.0"
+    "@wordpress/scripts": "30.24.0",
+    "archiver": "^7.0.1"
+  },
+  "dependencies": {
+    "lucide-react": "^1.76.0"
   }
 }

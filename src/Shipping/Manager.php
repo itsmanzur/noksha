@@ -32,10 +32,21 @@ final class Manager {
         return $ready;
     }
 
-    public function book(int $order_id, string $courier_id): array|\WP_Error {
+    public function book(int $order_id, string $courier_id, bool $force = false): array|\WP_Error {
         $order = Orders::find($order_id);
         if (!$order) {
             return new \WP_Error('noksha_not_found', 'Order not found.', ['status' => 404]);
+        }
+        $status = (string) ($order['status'] ?? '');
+        if (in_array($status, ['cancelled', 'returned', 'delivered'], true)) {
+            return new \WP_Error('noksha_not_bookable', 'This order cannot be booked.', ['status' => 409]);
+        }
+        if (!$force && ($order['consignment_id'] ?? '') !== '') {
+            return new \WP_Error(
+                'noksha_already_booked',
+                sprintf('Already booked with %s.', (string) ($order['courier'] ?: 'courier')),
+                ['status' => 409]
+            );
         }
         $courier = $this->get($courier_id);
         if (!$courier || !$courier->ready()) {

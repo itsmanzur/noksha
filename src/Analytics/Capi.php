@@ -52,11 +52,24 @@ final class Capi {
         $name = (string) ($offer['productName'] ?? '');
         if ($name !== '') {
             $custom['content_name'] = $name;
+        }
+        $items = \Noksha\Orders\Repository::items((int) ($order['id'] ?? 0));
+        if ($items !== []) {
+            $custom['contents'] = array_map(static function (array $item) use ($order): array {
+                return [
+                    'id' => (string) ($order['page_id'] ?? ''),
+                    'quantity' => (int) ($item['qty'] ?? 1),
+                    'item_price' => (float) ($item['price'] ?? 0),
+                ];
+            }, $items);
+            $custom['num_items'] = (int) ($order['qty'] ?? array_sum(array_map(static fn ($item) => (int) ($item['qty'] ?? 1), $items)));
+        } elseif ($name !== '') {
             $custom['contents'] = [[
                 'id' => (string) ($order['page_id'] ?? ''),
                 'quantity' => (int) ($order['qty'] ?? 1),
                 'item_price' => (float) ($order['subtotal'] ?? 0) / max(1, (int) ($order['qty'] ?? 1)),
             ]];
+            $custom['num_items'] = (int) ($order['qty'] ?? 1);
         }
 
         $payload = [

@@ -141,14 +141,18 @@ final class Sanitizer {
         $inside = array_key_exists('shippingInside', $offer)
             ? self::money($offer['shippingInside'])
             : $outside;
+        $default_shipping = self::money($offer['shippingDefault'] ?? $outside);
+        $zones = self::shipping_zones($offer, $inside, $outside, $default_shipping);
         $bump = is_array($offer['bump'] ?? null) ? $offer['bump'] : [];
         return [
             'productName' => self::short($offer['productName'] ?? '', 180),
             'price' => self::money($offer['price'] ?? 0),
             'compareAt' => self::money($offer['compareAt'] ?? 0),
-            'shipping' => $outside,
+            'shipping' => $default_shipping,
+            'shippingDefault' => $default_shipping,
             'shippingInside' => $inside,
             'shippingOutside' => $outside,
+            'shippingZones' => $zones,
             'imageUrl' => self::url($offer['imageUrl'] ?? ''),
             'bump' => [
                 'enabled' => !empty($bump['enabled']),
@@ -156,6 +160,63 @@ final class Sanitizer {
                 'price' => self::money($bump['price'] ?? 0),
                 'imageUrl' => self::url($bump['imageUrl'] ?? ''),
                 'checkedDefault' => !empty($bump['checkedDefault']),
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array{id:string,label:string,price:float,districtIds:list<string>,upazilaIds:list<string>}>
+     */
+    private static function shipping_zones(array $offer, float $inside, float $outside, float $default): array {
+        $zones = [];
+        if (isset($offer['shippingZones']) && is_array($offer['shippingZones']) && $offer['shippingZones'] !== []) {
+            foreach (array_slice($offer['shippingZones'], 0, 20) as $zone) {
+                if (!is_array($zone)) {
+                    continue;
+                }
+                $id = sanitize_key((string) ($zone['id'] ?? ''));
+                if ($id === '') {
+                    $id = 'z_' . wp_generate_password(6, false, false);
+                }
+                $districts = [];
+                foreach ((array) ($zone['districtIds'] ?? []) as $did) {
+                    $did = sanitize_text_field((string) $did);
+                    if ($did !== '') {
+                        $districts[] = $did;
+                    }
+                }
+                $upazilas = [];
+                foreach ((array) ($zone['upazilaIds'] ?? []) as $uid) {
+                    $uid = sanitize_text_field((string) $uid);
+                    if ($uid !== '') {
+                        $upazilas[] = $uid;
+                    }
+                }
+                $zones[] = [
+                    'id' => $id,
+                    'label' => self::short($zone['label'] ?? '', 80),
+                    'price' => self::money($zone['price'] ?? $default),
+                    'districtIds' => array_values(array_unique($districts)),
+                    'upazilaIds' => array_values(array_unique($upazilas)),
+                ];
+            }
+            return $zones;
+        }
+        // Migrate legacy inside/outside Dhaka into two zones.
+        return [
+            [
+                'id' => 'inside_dhaka',
+                'label' => 'Inside Dhaka',
+                'price' => $inside,
+                'districtIds' => ['47'],
+                'upazilaIds' => [],
+            ],
+            [
+                'id' => 'outside_dhaka',
+                'label' => 'Outside Dhaka',
+                'price' => $outside,
+                'districtIds' => [],
+                'upazilaIds' => [],
             ],
         ];
     }
@@ -273,28 +334,49 @@ final class Sanitizer {
         if ($html === '' || stripos($html, '<iframe') === false) {
             return $html;
         }
-        return (string) preg_replace_callback(
-            '/<iframe\b[^>]*>.*?<\/iframe>/is',
-            static function (array $match): string {
-                if (!preg_match('/\bsrc=(["\'])(.*?)\1/i', $match[0], $src)) {
-                    return '';
-                }
-                $url = html_entity_decode($src[2], ENT_QUOTES | ENT_HTML5);
-                $host = strtolower((string) (wp_parse_url($url, PHP_URL_HOST) ?? ''));
-                $ok = [
-                    'www.youtube.com',
-                    'youtube.com',
-                    'www.youtube-nocookie.com',
-                    'youtube-nocookie.com',
-                    'player.vimeo.com',
-                    'www.google.com',
-                    'maps.google.com',
-                    'www.google.com.bd',
-                ];
-                return in_array($host, $ok, true) ? $match[0] : '';
-            },
-            $html
-        );
+        $ok = [
+            'www.youtube.com',
+            'youtube.com',
+            'www.youtube-nocookie.com',
+            'youtube-nocookie.com',
+            'player.vimeo.com',
+        ];
+        $wrapped = '<div id="noksha-html-root">' . $html . '</div>';
+        $previous = libxml_use_internal_errors(true);
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>' . $wrapped, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded) {
+            return (string) preg_replace('/<iframe\b[^>]*>.*?<\/iframe>|<iframe\b[^>]*>?/is', '', $html);
+        }
+        $iframes = $dom->getElementsByTagName('iframe');
+        $remove = [];
+        foreach ($iframes as $iframe) {
+            if (!$iframe instanceof \DOMElement) {
+                continue;
+            }
+            $src = $iframe->getAttribute('src');
+            $host = strtolower((string) (wp_parse_url(html_entity_decode($src, ENT_QUOTES | ENT_HTML5), PHP_URL_HOST) ?? ''));
+            if (!in_array($host, $ok, true)) {
+                $remove[] = $iframe;
+                continue;
+            }
+            $iframe->setAttribute('loading', 'lazy');
+            $iframe->removeAttribute('style');
+        }
+        foreach ($remove as $node) {
+            $node->parentNode?->removeChild($node);
+        }
+        $root = $dom->getElementById('noksha-html-root');
+        if (!$root) {
+            return '';
+        }
+        $out = '';
+        foreach ($root->childNodes as $child) {
+            $out .= $dom->saveHTML($child);
+        }
+        return $out;
     }
 
     private static function url($value): string {

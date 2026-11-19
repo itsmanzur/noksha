@@ -8,7 +8,7 @@
 namespace Noksha;
 
 final class Activator {
-    public const DB_VERSION = '6';
+    public const DB_VERSION = '7';
 
     public static function activate(): void {
         Caps::install();
@@ -48,14 +48,25 @@ final class Activator {
 
     public static function maybe_upgrade(): void {
         $installed = (string) get_option('noksha_db_version', '');
-        if ($installed === self::DB_VERSION && self::schema_ready()) {
-            return;
+        if ($installed === self::DB_VERSION) {
+            // Expensive SHOW COLUMNS only in admin, at most once per day.
+            if (!is_admin()) {
+                return;
+            }
+            if (get_transient('noksha_schema_ok') === '1') {
+                return;
+            }
+            if (self::schema_ready()) {
+                set_transient('noksha_schema_ok', '1', DAY_IN_SECONDS);
+                return;
+            }
         }
         Caps::install();
         self::migrate_event_column();
         self::install_tables();
         self::migrate_event_column();
         self::migrate_order_columns();
+        \Noksha\Fraud\Blacklist::migrate_from_option();
         if (get_option('noksha_onboarding') === false) {
             add_option('noksha_onboarding', [
                 'dismissed' => false,
@@ -65,6 +76,7 @@ final class Activator {
             ], '', false);
         }
         update_option('noksha_db_version', self::DB_VERSION, true);
+        set_transient('noksha_schema_ok', '1', DAY_IN_SECONDS);
     }
 
     private static function schema_ready(): bool {
@@ -74,8 +86,14 @@ final class Activator {
         if ($found !== $orders) {
             return false;
         }
-        foreach (['otp_verified', 'variant', 'cod_settled'] as $column) {
+        foreach (['otp_verified', 'variant', 'cod_settled', 'call_attempts', 'cod_short'] as $column) {
             if (!$wpdb->get_var("SHOW COLUMNS FROM {$orders} LIKE '{$column}'")) {
+                return false;
+            }
+        }
+        foreach (['noksha_leads', 'noksha_order_notes', 'noksha_blacklist'] as $suffix) {
+            $table = $wpdb->prefix . $suffix;
+            if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table))) !== $table) {
                 return false;
             }
         }
@@ -107,6 +125,9 @@ final class Activator {
             'cod_received' => 'decimal(12,2) NULL',
             'cod_settled' => 'tinyint(1) NOT NULL DEFAULT 0',
             'cod_settled_at' => 'datetime NULL',
+            'cod_short' => 'decimal(12,2) NOT NULL DEFAULT 0.00',
+            'call_attempts' => 'int(11) unsigned NOT NULL DEFAULT 0',
+            'last_call_at' => 'datetime NULL',
         ];
         foreach ($columns as $name => $definition) {
             $exists = $wpdb->get_var("SHOW COLUMNS FROM {$table} LIKE '{$name}'");
@@ -115,6 +136,7 @@ final class Activator {
             }
         }
         $wpdb->query("UPDATE {$table} SET collect_amount = total WHERE collect_amount = 0 AND total > 0");
+        $wpdb->query("UPDATE {$table} SET cod_settled = 0 WHERE cod_settled IS NULL");
 
         $events = $wpdb->prefix . 'noksha_events';
         $events_found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($events)));
@@ -159,6 +181,8 @@ final class Activator {
         $payments = $wpdb->prefix . 'noksha_payments';
         $events = $wpdb->prefix . 'noksha_events';
         $leads = $wpdb->prefix . 'noksha_leads';
+        $notes = $wpdb->prefix . 'noksha_order_notes';
+        $blacklist = $wpdb->prefix . 'noksha_blacklist';
 
         $sql = "CREATE TABLE {$orders} (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -196,6 +220,9 @@ final class Activator {
             cod_received decimal(12,2) NULL,
             cod_settled tinyint(1) NOT NULL DEFAULT 0,
             cod_settled_at datetime NULL,
+            cod_short decimal(12,2) NOT NULL DEFAULT 0.00,
+            call_attempts int(11) unsigned NOT NULL DEFAULT 0,
+            last_call_at datetime NULL,
             customer_note text NULL,
             session_id varchar(64) NOT NULL DEFAULT '',
             language varchar(8) NOT NULL DEFAULT 'en',
@@ -254,6 +281,24 @@ final class Activator {
             PRIMARY KEY  (id),
             KEY page_phone (page_id, phone),
             KEY converted (converted, updated_at)
+        ) {$charset};
+        CREATE TABLE {$notes} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            order_id bigint(20) unsigned NOT NULL DEFAULT 0,
+            user_id bigint(20) unsigned NOT NULL DEFAULT 0,
+            note text NOT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY  (id),
+            KEY order_id (order_id)
+        ) {$charset};
+        CREATE TABLE {$blacklist} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            phone varchar(20) NOT NULL DEFAULT '',
+            note varchar(191) NOT NULL DEFAULT '',
+            created_at datetime NOT NULL,
+            created_by bigint(20) unsigned NOT NULL DEFAULT 0,
+            PRIMARY KEY  (id),
+            UNIQUE KEY phone (phone)
         ) {$charset};";
 
         $wpdb->hide_errors();
@@ -266,7 +311,7 @@ final class Activator {
         }
 
         $missing = [];
-        foreach (['noksha_orders', 'noksha_order_items', 'noksha_payments', 'noksha_events', 'noksha_leads'] as $suffix) {
+        foreach (['noksha_orders', 'noksha_order_items', 'noksha_payments', 'noksha_events', 'noksha_leads', 'noksha_order_notes', 'noksha_blacklist'] as $suffix) {
             $name = $wpdb->prefix . $suffix;
             $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($name)));
             if ($found !== $name) {

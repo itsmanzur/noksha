@@ -76,14 +76,10 @@ final class Webhooks {
         $secrets = Options::secrets();
         $expected = (string) ($secrets['courier_webhook_secret'] ?? '');
         if ($expected === '') {
-            // Optional secret: leave empty only on trusted networks / during setup.
-            return true;
+            return false;
         }
-        $got = (string) ($request->get_header('x-noksha-webhook-secret')
-            ?: $request->get_header('x-webhook-secret')
-            ?: $request->get_param('secret')
-            ?: '');
-        return hash_equals($expected, $got);
+        $got = (string) ($request->get_header('x-noksha-webhook-secret') ?: '');
+        return $got !== '' && hash_equals($expected, $got);
     }
 
     /**

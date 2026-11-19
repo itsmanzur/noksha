@@ -87,7 +87,7 @@ final class WalletVerifier {
     }
 
     /**
-     * Best-effort verify right after checkout (non-blocking for the customer path).
+     * Schedule async verify so checkout is not blocked by wallet APIs.
      */
     public static function maybe_auto_verify(int $order_id): void {
         $order = Orders::find($order_id);
@@ -96,6 +96,22 @@ final class WalletVerifier {
         }
         $method = (string) ($order['payment_method'] ?? '');
         if (!self::ready($method)) {
+            return;
+        }
+        if (!wp_next_scheduled('noksha_verify_trx', [$order_id])) {
+            wp_schedule_single_event(time() + 5, 'noksha_verify_trx', [$order_id]);
+            wp_schedule_single_event(time() + 120, 'noksha_verify_trx', [$order_id]);
+            wp_schedule_single_event(time() + 600, 'noksha_verify_trx', [$order_id]);
+        }
+    }
+
+    public static function register_hooks(): void {
+        add_action('noksha_verify_trx', [self::class, 'cron_verify']);
+    }
+
+    public static function cron_verify(int $order_id): void {
+        $order = Orders::find($order_id);
+        if (!$order || (int) ($order['trx_verified'] ?? 0) === 1) {
             return;
         }
         self::verify_order($order_id);
@@ -143,6 +159,10 @@ final class WalletVerifier {
     }
 
     private static function bkash_token(): string|\WP_Error {
+        $cached = get_transient('noksha_bkash_token');
+        if (is_string($cached) && $cached !== '') {
+            return $cached;
+        }
         $secrets = Options::secrets();
         $base = self::bkash_base();
         $response = wp_remote_post($base . '/tokenized/checkout/token/grant', [
@@ -166,6 +186,8 @@ final class WalletVerifier {
         if ($token === '') {
             return new \WP_Error('noksha_bkash_token', 'Could not get bKash token.');
         }
+        $expires = max(60, (int) ($data['expires_in'] ?? 3600) - 60);
+        set_transient('noksha_bkash_token', $token, $expires);
         return $token;
     }
 

@@ -142,7 +142,51 @@ final class Options {
         if (!is_array($stored)) {
             $stored = [];
         }
-        return array_merge(self::default_secrets(), $stored);
+        $secrets = array_merge(self::default_secrets(), $stored);
+        foreach (self::secret_constants() as $key => $constant) {
+            if (defined($constant)) {
+                $secrets[$key] = (string) constant($constant);
+            }
+        }
+        return $secrets;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function secret_constants(): array {
+        return [
+            'sslcommerz_store_id' => 'NOKSHA_SSLCOMMERZ_STORE_ID',
+            'sslcommerz_store_passwd' => 'NOKSHA_SSLCOMMERZ_PASS',
+            'meta_capi_token' => 'NOKSHA_META_CAPI_TOKEN',
+            'sms_api_key' => 'NOKSHA_SMS_API_KEY',
+            'steadfast_api_key' => 'NOKSHA_STEADFAST_API_KEY',
+            'steadfast_secret_key' => 'NOKSHA_STEADFAST_SECRET_KEY',
+            'pathao_client_id' => 'NOKSHA_PATHAO_CLIENT_ID',
+            'pathao_client_secret' => 'NOKSHA_PATHAO_CLIENT_SECRET',
+            'pathao_username' => 'NOKSHA_PATHAO_USERNAME',
+            'pathao_password' => 'NOKSHA_PATHAO_PASSWORD',
+            'redx_api_key' => 'NOKSHA_REDX_API_KEY',
+            'courier_webhook_secret' => 'NOKSHA_COURIER_WEBHOOK_SECRET',
+            'bkash_app_key' => 'NOKSHA_BKASH_APP_KEY',
+            'bkash_app_secret' => 'NOKSHA_BKASH_APP_SECRET',
+            'bkash_username' => 'NOKSHA_BKASH_USERNAME',
+            'bkash_password' => 'NOKSHA_BKASH_PASSWORD',
+            'nagad_merchant_id' => 'NOKSHA_NAGAD_MERCHANT_ID',
+            'nagad_merchant_private_key' => 'NOKSHA_NAGAD_MERCHANT_PRIVATE_KEY',
+            'nagad_pg_public_key' => 'NOKSHA_NAGAD_PG_PUBLIC_KEY',
+            'nagad_verify_url' => 'NOKSHA_NAGAD_VERIFY_URL',
+        ];
+    }
+
+    public static function locked_secrets(): array {
+        $locked = [];
+        foreach (self::secret_constants() as $key => $constant) {
+            if (defined($constant)) {
+                $locked[$key] = true;
+            }
+        }
+        return $locked;
     }
 
     public static function update_settings(array $input): array {
@@ -199,43 +243,37 @@ final class Options {
 
         update_option(self::SETTINGS, $next, false);
 
-        $secrets = self::secrets();
-        if (isset($input['sslcommerz_store_id'])) {
-            $secrets['sslcommerz_store_id'] = sanitize_text_field((string) $input['sslcommerz_store_id']);
+        $secrets = get_option(self::SECRETS, []);
+        if (!is_array($secrets)) {
+            $secrets = [];
         }
-        $password = (string) ($input['sslcommerz_store_passwd'] ?? '');
-        if ($password !== '') {
-            $secrets['sslcommerz_store_passwd'] = $password;
+        $secrets = array_merge(self::default_secrets(), $secrets);
+        $locked = self::locked_secrets();
+        $clear = [];
+        if (isset($input['clear_secrets']) && is_array($input['clear_secrets'])) {
+            foreach ($input['clear_secrets'] as $key) {
+                $clear[(string) $key] = true;
+            }
         }
-        foreach ([
-            'meta_capi_token',
-            'sms_api_key',
-            'steadfast_api_key',
-            'steadfast_secret_key',
-            'pathao_client_id',
-            'pathao_client_secret',
-            'pathao_username',
-            'pathao_password',
-            'redx_api_key',
-            'courier_webhook_secret',
-            'bkash_app_key',
-            'bkash_app_secret',
-            'bkash_username',
-            'bkash_password',
-            'nagad_merchant_id',
-            'nagad_merchant_private_key',
-            'nagad_pg_public_key',
-            'nagad_verify_url',
-        ] as $secret_key) {
+        $secret_keys = array_keys(self::default_secrets());
+        foreach ($secret_keys as $secret_key) {
+            if (!empty($locked[$secret_key])) {
+                continue;
+            }
+            if (!empty($clear[$secret_key]) || (array_key_exists($secret_key, $input) && $input[$secret_key] === null)) {
+                $secrets[$secret_key] = '';
+                continue;
+            }
             if (!array_key_exists($secret_key, $input)) {
                 continue;
             }
             $value = trim((string) $input[$secret_key]);
-            if ($value !== '') {
-                $secrets[$secret_key] = $secret_key === 'nagad_verify_url'
-                    ? esc_url_raw($value)
-                    : sanitize_text_field($value);
+            if ($value === '') {
+                continue;
             }
+            $secrets[$secret_key] = $secret_key === 'nagad_verify_url'
+                ? esc_url_raw($value)
+                : sanitize_text_field($value);
         }
         update_option(self::SECRETS, $secrets, false);
 
@@ -276,6 +314,13 @@ final class Options {
         $settings['shipping'] = \Noksha\Shipping\Manager::public_status();
         $settings['onboarding'] = self::onboarding();
         $settings['can_settings'] = Caps::can_settings();
+        $settings['locked_by_constant'] = self::locked_secrets();
+        $settings['has_secrets'] = [];
+        foreach (array_keys(self::default_secrets()) as $key) {
+            if (str_contains($key, 'passwd') || str_contains($key, 'password') || str_contains($key, 'secret') || str_contains($key, 'token') || str_contains($key, 'private') || str_contains($key, 'key')) {
+                $settings['has_secrets'][$key] = (self::secrets()[$key] ?? '') !== '';
+            }
+        }
         return $settings;
     }
 
@@ -285,7 +330,9 @@ final class Options {
             $number = '0' . substr($number, 3);
         }
         return [
-            'enabled' => !empty($input['enabled']),
+            'enabled' => array_key_exists('enabled', $input)
+                ? !empty($input['enabled'])
+                : !empty($current['enabled']),
             'number' => $number,
             'instructions' => sanitize_textarea_field((string) ($input['instructions'] ?? ($current['instructions'] ?? ''))),
             'auto_verify' => array_key_exists('auto_verify', $input)

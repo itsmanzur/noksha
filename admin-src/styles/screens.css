@@ -1,0 +1,504 @@
+/* Shared screen layout helpers for Prompt 4 redesigns */
+.nk-screen {
+  display: grid;
+  gap: var(--nk-space-5);
+}
+
+.nk-screen-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nk-space-3);
+}
+
+.nk-screen-header .nk-ui-date-range {
+  flex: 0 1 auto;
+}
+
+.nk-screen-header h1 {
+  margin: 0;
+  font-size: var(--nk-text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.nk-screen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nk-space-2);
+  align-items: center;
+}
+
+.nk-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nk-space-2);
+  align-items: flex-end;
+}
+
+.nk-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--nk-space-3);
+}
+
+.nk-split-2 {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: var(--nk-space-4);
+}
+
+.nk-split-brand {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: var(--nk-space-5);
+}
+
+.nk-grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--nk-space-4);
+}
+
+.nk-page-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nk-space-3);
+  padding: var(--nk-space-3);
+  background: var(--nk-surface);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius);
+  box-shadow: var(--nk-shadow-sm);
+}
+
+.nk-page-card-thumb {
+  aspect-ratio: 16 / 10;
+  border-radius: var(--nk-radius-sm);
+  background: var(--nk-surface-2);
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--nk-border);
+}
+
+.nk-page-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nk-space-2);
+  color: var(--nk-text-muted);
+  font-size: var(--nk-text-sm);
+}
+
+.nk-bulk-bar {
+  position: sticky;
+  bottom: var(--nk-space-3);
+  z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nk-space-2);
+  align-items: center;
+  padding: var(--nk-space-3);
+  background: var(--nk-surface);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius);
+  box-shadow: var(--nk-shadow-md);
+}
+
+.nk-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nk-space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nk-action-needed {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--nk-space-2);
+}
+
+.nk-action-needed button,
+.nk-action-needed a {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: var(--nk-space-3);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-sm);
+  background: var(--nk-surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.nk-action-needed strong {
+  font-size: var(--nk-text-xl);
+}
+
+.nk-checklist {
+  display: grid;
+  gap: var(--nk-space-2);
+}
+
+.nk-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: var(--nk-space-3);
+  padding: var(--nk-space-3);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-sm);
+  background: var(--nk-surface-2);
+}
+
+.nk-checklist-item.is-done {
+  opacity: 0.72;
+}
+
+.nk-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--nk-gray-200);
+  overflow: hidden;
+}
+
+.nk-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--nk-brand);
+}
+
+.nk-chart {
+  width: 100%;
+  height: 220px;
+}
+
+.nk-funnel {
+  display: grid;
+  gap: var(--nk-space-2);
+}
+
+.nk-funnel-step {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: var(--nk-space-3);
+  align-items: center;
+}
+
+.nk-funnel-bar {
+  height: 28px;
+  border-radius: var(--nk-radius-sm);
+  background: var(--nk-brand-subtle);
+  overflow: hidden;
+}
+
+.nk-funnel-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--nk-brand);
+}
+
+.nk-editor-shell {
+  display: grid;
+  grid-template-rows: 56px minmax(0, 1fr);
+  min-height: calc(100vh - 32px);
+  background: var(--nk-bg);
+}
+
+.nk-editor-top {
+  display: flex;
+  align-items: center;
+  gap: var(--nk-space-2);
+  padding: 0 var(--nk-space-3);
+  background: var(--nk-surface);
+  border-bottom: 1px solid var(--nk-border);
+}
+
+.nk-editor-cols {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
+  min-height: 0;
+}
+
+.nk-editor-pane {
+  overflow: auto;
+  background: var(--nk-surface);
+  border-right: 1px solid var(--nk-border);
+  padding: var(--nk-space-3);
+}
+
+.nk-editor-pane:last-child {
+  border-right: 0;
+  border-left: 1px solid var(--nk-border);
+}
+
+.nk-editor-preview {
+  overflow: auto;
+  display: grid;
+  justify-items: center;
+  padding: var(--nk-space-4);
+  background: var(--nk-bg);
+}
+
+.nk-editor-frame {
+  width: 100%;
+  max-width: 100%;
+  height: min(80vh, 900px);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius);
+  background: #fff;
+}
+
+.nk-editor-frame.is-phone { max-width: 390px; }
+.nk-editor-frame.is-tablet { max-width: 768px; }
+.nk-editor-frame.is-desktop { max-width: 1100px; }
+
+.nk-editor-frame .nk-editor-iframe,
+.nk-editor-frame iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  border: 0;
+  display: block;
+}
+
+.nk-editor-title-block {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 2px !important;
+}
+
+.nk-editor-title-input {
+  font: inherit;
+  font-weight: 600;
+  border: 0;
+  background: transparent;
+  padding: 4px 6px;
+  border-radius: var(--nk-radius-sm);
+  min-width: 12ch;
+}
+
+.nk-editor-title-input:hover,
+.nk-editor-title-input:focus {
+  outline: 2px solid var(--nk-brand);
+  outline-offset: 1px;
+}
+
+.nk-editor-slug {
+  font-size: var(--nk-text-xs);
+  padding-left: 6px;
+}
+
+.nk-editor-top-actions {
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.nk-editor-publish-split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.nk-editor-publish-menu-btn {
+  border: 1px solid var(--nk-border);
+  border-left: 0;
+  border-radius: 0 var(--nk-radius-sm) var(--nk-radius-sm) 0;
+  background: var(--nk-surface);
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.nk-editor-publish-split .nk-ui-btn.is-primary {
+  border-radius: var(--nk-radius-sm) 0 0 var(--nk-radius-sm);
+}
+
+.nk-editor-publish-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 160px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius);
+  background: var(--nk-surface);
+  box-shadow: var(--nk-shadow-md);
+}
+
+.nk-editor-publish-menu button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: var(--nk-radius-sm);
+  font: inherit;
+  cursor: pointer;
+}
+
+.nk-editor-publish-menu button:hover {
+  background: var(--nk-brand-subtle);
+}
+
+.nk-editor-inspector .nk-ui-tabs {
+  gap: var(--nk-space-3);
+}
+
+.nk-editor-shell.nk-ed {
+  margin: -20px;
+  min-height: calc(100vh - 88px);
+}
+
+.nk-editor-shell.nk-ed.is-full {
+  height: 100vh;
+  min-height: 100vh;
+}
+
+.nk-section-row {
+  display: flex;
+  align-items: center;
+  gap: var(--nk-space-2);
+  padding: 8px;
+  border-radius: var(--nk-radius-sm);
+  cursor: grab;
+}
+
+.nk-section-row.is-active {
+  background: var(--nk-brand-subtle);
+}
+
+.nk-settings-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--nk-space-5);
+}
+
+.nk-settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nk-settings-nav button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: var(--nk-radius-sm);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.nk-settings-nav button.is-active {
+  background: var(--nk-brand-subtle);
+  color: var(--nk-brand);
+  font-weight: 600;
+}
+
+.nk-sticky-save {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--nk-space-2);
+  padding: var(--nk-space-3);
+  background: color-mix(in srgb, var(--nk-surface) 92%, transparent);
+  border-top: 1px solid var(--nk-border);
+  backdrop-filter: blur(8px);
+}
+
+.nk-welcome {
+  min-height: calc(100vh - 32px);
+  display: grid;
+  place-items: center;
+  padding: var(--nk-space-6);
+  background: radial-gradient(circle at top left, var(--nk-brand-subtle), var(--nk-bg) 55%);
+}
+
+.nk-welcome-card {
+  width: min(640px, 100%);
+  background: var(--nk-surface);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius-lg);
+  box-shadow: var(--nk-shadow-md);
+  padding: var(--nk-space-6);
+  display: grid;
+  gap: var(--nk-space-4);
+}
+
+.nk-phone-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.nk-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--nk-space-3);
+}
+
+.nk-provider-card {
+  display: grid;
+  gap: var(--nk-space-3);
+  padding: var(--nk-space-4);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius);
+  background: var(--nk-surface);
+}
+
+.nk-provider-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nk-space-2);
+}
+
+.nk-detail-stack {
+  display: grid;
+  gap: var(--nk-space-3);
+}
+
+.nk-inline-edit {
+  display: grid;
+  gap: var(--nk-space-2);
+}
+
+.nk-fraud-meter {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--nk-gray-200);
+  overflow: hidden;
+}
+
+.nk-fraud-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--nk-danger);
+}
+
+@media (max-width: 1100px) {
+  .nk-editor-cols {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .nk-editor-pane.is-inspector {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--nk-border);
+  }
+}
+
+@media (max-width: 900px) {
+  .nk-split-2,
+  .nk-split-brand,
+  .nk-settings-layout,
+  .nk-editor-cols {
+    grid-template-columns: 1fr;
+  }
+  .nk-funnel-step {
+    grid-template-columns: 1fr;
+  }
+}

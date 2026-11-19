@@ -15,6 +15,8 @@ use Noksha\Pages\Repository;
 
 final class Assets {
     public function register(): void {
+        add_action('template_redirect', [$this, 'prime_variant'], 1);
+        add_action('template_redirect', [$this, 'nocache_thankyou'], 0);
         add_action('wp_enqueue_scripts', [$this, 'enqueue']);
         add_action('wp_print_styles', [$this, 'dequeue_theme'], 100);
         add_action('wp_head', [$this, 'seo'], 5);
@@ -23,6 +25,35 @@ final class Assets {
         add_filter('rocket_cache_reject_uri', [$this, 'exclude_cache']);
         add_filter('sgo_javascript_combine_exclude_js_files', [$this, 'exclude_js']);
         add_filter('template_include', [$this, 'template']);
+    }
+
+    public function nocache_thankyou(): void {
+        if (!is_singular(PostType::TYPE)) {
+            return;
+        }
+        $order = isset($_GET['nk_order']) ? sanitize_text_field(wp_unslash($_GET['nk_order'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ($order === '') {
+            return;
+        }
+        if (!defined('DONOTCACHEPAGE')) {
+            define('DONOTCACHEPAGE', true);
+        }
+        if (!headers_sent()) {
+            header('X-LiteSpeed-Cache-Control: no-cache');
+            nocache_headers();
+        }
+    }
+
+    public function prime_variant(): void {
+        if (!is_singular(PostType::TYPE)) {
+            return;
+        }
+        $id = (int) get_queried_object_id();
+        $payload = Repository::payload($id);
+        if (is_wp_error($payload)) {
+            return;
+        }
+        Renderer::variant_for($id, is_array($payload['ab'] ?? null) ? $payload['ab'] : []);
     }
 
     public function template(string $template): string {
@@ -44,14 +75,32 @@ final class Assets {
         $payload = Renderer::apply_variant($payload);
         wp_enqueue_style(
             'noksha-fonts',
-            'https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap',
+            NOKSHA_URL . 'assets/fonts.css',
             [],
-            null
+            NOKSHA_VERSION
         );
         wp_enqueue_style('noksha-landing', NOKSHA_URL . 'assets/landing.css', ['noksha-fonts'], NOKSHA_VERSION);
         $tokens = Tokens::merge(is_array($payload['tokens']) ? $payload['tokens'] : null);
         wp_add_inline_style('noksha-landing', Tokens::css($tokens));
-        wp_enqueue_script('noksha-landing', NOKSHA_URL . 'assets/landing.js', [], NOKSHA_VERSION, true);
+        $hero = '';
+        foreach (($payload['sections'] ?? []) as $section) {
+            if (($section['type'] ?? '') === 'hero' && !empty($section['props']['imageUrl'])) {
+                $hero = (string) $section['props']['imageUrl'];
+                break;
+            }
+        }
+        if ($hero === '' && !empty($payload['offer']['imageUrl'])) {
+            $hero = (string) $payload['offer']['imageUrl'];
+        }
+        if ($hero !== '') {
+            add_action('wp_head', static function () use ($hero): void {
+                echo '<link rel="preload" as="image" href="' . esc_url($hero) . '">' . "\n";
+            }, 2);
+        }
+        wp_enqueue_script('noksha-landing', NOKSHA_URL . 'assets/landing.js', [], NOKSHA_VERSION, [
+            'in_footer' => true,
+            'strategy' => 'defer',
+        ]);
         wp_add_inline_script(
             'noksha-landing',
             'window.nokshaFront = ' . wp_json_encode(Renderer::script_config($payload, false)) . ';',

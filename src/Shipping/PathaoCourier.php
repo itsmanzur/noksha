@@ -83,6 +83,10 @@ final class PathaoCourier implements Courier {
     }
 
     private function token(): string {
+        $cached = get_transient('noksha_pathao_token');
+        if (is_string($cached) && $cached !== '') {
+            return $cached;
+        }
         $secrets = Options::secrets();
         $settings = Options::settings();
         $sandbox = !empty($settings['sandbox']);
@@ -102,6 +106,12 @@ final class PathaoCourier implements Courier {
             return '';
         }
         $data = json_decode((string) wp_remote_retrieve_body($response), true);
-        return is_array($data) ? (string) ($data['access_token'] ?? '') : '';
+        $token = is_array($data) ? (string) ($data['access_token'] ?? '') : '';
+        if ($token === '') {
+            return '';
+        }
+        $expires = max(60, (int) ($data['expires_in'] ?? 3600) - 60);
+        set_transient('noksha_pathao_token', $token, $expires);
+        return $token;
     }
 }

@@ -32,6 +32,23 @@ final class Templates {
             'shipping' => $template === 'lead' ? 0 : 80,
             'shippingInside' => $template === 'lead' ? 0 : 60,
             'shippingOutside' => $template === 'lead' ? 0 : 80,
+            'shippingDefault' => $template === 'lead' ? 0 : 80,
+            'shippingZones' => $template === 'lead' ? [] : [
+                [
+                    'id' => 'inside_dhaka',
+                    'label' => 'Inside Dhaka',
+                    'price' => 60,
+                    'districtIds' => ['47'],
+                    'upazilaIds' => [],
+                ],
+                [
+                    'id' => 'outside_dhaka',
+                    'label' => 'Outside Dhaka',
+                    'price' => 80,
+                    'districtIds' => [],
+                    'upazilaIds' => [],
+                ],
+            ],
             'imageUrl' => '',
         ];
         if ($template === 'lead') {

@@ -1,0 +1,137 @@
+/* Noksha design tokens — all --nk-* */
+:root,
+[data-theme="light"] {
+  --nk-font-en: "Source Sans 3", "Noto Sans Bengali", sans-serif;
+  --nk-font-bn: "Noto Sans Bengali", "Source Sans 3", sans-serif;
+  --nk-font: var(--nk-font-en);
+  --nk-text-xs: 12px;
+  --nk-text-sm: 13px;
+  --nk-text-md: 14px;
+  --nk-text-lg: 16px;
+  --nk-text-xl: 20px;
+  --nk-text-2xl: 24px;
+  --nk-text-3xl: 30px;
+  --nk-lh: 1.55;
+  --nk-lh-bn: 1.7;
+  --nk-weight-normal: 400;
+  --nk-weight-semibold: 600;
+  --nk-weight-bold: 700;
+
+  --nk-gray-50: #f9fafb;
+  --nk-gray-100: #f3f4f6;
+  --nk-gray-200: #e5e7eb;
+  --nk-gray-300: #d1d5db;
+  --nk-gray-400: #9ca3af;
+  --nk-gray-500: #6b7280;
+  --nk-gray-600: #4b5563;
+  --nk-gray-700: #374151;
+  --nk-gray-800: #1f2937;
+  --nk-gray-900: #111827;
+
+  --nk-brand: #0f6b4f;
+  --nk-brand-hover: #0b5640;
+  --nk-brand-subtle: #e7f3ee;
+  --nk-brand-fg: #ffffff;
+  --nk-accent: #f59e0b;
+  --nk-danger: #dc2626;
+  --nk-info: #2563eb;
+  --nk-success: #16a34a;
+
+  --nk-status-pending: #f59e0b;
+  --nk-status-needs-call: #ea580c;
+  --nk-status-confirmed: #2563eb;
+  --nk-status-paid: #16a34a;
+  --nk-status-shipped: #4f46e5;
+  --nk-status-delivered: #059669;
+  --nk-status-returned: #e11d48;
+  --nk-status-cancelled: #6b7280;
+  --nk-status-fake: #dc2626;
+  --nk-status-no-answer: #d97706;
+  --nk-status-awaiting: #0284c7;
+
+  --nk-bg: #f3f4f6;
+  --nk-surface: #ffffff;
+  --nk-surface-2: #f9fafb;
+  --nk-text: #111827;
+  --nk-text-muted: #6b7280;
+  --nk-border: #e5e7eb;
+  --nk-focus: #0f6b4f;
+  --nk-overlay: rgba(17, 24, 39, 0.45);
+
+  --nk-radius-sm: 6px;
+  --nk-radius: 10px;
+  --nk-radius-lg: 14px;
+  --nk-shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
+  --nk-shadow-md: 0 8px 24px rgba(17, 24, 39, 0.08);
+  --nk-space-1: 4px;
+  --nk-space-2: 8px;
+  --nk-space-3: 12px;
+  --nk-space-4: 16px;
+  --nk-space-5: 20px;
+  --nk-space-6: 24px;
+  --nk-space-8: 32px;
+  --nk-sidebar: 232px;
+  --nk-sidebar-collapsed: 64px;
+  --nk-topbar: 56px;
+  --nk-z-drawer: 40;
+  --nk-z-modal: 50;
+  --nk-z-toast: 60;
+  --nk-motion: 160ms ease;
+}
+
+[data-theme="dark"] {
+  --nk-gray-50: #111827;
+  --nk-gray-100: #1f2937;
+  --nk-gray-200: #374151;
+  --nk-gray-300: #4b5563;
+  --nk-gray-400: #9ca3af;
+  --nk-gray-500: #9ca3af;
+  --nk-gray-600: #d1d5db;
+  --nk-gray-700: #e5e7eb;
+  --nk-gray-800: #f3f4f6;
+  --nk-gray-900: #f9fafb;
+
+  --nk-brand: #34d399;
+  --nk-brand-hover: #6ee7b7;
+  --nk-brand-subtle: #064e3b;
+  --nk-brand-fg: #052e1c;
+  --nk-accent: #fbbf24;
+  --nk-danger: #f87171;
+  --nk-info: #60a5fa;
+  --nk-success: #4ade80;
+
+  --nk-bg: #0b1220;
+  --nk-surface: #111827;
+  --nk-surface-2: #1f2937;
+  --nk-text: #f3f4f6;
+  --nk-text-muted: #9ca3af;
+  --nk-border: #374151;
+  --nk-focus: #34d399;
+  --nk-overlay: rgba(0, 0, 0, 0.6);
+  --nk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --nk-shadow-md: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+[lang="bn"],
+.nk-app[data-lang="bn"] {
+  --nk-font: var(--nk-font-bn);
+  line-height: var(--nk-lh-bn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --nk-motion: 0ms;
+  }
+}
+
+.nk-focus-ring:focus-visible,
+.nk-ui-btn:focus-visible,
+.nk-ui-icon-btn:focus-visible,
+.nk-ui-input:focus-visible,
+.nk-ui-select:focus-visible,
+.nk-ui-textarea:focus-visible,
+.nk-nav-item:focus-visible,
+.nk-cmd-item:focus-visible {
+  outline: 2px solid var(--nk-focus);
+  outline-offset: 2px;
+}

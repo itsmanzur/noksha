@@ -1,75 +1,294 @@
-import { useEffect, useState } from '@wordpress/element';
-import { api, AsyncView } from '../api';
+import { useEffect, useMemo, useState } from '@wordpress/element';
+import { api } from '../api';
+import { useToast } from '../providers';
+import {
+  Button,
+  Card,
+  Input,
+  RadioCards,
+  SecretField,
+  Select,
+  Skeleton,
+  Toggle,
+} from '../ui';
 
-export function Settings({ t }) {
+const TABS = [
+  { id: 'general', labelKey: 'settings.tabGeneral' },
+  { id: 'tracking', labelKey: 'settings.tabTracking' },
+  { id: 'sms', labelKey: 'settings.tabSms' },
+  { id: 'fraud', labelKey: 'settings.tabFraud' },
+  { id: 'advanced', labelKey: 'settings.tabAdvanced' },
+];
+
+function snapshot(settings, capiToken, smsKey, bnDigits) {
+  return JSON.stringify({ settings, capiToken, smsKey, bnDigits });
+}
+
+function pixelsConfigured(pixels) {
+  if (!pixels) {
+    return false;
+  }
+  return Boolean((pixels.meta || '').trim() || (pixels.ga4 || '').trim() || (pixels.tiktok || '').trim());
+}
+
+export function Settings({ t, locale }) {
+  const { success, error: toastError } = useToast();
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [settings, setSettings] = useState(null);
-  const [notice, setNotice] = useState('');
+  const [baseline, setBaseline] = useState('');
+  const [tab, setTab] = useState('general');
   const [capiToken, setCapiToken] = useState('');
+  const [smsKey, setSmsKey] = useState('');
+  const [bnDigits, setBnDigits] = useState(() => window.localStorage.getItem('noksha_bn_digits') === '1');
+  const [saving, setSaving] = useState(false);
 
   function load() {
     setStatus('loading');
-    api('settings').then((data) => {
-      setSettings(data);
-      setCapiToken('');
-      setStatus('ready');
-    }).catch((err) => {
-      setError(err.message);
-      setStatus('error');
-    });
+    setError('');
+    api('settings')
+      .then((data) => {
+        setSettings(data);
+        setCapiToken('');
+        setSmsKey('');
+        const digits = window.localStorage.getItem('noksha_bn_digits') === '1';
+        setBnDigits(digits);
+        setBaseline(snapshot(data, '', '', digits));
+        setStatus('ready');
+      })
+      .catch((err) => {
+        setError(err.message || t('common.error'));
+        setStatus('error');
+      });
   }
 
   useEffect(load, []);
 
+  const dirty = useMemo(() => {
+    if (!settings) {
+      return false;
+    }
+    return snapshot(settings, capiToken, smsKey, bnDigits) !== baseline;
+  }, [settings, capiToken, smsKey, bnDigits, baseline]);
+
+  function patch(partial) {
+    setSettings({ ...settings, ...partial });
+  }
+
+  function discard() {
+    if (!baseline) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(baseline);
+      setSettings(parsed.settings);
+      setCapiToken(parsed.capiToken || '');
+      setSmsKey(parsed.smsKey || '');
+      setBnDigits(Boolean(parsed.bnDigits));
+    } catch {
+      load();
+    }
+  }
+
   function save(event) {
-    event.preventDefault();
+    event?.preventDefault?.();
+    if (!settings || saving) {
+      return;
+    }
+    setSaving(true);
     const body = { ...settings };
     if (capiToken.trim() !== '') {
       body.meta_capi_token = capiToken.trim();
     }
-    api('settings', { method: 'PUT', body }).then((data) => {
-      setSettings(data);
-      setCapiToken('');
-      setNotice(t('settings.saved'));
-      api('onboarding', { method: 'PUT', body: { pixels: true } }).catch(() => {});
-    }).catch((err) => setError(err.message));
+    if (smsKey.trim() !== '') {
+      body.sms_api_key = smsKey.trim();
+    }
+    api('settings', { method: 'PUT', body })
+      .then((data) => {
+        setSettings(data);
+        setCapiToken('');
+        setSmsKey('');
+        window.localStorage.setItem('noksha_bn_digits', bnDigits ? '1' : '0');
+        const nextBaseline = snapshot(data, '', '', bnDigits);
+        setBaseline(nextBaseline);
+        success(t('settings.saved'));
+        if (pixelsConfigured(data.pixels)) {
+          api('onboarding', { method: 'PUT', body: { pixels: true } }).catch(() => {});
+        }
+      })
+      .catch((err) => toastError(err.message || t('common.error')))
+      .finally(() => setSaving(false));
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="nk-screen">
+        <h1>{t('settings.title')}</h1>
+        <Card>
+          <p>{error}</p>
+          <Button onClick={load}>{t('common.retry')}</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!settings || status === 'loading') {
+    return (
+      <div className="nk-screen">
+        <h1>{t('settings.title')}</h1>
+        <Skeleton height={320} />
+      </div>
+    );
+  }
+
+  const otpOptions = [
+    { value: 'off', label: t('payments.otpOff'), description: t('payments.otpHelp') },
+    { value: 'risk', label: t('payments.otpRisk'), description: t('payments.otpHelp') },
+    { value: 'always', label: t('payments.otpAlways'), description: t('payments.otpHelp') },
+  ];
+
+  let panel = null;
+  if (tab === 'general') {
+    panel = (
+      <Card title={t('settings.tabGeneral')}>
+        <Select
+          label={t('settings.language')}
+          value={settings.default_language}
+          onChange={(e) => patch({ default_language: e.target.value })}
+        >
+          <option value="en">{t('settings.english')}</option>
+          <option value="bn">{t('settings.bangla')}</option>
+        </Select>
+        <Input
+          label={t('settings.storeName')}
+          help={t('settings.storeHelp')}
+          value={settings.sms?.sender || ''}
+          onChange={(e) => patch({ sms: { ...(settings.sms || {}), sender: e.target.value } })}
+        />
+        <Toggle
+          label={t('settings.bnDigits')}
+          help={t('settings.bnDigitsHelp')}
+          checked={bnDigits}
+          onChange={setBnDigits}
+        />
+        <p className="nk-muted">{t('settings.regionHelp')}</p>
+        <Select label={t('settings.region')} value="bd" disabled>
+          <option value="bd">{t('settings.regionBd')}</option>
+        </Select>
+      </Card>
+    );
+  } else if (tab === 'tracking') {
+    panel = (
+      <Card title={t('settings.pixels')}>
+        <p className="nk-muted">{t('settings.pixelsHelp')}</p>
+        <Input
+          label={t('settings.meta')}
+          value={settings.pixels?.meta || ''}
+          onChange={(e) => patch({ pixels: { ...settings.pixels, meta: e.target.value } })}
+        />
+        <Input
+          label={t('settings.ga4')}
+          value={settings.pixels?.ga4 || ''}
+          onChange={(e) => patch({ pixels: { ...settings.pixels, ga4: e.target.value } })}
+        />
+        <Input
+          label={t('settings.tiktok')}
+          value={settings.pixels?.tiktok || ''}
+          onChange={(e) => patch({ pixels: { ...settings.pixels, tiktok: e.target.value } })}
+        />
+        <SecretField
+          label={t('settings.metaCapi')}
+          help={t('settings.metaCapiHelp')}
+          saved={Boolean(settings.has_meta_capi_token)}
+          savedLabel={t('settings.metaCapiSet')}
+          placeholder={t('settings.metaCapiPlaceholder')}
+          lockedByConstant={Boolean(settings.locked_by_constant?.meta_capi_token)}
+          value={capiToken}
+          onChange={setCapiToken}
+        />
+      </Card>
+    );
+  } else if (tab === 'sms') {
+    panel = (
+      <Card title={t('payments.sms')}>
+        <p className="nk-muted">{t('payments.smsHelp')}</p>
+        <Toggle
+          label={t('payments.smsEnabled')}
+          checked={Boolean(settings.sms?.enabled)}
+          onChange={(v) => patch({ sms: { ...(settings.sms || {}), enabled: v } })}
+        />
+        <Input
+          label={t('payments.smsSender')}
+          value={settings.sms?.sender || ''}
+          onChange={(e) => patch({ sms: { ...(settings.sms || {}), sender: e.target.value } })}
+        />
+        <SecretField
+          label={t('payments.smsKey')}
+          saved={Boolean(settings.has_sms_key)}
+          savedLabel={t('payments.secretSet')}
+          lockedByConstant={Boolean(settings.locked_by_constant?.sms_api_key)}
+          value={smsKey}
+          onChange={setSmsKey}
+        />
+        <RadioCards
+          legend={t('payments.otpMode')}
+          value={settings.sms?.otp_mode || 'risk'}
+          onChange={(v) => patch({ sms: { ...(settings.sms || {}), otp_mode: v } })}
+          options={otpOptions}
+        />
+        <Input
+          type="number"
+          label={t('settings.otpTtl')}
+          value={String(settings.sms?.otp_ttl ?? 300)}
+          onChange={(e) => patch({ sms: { ...(settings.sms || {}), otp_ttl: Number(e.target.value) || 300 } })}
+        />
+      </Card>
+    );
+  } else if (tab === 'fraud') {
+    panel = (
+      <Card title={t('settings.tabFraud')}>
+        <p className="nk-muted">{t('settings.fraudHelp')}</p>
+      </Card>
+    );
+  } else {
+    panel = (
+      <Card title={t('settings.tabAdvanced')}>
+        <p className="nk-muted">{t('settings.advancedHelp')}</p>
+        <div className="nk-screen-actions">
+          <Button variant="secondary" onClick={() => { window.location.hash = '#/payments'; }}>{t('nav.payments')}</Button>
+          <Button variant="secondary" onClick={() => { window.location.hash = '#/brand'; }}>{t('nav.brand')}</Button>
+        </div>
+      </Card>
+    );
   }
 
   return (
-    <AsyncView status={status} error={error} t={t} onRetry={load}>
-      {settings ? (
-        <form onSubmit={save}>
-          <h1>{t('settings.title')}</h1>
-          {notice ? <p className="nk-banner is-ok">{notice}</p> : null}
-          <label className="nk-field">
-            {t('settings.region')}
-            <select value="bd" disabled>
-              <option value="bd">{t('settings.regionBd')}</option>
-              <option value="global">{t('settings.regionGlobal')}</option>
-            </select>
-          </label>
-          <p className="nk-muted">{t('settings.regionHelp')}</p>
-          <label className="nk-field">
-            {t('settings.language')}
-            <select value={settings.default_language} onChange={(event) => setSettings({ ...settings, default_language: event.target.value })}>
-              <option value="en">{t('settings.english')}</option>
-              <option value="bn">{t('settings.bangla')}</option>
-            </select>
-          </label>
-          <h2>{t('settings.pixels')}</h2>
-          <p className="nk-muted">{t('settings.pixelsHelp')}</p>
-          <label className="nk-field">{t('settings.meta')}<input value={settings.pixels.meta} onChange={(event) => setSettings({ ...settings, pixels: { ...settings.pixels, meta: event.target.value } })} /></label>
-          <label className="nk-field">
-            {t('settings.metaCapi')}
-            <input type="password" autoComplete="off" placeholder={settings.has_meta_capi_token ? t('settings.metaCapiSet') : t('settings.metaCapiPlaceholder')} value={capiToken} onChange={(event) => setCapiToken(event.target.value)} />
-          </label>
-          <p className="nk-muted">{t('settings.metaCapiHelp')}</p>
-          <label className="nk-field">{t('settings.ga4')}<input value={settings.pixels.ga4} onChange={(event) => setSettings({ ...settings, pixels: { ...settings.pixels, ga4: event.target.value } })} /></label>
-          <label className="nk-field">{t('settings.tiktok')}<input value={settings.pixels.tiktok} onChange={(event) => setSettings({ ...settings, pixels: { ...settings.pixels, tiktok: event.target.value } })} /></label>
-          <button type="submit" className="nk-btn">{t('common.save')}</button>
-        </form>
+    <form className="nk-screen" onSubmit={save}>
+      <header className="nk-screen-header">
+        <h1>{t('settings.title')}</h1>
+      </header>
+      <div className="nk-settings-layout">
+        <nav className="nk-settings-nav" aria-label={t('settings.title')}>
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={tab === item.id ? 'is-active' : ''}
+              onClick={() => setTab(item.id)}
+            >
+              {t(item.labelKey)}
+            </button>
+          ))}
+        </nav>
+        <div>{panel}</div>
+      </div>
+      {dirty ? (
+        <div className="nk-sticky-save">
+          <span className="nk-muted">{t('settings.unsaved')}</span>
+          <Button type="button" variant="secondary" onClick={discard}>{t('settings.discard')}</Button>
+          <Button type="submit" disabled={saving}>{saving ? t('editor.saving') : t('common.save')}</Button>
+        </div>
       ) : null}
-    </AsyncView>
+    </form>
   );
 }

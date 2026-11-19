@@ -19,13 +19,14 @@ use Noksha\Pages\Renderer;
 use Noksha\Pages\Repository as Pages;
 use Noksha\Payments\Manager;
 use Noksha\Payments\WalletVerifier;
+use Noksha\Support\RateLimit;
 use Noksha\Region\Geo;
 use Noksha\Region\Phone;
 
 final class Checkout {
     public function place(array $input) {
         $lang = 'en';
-        if ($this->limited('checkout', 20)) {
+        if (RateLimit::hit('checkout')) {
             return $this->error('rate', $lang, 429);
         }
         if (!empty($input['company_website'])) {
@@ -54,6 +55,10 @@ final class Checkout {
         }
         if (Blacklist::has($phone)) {
             return $this->error('invalid_phone', $lang, 403);
+        }
+        $limits = RateLimit::limits();
+        if (RateLimit::hit_phone('phone_checkout', $phone, (int) $limits['phone_checkout'])) {
+            return $this->error('rate', $lang, 429);
         }
 
         $email = sanitize_email((string) ($input['email'] ?? ''));
@@ -107,7 +112,11 @@ final class Checkout {
         $qty = (int) ($input['qty'] ?? 1);
         $qty = max(1, min(10, $qty));
         $price = round((float) $doc['offer']['price'], 2);
-        $shipping = self::shipping_for($doc['offer'], (string) ($geo['district_id'] ?? ''));
+        $shipping = self::shipping_for(
+            $doc['offer'],
+            (string) ($geo['district_id'] ?? ''),
+            (string) ($geo['upazila_id'] ?? '')
+        );
         $bump = is_array($doc['offer']['bump'] ?? null) ? $doc['offer']['bump'] : [];
         $want_bump = !empty($input['bump']) && !empty($bump['enabled']) && (float) ($bump['price'] ?? 0) > 0;
         $bump_price = $want_bump ? round((float) $bump['price'], 2) : 0.0;
@@ -136,6 +145,18 @@ final class Checkout {
         }
         $session = $this->session((string) ($input['session_id'] ?? ''));
 
+        // Validate wallet TrxID before insert so bad attempts do not create junk rows.
+        $trx_pre = '';
+        if (in_array($method, ['manual_bkash', 'manual_nagad'], true)) {
+            $trx_pre = strtoupper((string) preg_replace('/\s+/', '', (string) ($input['trx_id'] ?? '')));
+            if (!preg_match('/^[A-Z0-9]{6,40}$/', $trx_pre)) {
+                return $this->error('trx_required', $lang, 400);
+            }
+            if (Repository::trx_exists($trx_pre)) {
+                return $this->error('trx_required', $lang, 400);
+            }
+        }
+
         $items = [[
             'name' => $doc['offer']['productName'] !== '' ? $doc['offer']['productName'] : $post->post_title,
             'qty' => $qty,
@@ -149,6 +170,8 @@ final class Checkout {
             ];
         }
 
+        global $wpdb;
+        $wpdb->query('START TRANSACTION');
         $id = Repository::insert([
             'page_id' => $page_id,
             'order_number' => $number,
@@ -169,7 +192,8 @@ final class Checkout {
             'shipping' => $shipping,
             'total' => $total,
             'collect_amount' => $total,
-            'qty' => $qty + ($want_bump ? 1 : 0),
+            'cod_settled' => 0,
+            'qty' => $qty,
             'risk' => $risk,
             'trx_id' => '',
             'trx_verified' => 0,
@@ -182,7 +206,16 @@ final class Checkout {
             'language' => $lang,
         ], $items);
 
+        if ($id <= 0) {
+            $wpdb->query('ROLLBACK');
+            return $this->error('page_closed', $lang, 500);
+        }
+
         $order = Repository::find($id);
+        if (!$order) {
+            $wpdb->query('ROLLBACK');
+            return $this->error('page_closed', $lang, 500);
+        }
         $order['product_name'] = $doc['offer']['productName'] !== '' ? $doc['offer']['productName'] : $post->post_title;
         $result = $gateway->start($order, $input);
 
@@ -197,7 +230,7 @@ final class Checkout {
         ]);
 
         if (!empty($result['error'])) {
-            Repository::update($id, ['status' => 'cancelled']);
+            $wpdb->query('ROLLBACK');
             return $this->error((string) $result['error'], $lang, 422);
         }
 
@@ -205,6 +238,7 @@ final class Checkout {
             'status' => $result['status'],
             'trx_id' => $result['transaction_id'] ?? '',
         ]);
+        $wpdb->query('COMMIT');
         if (in_array($method, ['manual_bkash', 'manual_nagad'], true)) {
             WalletVerifier::maybe_auto_verify($id);
         }
@@ -228,7 +262,7 @@ final class Checkout {
             'nk_key' => Renderer::order_key($order),
         ], $permalink ?: home_url('/'));
 
-        return [
+        $payload = [
             'ok' => true,
             'orderNumber' => $order['order_number'],
             'status' => $order['status'],
@@ -240,7 +274,10 @@ final class Checkout {
             'heading' => Catalog::line($lang, 'thank_you'),
             'message' => Catalog::line($lang, 'thank_you_text'),
             'key' => Renderer::order_key($order),
-            'purchase' => [
+        ];
+        // Do not fire Purchase before an external payment redirect completes.
+        if (empty($result['redirect'])) {
+            $payload['purchase'] = [
                 'value' => (float) $order['total'],
                 'currency' => 'BDT',
                 'event_id' => $order['event_id'],
@@ -248,11 +285,53 @@ final class Checkout {
                 'content_name' => $doc['offer']['productName'],
                 'content_ids' => [(string) $page_id],
                 'num_items' => (int) $order['qty'],
-            ],
-        ];
+                'contents' => array_map(static function (array $item) use ($page_id): array {
+                    return [
+                        'id' => (string) $page_id,
+                        'quantity' => (int) ($item['qty'] ?? 1),
+                        'item_price' => (float) ($item['price'] ?? 0),
+                    ];
+                }, Repository::items($id)),
+            ];
+        }
+        return $payload;
     }
 
-    public static function shipping_for(array $offer, string $district_id): float {
+    public static function shipping_for(array $offer, string $district_id, string $upazila_id = ''): float {
+        $default = round((float) ($offer['shippingDefault'] ?? $offer['shippingOutside'] ?? $offer['shipping'] ?? 0), 2);
+        $zones = is_array($offer['shippingZones'] ?? null) ? $offer['shippingZones'] : [];
+        if ($zones !== []) {
+            foreach ($zones as $zone) {
+                if (!is_array($zone)) {
+                    continue;
+                }
+                $upazilas = array_map('strval', (array) ($zone['upazilaIds'] ?? []));
+                if ($upazila_id !== '' && in_array($upazila_id, $upazilas, true)) {
+                    return round((float) ($zone['price'] ?? $default), 2);
+                }
+            }
+            foreach ($zones as $zone) {
+                if (!is_array($zone)) {
+                    continue;
+                }
+                $districts = array_map('strval', (array) ($zone['districtIds'] ?? []));
+                if ($district_id !== '' && in_array($district_id, $districts, true)) {
+                    return round((float) ($zone['price'] ?? $default), 2);
+                }
+            }
+            // Catch-all zone with empty district/upazila lists (e.g. outside Dhaka).
+            foreach ($zones as $zone) {
+                if (!is_array($zone)) {
+                    continue;
+                }
+                $districts = (array) ($zone['districtIds'] ?? []);
+                $upazilas = (array) ($zone['upazilaIds'] ?? []);
+                if ($districts === [] && $upazilas === []) {
+                    return round((float) ($zone['price'] ?? $default), 2);
+                }
+            }
+            return $default;
+        }
         $outside = round((float) ($offer['shippingOutside'] ?? $offer['shipping'] ?? 0), 2);
         $inside = round((float) ($offer['shippingInside'] ?? $outside), 2);
         return $district_id === '47' ? $inside : $outside;
@@ -286,17 +365,6 @@ final class Checkout {
 
     private function error(string $code, string $lang, int $status): \WP_Error {
         return new \WP_Error('noksha_' . $code, Catalog::line($lang, $code), ['status' => $status]);
-    }
-
-    private function limited(string $bucket, int $max): bool {
-        $ip = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0';
-        $key = 'noksha_rl_' . md5($bucket . '|' . $ip);
-        $count = (int) get_transient($key);
-        if ($count >= $max) {
-            return true;
-        }
-        set_transient($key, $count + 1, 10 * MINUTE_IN_SECONDS);
-        return false;
     }
 
     private function session(string $value): string {

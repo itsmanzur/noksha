@@ -69,6 +69,13 @@ final class Catalog {
             'offer_ends' => 'Offer ends in',
             'rate' => 'Too many attempts. Wait a minute and try again.',
             'nonce' => 'The form expired. Reload the page and try again.',
+            'you_save' => 'You save',
+            'how_to_pay' => 'How to pay',
+            'copy' => 'Copy',
+            'copied' => 'Copied',
+            'otp_resend' => 'Resend code',
+            'thank_you_call' => 'We will call you soon to confirm.',
+            'whatsapp_us' => 'Message us on WhatsApp',
         ],
         'bn' => [
             'name' => 'নাম',
@@ -130,6 +137,13 @@ final class Catalog {
             'offer_ends' => 'অফার শেষ হবে',
             'rate' => 'অনেকবার চেষ্টা হয়েছে। এক মিনিট পর আবার চেষ্টা করুন।',
             'nonce' => 'ফর্মের মেয়াদ শেষ। পেইজ রিলোড করে আবার চেষ্টা করুন।',
+            'you_save' => 'সাশ্রয়',
+            'how_to_pay' => 'কিভাবে পেমেন্ট করবেন',
+            'copy' => 'কপি',
+            'copied' => 'কপি হয়েছে',
+            'otp_resend' => 'আবার কোড পাঠান',
+            'thank_you_call' => 'আমরা শীঘ্রই ফোন করে কনফার্ম করব।',
+            'whatsapp_us' => 'WhatsApp-এ মেসেজ করুন',
         ],
     ];
 

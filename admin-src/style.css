@@ -1,87 +1,5 @@
-.noksha-screen #wpbody-content {
-  padding-bottom: 0;
-}
+/* Legacy screen styles; shell/layout tokens live in styles/shell.css */
 
-.noksha-screen #wpfooter,
-.noksha-screen .update-nag,
-.noksha-screen .notice {
-  display: none;
-}
-
-.nk-app {
-  min-height: calc(100vh - 32px);
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  grid-template-rows: 56px minmax(0, 1fr);
-  background: var(--noksha-color-canvas);
-  color: var(--noksha-color-text);
-  font-family: var(--noksha-font-sans);
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.nk-rail {
-  grid-row: 1 / span 2;
-  padding: 16px 12px;
-  background: var(--noksha-color-card);
-  border-right: 1px solid var(--noksha-color-border);
-}
-
-.nk-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 4px 8px 18px;
-  font-weight: 600;
-  font-size: 1.15rem;
-}
-
-.nk-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--noksha-color-brand);
-}
-
-.nk-rail nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.nk-rail button {
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: var(--noksha-radius);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  white-space: normal;
-}
-
-.nk-rail button.is-active,
-.nk-rail button:hover {
-  background: color-mix(in srgb, var(--noksha-color-brand) 12%, var(--noksha-color-card));
-}
-
-.nk-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  background: var(--noksha-color-card);
-  border-bottom: 1px solid var(--noksha-color-border);
-}
-
-.nk-search {
-  position: relative;
-  flex: 1;
-}
-
-.nk-search input,
 .nk-field input,
 .nk-field select,
 .nk-field textarea,
@@ -99,74 +17,15 @@
   box-sizing: border-box;
 }
 
-.nk-search input:focus,
 .nk-field input:focus,
 .nk-field select:focus,
 .nk-field textarea:focus,
 .nk-inline input:focus,
 .nk-inline select:focus,
 .nk-inline textarea:focus,
-.nk-btn:focus-visible,
-.nk-rail button:focus-visible {
+.nk-btn:focus-visible {
   outline: 2px solid var(--noksha-color-brand);
   outline-offset: 1px;
-}
-
-.nk-suggest {
-  position: absolute;
-  z-index: 5;
-  top: 44px;
-  left: 0;
-  right: 0;
-  margin: 0;
-  padding: 6px;
-  list-style: none;
-  background: var(--noksha-color-card);
-  border: 1px solid var(--noksha-color-border);
-  border-radius: var(--noksha-radius);
-  box-shadow: var(--noksha-shadow);
-}
-
-.nk-suggest button {
-  width: 100%;
-  min-height: 36px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.nk-top-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.nk-seg {
-  display: inline-flex;
-  padding: 3px;
-  border: 1px solid var(--noksha-color-border);
-  border-radius: 999px;
-  background: var(--noksha-color-canvas);
-}
-
-.nk-seg button {
-  min-height: 30px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.nk-seg button.is-active {
-  background: var(--noksha-color-brand);
-  color: var(--noksha-color-brand-foreground);
 }
 
 .nk-badge,
@@ -193,11 +52,6 @@
 .nk-chip.is-review {
   background: color-mix(in srgb, var(--noksha-color-warning) 16%, var(--noksha-color-card));
   color: var(--noksha-color-warning);
-}
-
-.nk-main {
-  padding: 20px;
-  overflow: auto;
 }
 
 .nk-main h1,
@@ -505,9 +359,11 @@ body.noksha-fullscreen #wpbody-content {
   padding-left: 0 !important;
 }
 
-body.noksha-fullscreen .nk-ed {
+body.noksha-fullscreen .nk-ed,
+body.noksha-fullscreen .nk-editor-shell {
   height: 100vh;
   margin: 0;
+  min-height: 100vh;
 }
 
 .nk-ed.is-full {

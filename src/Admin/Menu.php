@@ -11,6 +11,7 @@ use Noksha\Brand\Tokens;
 use Noksha\Caps;
 use Noksha\I18n\Locale;
 use Noksha\Options;
+// Prefs lives in this namespace.
 
 final class Menu {
     public function register(): void {
@@ -50,9 +51,9 @@ final class Menu {
         wp_enqueue_media();
         wp_enqueue_style(
             'noksha-fonts',
-            'https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap',
+            NOKSHA_URL . 'assets/fonts.css',
             [],
-            null
+            NOKSHA_VERSION
         );
 
         $asset_path = NOKSHA_DIR . 'build/admin.asset.php';
@@ -79,25 +80,46 @@ final class Menu {
             $asset['version'],
             true
         );
+        $style_deps = ['noksha-fonts'];
+        if (is_file(NOKSHA_DIR . 'build/admin.css')) {
+            wp_enqueue_style(
+                'noksha-admin-app',
+                NOKSHA_URL . 'build/admin.css',
+                $style_deps,
+                $asset['version']
+            );
+            wp_style_add_data('noksha-admin-app', 'rtl', 'replace');
+            $style_deps[] = 'noksha-admin-app';
+        }
         if (is_file(NOKSHA_DIR . 'build/style-admin.css')) {
             wp_enqueue_style(
                 'noksha-admin',
                 NOKSHA_URL . 'build/style-admin.css',
-                ['noksha-fonts'],
+                $style_deps,
                 $asset['version']
             );
             wp_style_add_data('noksha-admin', 'rtl', 'replace');
         }
         $locale = Locale::preference();
+        $user = wp_get_current_user();
+        $store = (string) (Options::settings()['sms']['sender'] ?? 'Noksha');
+        if ($store === '') {
+            $store = get_bloginfo('name') ?: 'Noksha';
+        }
         wp_add_inline_script(
             'noksha-admin',
             'window.nokshaBoot = ' . wp_json_encode([
                 'root' => esc_url_raw(rest_url('noksha/v1/')),
                 'nonce' => wp_create_nonce('wp_rest'),
                 'locale' => $locale,
+                'theme' => Prefs::theme(),
                 'tokens' => Tokens::current(),
                 'sandbox' => (bool) Options::settings()['sandbox'],
-                'user' => wp_get_current_user()->display_name,
+                'user' => $user->display_name,
+                'userInitial' => strtoupper(substr((string) ($user->display_name ?: $user->user_login), 0, 1)),
+                'storeName' => $store,
+                'counts' => Prefs::shell_counts(),
+                'debug' => defined('WP_DEBUG') && WP_DEBUG,
                 'unfilteredHtml' => current_user_can('unfiltered_html'),
                 'version' => NOKSHA_VERSION,
             ]) . ';',

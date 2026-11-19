@@ -1,106 +1,385 @@
-import { useEffect, useState } from '@wordpress/element';
-import { api, AsyncView } from '../api';
+import { useEffect, useMemo, useState } from '@wordpress/element';
+import { LayoutGrid, MoreVertical, Table as TableIcon } from 'lucide-react';
+import {
+  Button,
+  Card,
+  EmptyState,
+  IconButton,
+  Input,
+  Modal,
+  RadioCards,
+  Select,
+  Skeleton,
+  StatusPill,
+  Table,
+} from '../ui';
+import { api } from '../api';
+import { formatNumber } from '../format';
+import { useConfirm, useToast } from '../providers';
 
 const TEMPLATES = [
-  ['single', 'pages.single', 'pages.singleBody'],
-  ['beauty', 'pages.beauty', 'pages.beautyBody'],
-  ['gadget', 'pages.gadget', 'pages.gadgetBody'],
-  ['lead', 'pages.lead', 'pages.leadBody'],
-  ['festival', 'pages.festival', 'pages.festivalBody'],
+  { value: 'single', labelKey: 'pages.single', descKey: 'pages.singleBody' },
+  { value: 'lead', labelKey: 'pages.lead', descKey: 'pages.leadBody' },
+  { value: 'festival', labelKey: 'pages.festival', descKey: 'pages.festivalBody' },
+  { value: 'beauty', labelKey: 'pages.beauty', descKey: 'pages.beautyBody' },
+  { value: 'gadget', labelKey: 'pages.gadget', descKey: 'pages.gadgetBody' },
+  { value: 'blank', labelKey: 'pages.blank', descKey: 'pages.singleBody' },
 ];
 
-export function Pages({ t, go }) {
+export function Pages({ t, go, locale }) {
+  const confirm = useConfirm();
+  const { success, toast } = useToast();
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [pages, setPages] = useState([]);
-  const [language, setLanguage] = useState('en');
+  const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [view, setView] = useState('grid');
+  const [menuId, setMenuId] = useState(0);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [createTemplate, setCreateTemplate] = useState('single');
+  const [createLang, setCreateLang] = useState('en');
+  const [createTitle, setCreateTitle] = useState('');
   const [busy, setBusy] = useState(false);
 
-  function load() {
+  function load(pageNum = 1) {
     setStatus('loading');
-    api('pages').then((data) => {
-      setPages(data.pages || []);
-      setStatus('ready');
-    }).catch((err) => {
-      setError(err.message);
-      setStatus('error');
-    });
+    const query = new URLSearchParams({ page: String(pageNum), per_page: '24' });
+    api('pages?' + query.toString())
+      .then((data) => {
+        setPages(data.pages || []);
+        setMeta({
+          page: data.page || 1,
+          totalPages: data.totalPages || 1,
+          total: data.total || 0,
+        });
+        setStatus('ready');
+      })
+      .catch((err) => {
+        setError(err.message);
+        setStatus('error');
+      });
   }
 
-  useEffect(load, []);
+  useEffect(() => {
+    load(1);
+  }, []);
 
-  function create(template) {
-    setBusy(true);
-    api('pages', { method: 'POST', body: { template, language } }).then((page) => {
-      go('pages/' + page.id);
-    }).catch((err) => {
-      setError(err.message);
-      setStatus('error');
-      setBusy(false);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return pages.filter((page) => {
+      if (statusFilter === 'publish' && page.status !== 'publish') return false;
+      if (statusFilter === 'draft' && page.status !== 'draft') return false;
+      if (q && !String(page.title || '').toLowerCase().includes(q)) return false;
+      return true;
     });
+  }, [pages, search, statusFilter]);
+
+  async function removePage(id) {
+    const ok = await confirm({
+      title: t('pages.delete'),
+      message: t('pages.deleteConfirm'),
+      confirmLabel: t('pages.delete'),
+      cancelLabel: t('common.cancel'),
+      danger: true,
+    });
+    if (!ok) return;
+    api('pages/' + id, { method: 'DELETE' })
+      .then(() => {
+        success(t('pages.deleted'));
+        load(meta.page);
+      })
+      .catch((err) => setError(err.message));
+  }
+
+  function copyLink(page) {
+    const link = page.link || '';
+    if (!link) {
+      toast({ message: t('pages.noLiveLink') });
+      return;
+    }
+    navigator.clipboard?.writeText(link).then(() => success(t('pages.copied'))).catch(() => toast({ message: link }));
+  }
+
+  async function duplicatePage(page) {
+    setBusy(true);
+    try {
+      const payload = await api('pages/' + page.id).catch(() => ({}));
+      const template = payload.template || 'single';
+      const language = payload.language || 'en';
+      const created = await api('pages', {
+        method: 'POST',
+        body: { template, language, title: (page.title || t('editor.untitled')) + ' (2)' },
+      });
+      success(t('pages.duplicated'));
+      go('pages/' + created.id);
+    } catch (err) {
+      toast({ message: err.message || t('common.error') });
+    } finally {
+      setBusy(false);
+      setMenuId(0);
+    }
+  }
+
+  function createPage() {
+    setBusy(true);
+    api('pages', {
+      method: 'POST',
+      body: {
+        template: createTemplate,
+        language: createLang,
+        title: createTitle.trim(),
+      },
+    })
+      .then((page) => {
+        setModalOpen(false);
+        setCreateTitle('');
+        go('pages/' + page.id);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setBusy(false);
+      });
+  }
+
+  const templateOptions = TEMPLATES.map((tpl) => ({
+    value: tpl.value,
+    label: t(tpl.labelKey),
+    description: t(tpl.descKey),
+  }));
+
+  if (status === 'loading' && !pages.length) {
+    return (
+      <div className="nk-screen">
+        <Skeleton height={48} />
+        <div className="nk-grid-cards">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} height={160} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'error' && !pages.length) {
+    return (
+      <Card>
+        <p className="nk-muted">{error || t('common.error')}</p>
+        <Button onClick={() => load(1)}>{t('common.retry')}</Button>
+      </Card>
+    );
   }
 
   return (
-    <AsyncView status={status} error={error} t={t} onRetry={load}>
-      <div className="nk-toolbar">
+    <div className="nk-screen">
+      <header className="nk-screen-header">
         <h1>{t('pages.title')}</h1>
-        <label className="nk-inline">
-          {t('pages.language')}
-          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
-            <option value="en">{t('settings.english')}</option>
-            <option value="bn">{t('settings.bangla')}</option>
-          </select>
-        </label>
+        <div className="nk-screen-actions">
+          <Button onClick={() => setModalOpen(true)}>{t('pages.new')}</Button>
+        </div>
+      </header>
+
+      <div className="nk-filters">
+        <Input
+          label={t('pages.search')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t('pages.search')}
+        />
+        <Select label={t('pages.status')} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="all">{t('pages.filterAll')}</option>
+          <option value="publish">{t('pages.filterLive')}</option>
+          <option value="draft">{t('pages.filterDraft')}</option>
+        </Select>
+        <div className="nk-phone-actions" role="group" aria-label={t('pages.viewMode')}>
+          <IconButton
+            icon={LayoutGrid}
+            aria-label={t('pages.viewGrid')}
+            className={view === 'grid' ? 'is-active' : ''}
+            onClick={() => setView('grid')}
+          />
+          <IconButton
+            icon={TableIcon}
+            aria-label={t('pages.viewTable')}
+            className={view === 'table' ? 'is-active' : ''}
+            onClick={() => setView('table')}
+          />
+        </div>
       </div>
-      {pages.length === 0 ? (
-        <div className="nk-empty">
-          <h2>{t('pages.emptyTitle')}</h2>
-          <p className="nk-lead">{t('pages.emptyBody')}</p>
-          <div className="nk-templates">
-            {TEMPLATES.map(([id, title, body]) => (
-              <button key={id} type="button" className="nk-template" disabled={busy} onClick={() => create(id)}>
-                <strong>{t(title)}</strong>
-                <span>{t(body)}</span>
-                <em className="nk-btn">{t('pages.new')}</em>
-              </button>
-            ))}
-          </div>
-          <p><button type="button" className="nk-btn-ghost" disabled={busy} onClick={() => create('blank')}>{t('pages.blank')}</button></p>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title={t('pages.emptyTitle')}
+          description={t('pages.emptyBody')}
+          action={<Button onClick={() => setModalOpen(true)}>{t('pages.new')}</Button>}
+        />
+      ) : view === 'grid' ? (
+        <div className="nk-grid-cards">
+          {filtered.map((page) => (
+            <article key={page.id} className="nk-page-card">
+              <div className="nk-page-card-thumb" />
+              <p style={{ margin: 0 }}>
+                <strong>{page.title}</strong>
+              </p>
+              <div className="nk-page-card-meta">
+                <StatusPill
+                  status={page.status === 'publish' ? 'delivered' : 'pending'}
+                  label={page.status === 'publish' ? t('pages.published') : t('pages.draft')}
+                />
+                <span>
+                  {t('pages.visits')}: {formatNumber(page.visits, locale)}
+                </span>
+                <span>
+                  {t('pages.orders')}: {formatNumber(page.orders, locale)}
+                </span>
+                <span>
+                  {t('pages.conversion')}: {formatNumber(page.conversion, locale)}%
+                </span>
+              </div>
+              <div className="nk-screen-actions">
+                <Button size="sm" onClick={() => go('pages/' + page.id)}>
+                  {t('pages.edit')}
+                </Button>
+                <div style={{ position: 'relative' }}>
+                  <IconButton
+                    icon={MoreVertical}
+                    aria-label={t('pages.more')}
+                    onClick={() => setMenuId(menuId === page.id ? 0 : page.id)}
+                  />
+                  {menuId === page.id ? (
+                    <div
+                      className="nk-page-card"
+                      style={{ position: 'absolute', right: 0, top: '100%', zIndex: 5, minWidth: 160 }}
+                    >
+                      <div className="nk-detail-stack">
+                        <Button variant="ghost" size="sm" onClick={() => { go('pages/' + page.id); setMenuId(0); }}>
+                          {t('pages.edit')}
+                        </Button>
+                        {page.link ? (
+                          <a className="nk-ui-btn is-ghost is-sm" href={page.link} target="_blank" rel="noreferrer">
+                            {t('pages.view')}
+                          </a>
+                        ) : null}
+                        <Button variant="ghost" size="sm" onClick={() => copyLink(page)}>
+                          {t('pages.copyLink')}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => duplicatePage(page)} disabled={busy}>
+                          {t('pages.duplicate')}
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={() => { setMenuId(0); removePage(page.id); }}>
+                          {t('pages.delete')}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          ))}
         </div>
       ) : (
-        <>
-          <div className="nk-templates" style={{ marginBottom: 16 }}>
-            {TEMPLATES.map(([id, title]) => (
-              <button key={id} type="button" className="nk-btn-ghost" disabled={busy} onClick={() => create(id)}>{t(title)}</button>
-            ))}
-            <button type="button" className="nk-btn-ghost" disabled={busy} onClick={() => create('blank')}>{t('pages.blank')}</button>
-          </div>
-          <div className="nk-card">
-            <table className="nk-table">
-              <thead>
-                <tr>
-                  <th>{t('pages.name')}</th>
-                  <th>{t('pages.status')}</th>
-                  <th>{t('pages.visits')}</th>
-                  <th>{t('pages.orders')}</th>
-                  <th>{t('pages.conversion')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pages.map((page) => (
-                  <tr key={page.id}>
-                    <td><button type="button" className="link" onClick={() => go('pages/' + page.id)}>{page.title}</button></td>
-                    <td>{page.status === 'publish' ? t('pages.published') : t('pages.draft')}</td>
-                    <td>{page.visits}</td>
-                    <td>{page.orders}</td>
-                    <td>{page.conversion}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <Table
+          columns={[
+            { key: 'title', label: t('pages.name') },
+            { key: 'status', label: t('pages.status') },
+            { key: 'visits', label: t('pages.visits'), sortable: true },
+            { key: 'orders', label: t('pages.orders'), sortable: true },
+            { key: 'conversion', label: t('pages.conversion'), sortable: true },
+            { key: 'actions', label: '' },
+          ]}
+          rows={filtered.map((page) => ({
+            id: page.id,
+            title: (
+              <Button variant="ghost" size="sm" onClick={() => go('pages/' + page.id)}>
+                {page.title}
+              </Button>
+            ),
+            status: (
+              <StatusPill
+                status={page.status === 'publish' ? 'delivered' : 'pending'}
+                label={page.status === 'publish' ? t('pages.published') : t('pages.draft')}
+              />
+            ),
+            visits: formatNumber(page.visits, locale),
+            orders: formatNumber(page.orders, locale),
+            conversion: `${formatNumber(page.conversion, locale)}%`,
+            actions: (
+              <div className="nk-phone-actions">
+                <Button size="sm" variant="ghost" onClick={() => copyLink(page)}>
+                  {t('pages.copyLink')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => removePage(page.id)}>
+                  {t('pages.delete')}
+                </Button>
+              </div>
+            ),
+          }))}
+        />
       )}
-    </AsyncView>
+
+      {meta.totalPages > 1 ? (
+        <div className="nk-pager">
+          <span className="nk-muted">
+            {t('pages.pageOf')
+              .replace('{page}', formatNumber(meta.page, locale))
+              .replace('{total}', formatNumber(meta.totalPages, locale))}
+          </span>
+          <div className="nk-screen-actions">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={meta.page <= 1}
+              onClick={() => load(meta.page - 1)}
+            >
+              {t('pages.prev')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={meta.page >= meta.totalPages}
+              onClick={() => load(meta.page + 1)}
+            >
+              {t('pages.next')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <Modal
+        open={modalOpen}
+        onClose={() => !busy && setModalOpen(false)}
+        title={t('pages.createModal')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setModalOpen(false)} disabled={busy}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={createPage} loading={busy}>
+              {t('pages.new')}
+            </Button>
+          </>
+        }
+      >
+        <div className="nk-detail-stack">
+          <RadioCards
+            legend={t('pages.templatePick')}
+            value={createTemplate}
+            onChange={setCreateTemplate}
+            options={templateOptions}
+          />
+          <Select label={t('pages.language')} value={createLang} onChange={(e) => setCreateLang(e.target.value)}>
+            <option value="en">{t('settings.english')}</option>
+            <option value="bn">{t('settings.bangla')}</option>
+          </Select>
+          <Input
+            label={t('pages.pageTitle')}
+            value={createTitle}
+            onChange={(e) => setCreateTitle(e.target.value)}
+            placeholder={t('pages.pageTitlePlaceholder')}
+          />
+        </div>
+      </Modal>
+    </div>
   );
 }

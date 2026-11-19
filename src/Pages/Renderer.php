@@ -12,6 +12,9 @@ use Noksha\I18n\Catalog;
 use Noksha\Options;
 
 final class Renderer {
+    /** @var array<int, string> */
+    private static array $variant_cache = [];
+
     public static function article_for_post(int $id): string {
         $post = get_post($id);
         if (!$post) {
@@ -24,24 +27,34 @@ final class Renderer {
         return self::article(self::apply_variant($payload), false);
     }
 
-    public static function apply_variant(array $payload): array {
-        $ab = is_array($payload['ab'] ?? null) ? $payload['ab'] : [];
-        if (empty($ab['enabled']) || empty($ab['sections'])) {
-            $payload['variant'] = 'a';
-            return $payload;
+    public static function variant_for(int $page_id, array $ab): string {
+        if (isset(self::$variant_cache[$page_id])) {
+            return self::$variant_cache[$page_id];
         }
-        $page_id = (int) ($payload['id'] ?? 0);
+        if (empty($ab['enabled']) || empty($ab['sections'])) {
+            self::$variant_cache[$page_id] = 'a';
+            return 'a';
+        }
         $cookie = 'noksha_ab_' . $page_id;
         $variant = isset($_COOKIE[$cookie]) ? strtolower((string) wp_unslash($_COOKIE[$cookie])) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
         if (!in_array($variant, ['a', 'b'], true)) {
             $split = max(10, min(90, (int) ($ab['split'] ?? 50)));
             $variant = (wp_rand(1, 100) <= $split) ? 'b' : 'a';
+            $_COOKIE[$cookie] = $variant; // Same-request readers see the choice.
             if (!headers_sent()) {
                 setcookie($cookie, $variant, time() + MONTH_IN_SECONDS, COOKIEPATH ?: '/', COOKIE_DOMAIN, is_ssl(), true);
             }
         }
+        self::$variant_cache[$page_id] = $variant;
+        return $variant;
+    }
+
+    public static function apply_variant(array $payload): array {
+        $ab = is_array($payload['ab'] ?? null) ? $payload['ab'] : [];
+        $page_id = (int) ($payload['id'] ?? 0);
+        $variant = self::variant_for($page_id, $ab);
         $payload['variant'] = $variant;
-        if ($variant === 'b') {
+        if ($variant === 'b' && !empty($ab['sections'])) {
             $order = null;
             foreach ($payload['sections'] as $section) {
                 if (($section['type'] ?? '') === 'order_form') {
@@ -60,7 +73,7 @@ final class Renderer {
     public static function document(array $payload, bool $preview): string {
         $css = esc_url(NOKSHA_URL . 'assets/landing.css');
         $js = esc_url(NOKSHA_URL . 'assets/landing.js');
-        $fonts = esc_url('https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
+        $fonts = esc_url(NOKSHA_URL . 'assets/fonts.css');
         $tokens = Tokens::merge(is_array($payload['tokens'] ?? null) ? $payload['tokens'] : null);
         $style = Tokens::css($tokens);
         $config = wp_json_encode(self::script_config($payload, $preview));
@@ -76,7 +89,7 @@ final class Renderer {
             . '<style>' . $style . '</style></head><body class="noksha-landing-body">'
             . $article
             . '<script>window.nokshaFront = ' . $config . ';</script>'
-            . '<script src="' . $js . '"></script></body></html>';
+            . '<script src="' . $js . '" defer></script></body></html>';
     }
 
     public static function seo_tags(array $payload): array {
@@ -130,11 +143,22 @@ final class Renderer {
         $tokens = Tokens::merge(is_array($payload['tokens'] ?? null) ? $payload['tokens'] : null);
         $style = esc_attr(Tokens::declarations($tokens));
         $html = '<article class="nk-landing" lang="' . esc_attr($lang === 'bn' ? 'bn' : 'en') . '" style="' . $style . '">';
+        $has_form = false;
         foreach ($payload['sections'] as $section) {
             if (!empty($section['hidden'])) {
                 continue;
             }
+            if (($section['type'] ?? '') === 'order_form') {
+                $has_form = true;
+            }
             $html .= self::section($section, $payload, $preview);
+        }
+        if ($has_form && self::thanks($payload) === '') {
+            $offer = is_array($payload['offer'] ?? null) ? $payload['offer'] : [];
+            $html .= '<div class="nk-sticky-cta" role="complementary">'
+                . '<div class="nk-sticky-cta-price">' . esc_html(self::money((float) ($offer['price'] ?? 0), $lang)) . '</div>'
+                . '<a class="nk-btn" href="#nk-order">' . esc_html(Catalog::line($lang, 'place_order')) . '</a>'
+                . '</div>';
         }
         $html .= '</article>';
         return $html;
@@ -146,14 +170,17 @@ final class Renderer {
         return [
             'root' => esc_url_raw(rest_url('noksha/v1/')),
             'nonce' => wp_create_nonce('noksha_public'),
+            'nonceCreatedAt' => time(),
             'pageId' => (int) ($payload['id'] ?? 0),
             'geoUrl' => esc_url_raw(NOKSHA_URL . 'data/bd-geo.json'),
             'lang' => $lang,
             'preview' => $preview,
             'price' => (float) $offer['price'],
-            'shipping' => (float) ($offer['shippingOutside'] ?? $offer['shipping'] ?? 0),
+            'shipping' => (float) ($offer['shippingDefault'] ?? $offer['shippingOutside'] ?? $offer['shipping'] ?? 0),
+            'shippingDefault' => (float) ($offer['shippingDefault'] ?? $offer['shippingOutside'] ?? $offer['shipping'] ?? 0),
             'shippingInside' => (float) ($offer['shippingInside'] ?? $offer['shipping'] ?? 0),
             'shippingOutside' => (float) ($offer['shippingOutside'] ?? $offer['shipping'] ?? 0),
+            'shippingZones' => is_array($offer['shippingZones'] ?? null) ? $offer['shippingZones'] : [],
             'dhakaDistrictId' => '47',
             'productName' => (string) ($offer['productName'] ?? ''),
             'bump' => is_array($offer['bump'] ?? null) ? $offer['bump'] : ['enabled' => false],
@@ -166,10 +193,12 @@ final class Renderer {
                 'tiktok' => (string) (Options::settings()['pixels']['tiktok'] ?? ''),
             ],
             'purchase' => self::purchase_payload($payload),
+            'whatsapp' => (string) (Options::settings()['whatsapp'] ?? ''),
             'strings' => [
                 'placing' => Catalog::line($lang, 'placing'),
                 'thankYou' => Catalog::line($lang, 'thank_you'),
                 'thankYouText' => Catalog::line($lang, 'thank_you_text'),
+                'thankYouCall' => Catalog::line($lang, 'thank_you_call'),
                 'orderNumber' => Catalog::line($lang, 'order_number'),
                 'previewOnly' => Catalog::line($lang, 'preview_only'),
                 'free' => Catalog::line($lang, 'free'),
@@ -181,7 +210,14 @@ final class Renderer {
                 'otpLabel' => Catalog::line($lang, 'otp_label'),
                 'otpSend' => Catalog::line($lang, 'otp_send'),
                 'otpSent' => Catalog::line($lang, 'otp_sent'),
+                'otpResend' => Catalog::line($lang, 'otp_resend'),
                 'bumpAdd' => Catalog::line($lang, 'bump_add'),
+                'invalidPhone' => Catalog::line($lang, 'invalid_phone'),
+                'copy' => Catalog::line($lang, 'copy'),
+                'copied' => Catalog::line($lang, 'copied'),
+                'orderCta' => Catalog::line($lang, 'place_order'),
+                'howToPay' => Catalog::line($lang, 'how_to_pay'),
+                'whatsapp' => Catalog::line($lang, 'whatsapp_us'),
             ],
         ];
     }
@@ -190,7 +226,7 @@ final class Renderer {
         $type = $section['type'];
         $props = $section['props'];
         $html = match ($type) {
-            'hero' => self::hero($props, $preview),
+            'hero' => self::hero($props, $payload, $preview),
             'benefits' => self::benefits($props, $preview),
             'product' => self::product($props, $payload, $preview),
             'countdown' => self::countdown($props, $payload, $preview),
@@ -198,7 +234,9 @@ final class Renderer {
             'faq' => self::faq($props, $preview),
             'guarantee' => self::guarantee($props, $preview),
             'order_form' => self::order_form($props, $payload, $preview),
-            'html' => ($props['html'] ?? '') !== '' ? '<section class="nk-section nk-html">' . Sanitizer::clean_html((string) $props['html']) . '</section>' : '',
+            'html' => ($props['html'] ?? '') !== ''
+                ? '<section class="nk-section nk-html"><div class="nk-html-inner">' . Sanitizer::clean_html((string) $props['html']) . '</div></section>'
+                : '',
             default => '',
         };
         if ($preview && $html !== '') {
@@ -207,24 +245,50 @@ final class Renderer {
         return $html;
     }
 
-    private static function hero(array $props, bool $preview = false): string {
-        $media = self::image($props['imageUrl'] ?? '', $props['title'] ?? '');
+    private static function hero(array $props, array $payload = [], bool $preview = false): string {
+        $lang = ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
+        $offer = is_array($payload['offer'] ?? null) ? $payload['offer'] : [];
+        $media = self::image($props['imageUrl'] ?? ($offer['imageUrl'] ?? ''), $props['title'] ?? '', true);
+        $price = (float) ($offer['price'] ?? 0);
+        $compare = (float) ($offer['compareAt'] ?? 0);
+        $price_block = '';
+        if ($price > 0) {
+            $save = $compare > $price ? ($compare - $price) : 0;
+            $price_block = '<div class="nk-price-block">'
+                . '<strong class="nk-price-now">' . esc_html(self::money($price, $lang)) . '</strong>'
+                . ($compare > $price ? '<s class="nk-price-was">' . esc_html(self::money($compare, $lang)) . '</s>' : '')
+                . ($save > 0 ? '<span class="nk-save-badge">' . esc_html(Catalog::line($lang, 'you_save') . ' ' . self::money($save, $lang)) . '</span>' : '')
+                . '</div>';
+        }
+        $trust = '<ul class="nk-trust-row" aria-label="trust">'
+            . '<li>' . esc_html(Catalog::line($lang, 'trust_cod')) . '</li>'
+            . '<li>' . esc_html(Catalog::line($lang, 'trust_delivery')) . '</li>'
+            . '<li>' . esc_html(Catalog::line($lang, 'trust_secure')) . '</li>'
+            . '</ul>';
+        $cta = $props['buttonLabel'] !== ''
+            ? self::editable('a', 'buttonLabel', $props['buttonLabel'], 'nk-btn', $preview, ['href' => '#nk-order'])
+            : '<a class="nk-btn" href="#nk-order">' . esc_html(Catalog::line($lang, 'place_order')) . '</a>';
         return '<header class="nk-hero">'
+            . '<div class="nk-hero-media">' . $media . '</div>'
+            . '<div class="nk-hero-copy">'
             . ($props['eyebrow'] !== '' ? self::editable('p', 'eyebrow', $props['eyebrow'], 'nk-eyebrow', $preview) : '')
             . self::editable('h1', 'title', $props['title'], '', $preview)
             . ($props['subtitle'] !== '' ? self::editable('p', 'subtitle', $props['subtitle'], 'nk-lead', $preview) : '')
-            . ($props['buttonLabel'] !== '' ? self::editable('a', 'buttonLabel', $props['buttonLabel'], 'nk-btn', $preview, ['href' => '#nk-order']) : '')
-            . $media
-            . '</header>';
+            . $price_block
+            . $cta
+            . $trust
+            . '</div></header>';
     }
 
     private static function benefits(array $props, bool $preview = false): string {
         $items = '';
         foreach ($props['items'] as $index => $item) {
-            $items .= '<li>'
+            $items .= '<li class="nk-benefit-card">'
+                . '<span class="nk-benefit-icon" aria-hidden="true">✓</span>'
+                . '<div>'
                 . self::editable('h3', 'items.' . $index . '.title', $item['title'], '', $preview)
                 . self::editable('p', 'items.' . $index . '.text', $item['text'], '', $preview)
-                . '</li>';
+                . '</div></li>';
         }
         return '<section class="nk-section">' . self::editable('h2', 'title', $props['title'], '', $preview)
             . '<ul class="nk-benefits">' . $items . '</ul></section>';
@@ -237,15 +301,18 @@ final class Renderer {
         foreach ($props['bullets'] as $index => $bullet) {
             $bullets .= self::editable('li', 'bullets.' . $index, $bullet, '', $preview);
         }
-        $price = esc_html(self::money((float) $offer['price'], $lang));
-        $compare = '';
-        if ((float) $offer['compareAt'] > (float) $offer['price']) {
-            $compare = '<s>' . esc_html(Catalog::line($lang, 'was') . ' ' . self::money((float) $offer['compareAt'], $lang)) . '</s>';
-        }
+        $price = (float) $offer['price'];
+        $compare = (float) $offer['compareAt'];
+        $img = $props['imageUrl'] ?: ($offer['imageUrl'] ?? '');
+        $gallery = '<div class="nk-gallery">' . self::image($img, $props['title'], false) . '</div>';
+        $price_html = '<div class="nk-price-block">'
+            . '<strong class="nk-price-now">' . esc_html(self::money($price, $lang)) . '</strong>'
+            . ($compare > $price ? '<s class="nk-price-was">' . esc_html(Catalog::line($lang, 'was') . ' ' . self::money($compare, $lang)) . '</s>' : '')
+            . '</div>';
         return '<section class="nk-section nk-product">'
-            . self::image($props['imageUrl'] ?: ($offer['imageUrl'] ?? ''), $props['title'])
+            . $gallery
             . '<div>' . self::editable('h2', 'title', $props['title'], '', $preview)
-            . '<p class="nk-price"><strong>' . $price . '</strong>' . $compare . '</p>'
+            . $price_html
             . self::editable('p', 'text', $props['text'], '', $preview)
             . ($bullets !== '' ? '<ul class="nk-bullets">' . $bullets . '</ul>' : '')
             . '</div></section>';
@@ -260,18 +327,28 @@ final class Renderer {
         foreach (['days', 'hours', 'minutes', 'seconds'] as $unit) {
             $units .= '<div><strong data-unit="' . esc_attr($unit) . '">00</strong><span>' . esc_html(Catalog::line($lang, $unit)) . '</span></div>';
         }
-        return '<section class="nk-section nk-countdown">' . self::editable('h2', 'title', $props['title'], '', $preview)
+        $count = '<div class="nk-count" data-ends="' . esc_attr($props['endsAt']) . '">' . $units . '</div>';
+        return '<section class="nk-section nk-countdown" data-countdown-block>'
+            . self::editable('h2', 'title', $props['title'], '', $preview)
             . '<p>' . esc_html(Catalog::line($lang, 'offer_ends')) . '</p>'
-            . '<div class="nk-count" data-ends="' . esc_attr($props['endsAt']) . '">' . $units . '</div></section>';
+            . $count
+            . '</section>'
+            . '<div class="nk-countdown-bar" data-countdown-bar hidden>'
+            . '<span>' . esc_html($props['title'] !== '' ? $props['title'] : Catalog::line($lang, 'offer_ends')) . '</span>'
+            . '<div class="nk-count" data-ends="' . esc_attr($props['endsAt']) . '">' . $units . '</div>'
+            . '</div>';
     }
 
     private static function reviews(array $props, bool $preview = false): string {
         $items = '';
         foreach ($props['items'] as $index => $item) {
-            $stars = str_repeat('★', (int) $item['rating']) . str_repeat('☆', 5 - (int) $item['rating']);
-            $items .= '<blockquote>'
+            $stars = str_repeat('★', max(0, min(5, (int) $item['rating'])));
+            $photo = !empty($item['imageUrl']) ? self::image((string) $item['imageUrl'], (string) $item['name'], false) : '';
+            $items .= '<blockquote class="nk-review-card">'
+                . $photo
+                . '<div class="nk-stars" aria-hidden="true">' . esc_html($stars) . '</div>'
                 . self::editable('p', 'items.' . $index . '.text', $item['text'], '', $preview)
-                . '<footer><span aria-hidden="true">' . esc_html($stars) . '</span> '
+                . '<footer>'
                 . self::editable('span', 'items.' . $index . '.name', $item['name'], '', $preview)
                 . '</footer></blockquote>';
         }
@@ -282,16 +359,21 @@ final class Renderer {
     private static function faq(array $props, bool $preview = false): string {
         $items = '';
         foreach ($props['items'] as $index => $item) {
-            $items .= '<div class="nk-faq-item"><button type="button" aria-expanded="false" data-nk-prop="items.' . esc_attr((string) $index) . '.q">'
+            $id = 'nk-faq-' . $index;
+            $items .= '<div class="nk-faq-item">'
+                . '<button type="button" id="' . esc_attr($id) . '-btn" aria-expanded="false" aria-controls="' . esc_attr($id) . '" data-nk-prop="items.' . esc_attr((string) $index) . '.q">'
                 . esc_html($item['q'])
-                . '</button><div hidden>' . self::editable('p', 'items.' . $index . '.a', $item['a'], '', $preview) . '</div></div>';
+                . '</button><div id="' . esc_attr($id) . '" role="region" aria-labelledby="' . esc_attr($id) . '-btn" hidden>'
+                . self::editable('p', 'items.' . $index . '.a', $item['a'], '', $preview)
+                . '</div></div>';
         }
         return '<section class="nk-section">' . self::editable('h2', 'title', $props['title'], '', $preview)
-            . '<div class="nk-faq">' . $items . '</div></section>';
+            . '<div class="nk-faq nk-faq-one">' . $items . '</div></section>';
     }
 
     private static function guarantee(array $props, bool $preview = false): string {
         return '<section class="nk-guarantee">'
+            . '<div class="nk-guarantee-badge" aria-hidden="true">✓</div>'
             . self::editable('h2', 'title', $props['title'], '', $preview)
             . self::editable('p', 'text', $props['text'], '', $preview)
             . '</section>';
@@ -349,9 +431,14 @@ final class Renderer {
                 . '<em>+' . esc_html(self::money((float) $bump['price'], $lang)) . '</em></span></label>';
         }
 
+        $otp_digits = '';
+        for ($i = 0; $i < 6; $i++) {
+            $otp_digits .= '<input class="nk-otp-box" type="text" inputmode="numeric" maxlength="1" autocomplete="' . ($i === 0 ? 'one-time-code' : 'off') . '" aria-label="' . esc_attr(Catalog::line($lang, 'otp_label') . ' ' . ($i + 1)) . '">';
+        }
         $otp = '<div class="nk-otp" hidden>'
-            . '<label>' . esc_html(Catalog::line($lang, 'otp_label'))
-            . '<input name="otp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label>'
+            . '<p class="nk-otp-label">' . esc_html(Catalog::line($lang, 'otp_label')) . '</p>'
+            . '<div class="nk-otp-digits">' . $otp_digits . '</div>'
+            . '<input type="hidden" name="otp_code" value="">'
             . '<button type="button" class="nk-btn-ghost" data-otp-send>' . esc_html(Catalog::line($lang, 'otp_send')) . '</button>'
             . '</div>';
 
@@ -359,31 +446,40 @@ final class Renderer {
             . '<h2>' . esc_html($props['title']) . '</h2>'
             . $notice
             . $thanks
-            . '<div class="nk-form-error" hidden></div>'
+            . '<div class="nk-form-error" hidden tabindex="-1"></div>'
             . $fields
             . $otp
             . '<fieldset class="nk-payments"><legend>' . esc_html(Catalog::line($lang, 'payment')) . '</legend>' . $methods . '</fieldset>'
-            . '<label class="nk-trx" hidden>' . esc_html(Catalog::line($lang, 'trx'))
+            . '<div class="nk-trx" hidden>'
+            . '<p class="nk-how-pay"><strong>' . esc_html(Catalog::line($lang, 'how_to_pay')) . '</strong></p>'
+            . '<label>' . esc_html(Catalog::line($lang, 'trx'))
             . '<input name="trx_id" inputmode="text" autocomplete="off" maxlength="40"></label>'
+            . '</div>'
             . '<div class="nk-hp" aria-hidden="true"><label>Website<input name="company_website" tabindex="-1" autocomplete="off"></label></div>'
-            . '<button class="nk-btn" type="submit">' . esc_html($button) . '</button>'
+            . '<button class="nk-btn nk-submit" type="submit"><span class="nk-btn-label">' . esc_html($button) . '</span><span class="nk-btn-spinner" aria-hidden="true"></span></button>'
             . '</form>';
 
         $summary = '<aside class="nk-summary"><h3>' . esc_html(Catalog::line($lang, 'summary')) . '</h3>'
             . '<p class="nk-summary-name">' . esc_html($offer['productName']) . '</p>'
-            . '<label class="nk-qty">' . esc_html(Catalog::line($lang, 'qty'))
-            . '<input name="qty" form="nk-order" type="number" min="1" max="10" value="1"></label>'
+            . '<div class="nk-qty">'
+            . '<span>' . esc_html(Catalog::line($lang, 'qty')) . '</span>'
+            . '<div class="nk-qty-stepper">'
+            . '<button type="button" class="nk-qty-btn" data-qty-dec aria-label="-">−</button>'
+            . '<input name="qty" form="nk-order" type="number" min="1" max="10" value="1" inputmode="numeric">'
+            . '<button type="button" class="nk-qty-btn" data-qty-inc aria-label="+">+</button>'
+            . '</div></div>'
             . $bump_html
             . '<dl>'
             . '<div><dt>' . esc_html(Catalog::line($lang, 'subtotal')) . '</dt><dd data-subtotal>' . esc_html(self::money($price, $lang)) . '</dd></div>'
             . '<div><dt>' . esc_html(Catalog::line($lang, 'shipping')) . '</dt><dd data-shipping>' . esc_html(self::money($shipping, $lang)) . '</dd></div>'
-            . '<div><dt>' . esc_html(Catalog::line($lang, 'total')) . '</dt><dd data-total>' . esc_html(self::money($price + $shipping, $lang)) . '</dd></div>'
+            . '<div class="nk-total-row"><dt>' . esc_html(Catalog::line($lang, 'total')) . '</dt><dd data-total>' . esc_html(self::money($price + $shipping, $lang)) . '</dd></div>'
             . '</dl>'
             . ($checkout['deliveryNote'] !== '' ? '<p class="nk-note">' . esc_html($checkout['deliveryNote']) . '</p>' : '')
             . ($badges !== '' ? '<ul class="nk-trust">' . $badges . '</ul>' : '')
             . '</aside>';
 
-        return '<section class="nk-section nk-order nk-order-' . esc_attr($position) . '">' . $form . $summary . '</section>';
+        return '<section class="nk-section nk-order nk-order-' . esc_attr($position) . '" id="nk-order">'
+            . '<div class="nk-order-layout">' . $form . $summary . '</div></section>';
     }
 
     private static function field(string $key, array $field, string $lang): string {
@@ -400,9 +496,10 @@ final class Renderer {
         } else {
             $type = $key === 'email' ? 'email' : ($key === 'phone' ? 'tel' : 'text');
             $auto = $key === 'phone' ? 'tel' : ($key === 'email' ? 'email' : 'name');
-            $input = '<input type="' . $type . '" name="' . $name . '" autocomplete="' . $auto . '"' . $req . '>';
+            $mode = $key === 'phone' ? ' inputmode="tel"' : '';
+            $input = '<input type="' . $type . '" name="' . $name . '" autocomplete="' . $auto . '"' . $mode . $req . '>';
         }
-        return '<label>' . esc_html($label) . $mark . $input . '</label>';
+        return '<label class="nk-field" data-field="' . esc_attr($key) . '"><span class="nk-field-label">' . esc_html($label) . $mark . '</span>' . $input . '</label>';
     }
 
     private static function payment_methods(array $checkout, string $lang): string {
@@ -431,10 +528,19 @@ final class Renderer {
             $number = $gateway['number'] ?? '';
             $checked = $first ? ' checked' : '';
             $first = false;
+            $wallet = '';
+            if ($number !== '' && in_array($method, ['manual_bkash', 'manual_nagad'], true)) {
+                $wallet = '<div class="nk-wallet" data-wallet="' . esc_attr($method) . '" hidden>'
+                    . '<span class="nk-wallet-number">' . esc_html($number) . '</span>'
+                    . '<button type="button" class="nk-btn-ghost" data-copy="' . esc_attr($number) . '">' . esc_html(Catalog::line($lang, 'copy')) . '</button>'
+                    . '<p class="nk-muted">' . esc_html($help) . '</p>'
+                    . '</div>';
+            }
             $html .= '<label class="nk-pay"><input type="radio" name="payment_method" value="' . esc_attr($method) . '"' . $checked . '>'
-                . '<span><strong>' . esc_html(Catalog::line($lang, 'pay_' . $method)) . '</strong>'
+                . '<span class="nk-pay-card"><strong>' . esc_html(Catalog::line($lang, 'pay_' . $method)) . '</strong>'
                 . ($number !== '' ? '<small>' . esc_html($number) . '</small>' : '')
-                . '<em>' . esc_html($help) . '</em></span></label>';
+                . '<em>' . esc_html($help) . '</em></span></label>'
+                . $wallet;
         }
         return $html;
     }
@@ -463,9 +569,32 @@ final class Renderer {
             return '';
         }
         $lang = ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
-        return '<div class="nk-thanks" data-nk-purchase="1"><h3>' . esc_html(Catalog::line($lang, 'thank_you')) . '</h3><p>'
-            . esc_html(Catalog::line($lang, 'thank_you_text')) . '</p><p><strong>'
-            . esc_html(Catalog::line($lang, 'order_number')) . '</strong> ' . esc_html($number) . '</p></div>';
+        $items = \Noksha\Orders\Repository::items((int) $order['id']);
+        $lines = '';
+        foreach ($items as $item) {
+            $lines .= '<li>' . esc_html((string) ($item['qty'] ?? 1)) . ' × ' . esc_html((string) ($item['name'] ?? ''))
+                . ' · ' . esc_html(self::money((float) ($item['price'] ?? 0), $lang)) . '</li>';
+        }
+        $wa = preg_replace('/\D+/', '', (string) (Options::settings()['whatsapp'] ?? '')) ?? '';
+        $wa_btn = $wa !== ''
+            ? '<a class="nk-btn nk-btn-whatsapp" href="https://wa.me/' . esc_attr($wa) . '" target="_blank" rel="noopener">'
+                . esc_html(Catalog::line($lang, 'whatsapp_us')) . '</a>'
+            : '';
+        $awaiting = in_array((string) ($order['status'] ?? ''), ['awaiting_payment', 'pending'], true)
+            && in_array((string) ($order['payment_method'] ?? ''), ['manual_bkash', 'manual_nagad', 'sslcommerz'], true);
+        return '<div class="nk-thanks" data-nk-purchase="1">'
+            . '<h3>' . esc_html(Catalog::line($lang, 'thank_you')) . '</h3>'
+            . '<p>' . esc_html(Catalog::line($lang, 'thank_you_text')) . '</p>'
+            . '<p class="nk-thanks-order"><strong>' . esc_html(Catalog::line($lang, 'order_number')) . '</strong> '
+            . '<span data-order-number>' . esc_html($number) . '</span> '
+            . '<button type="button" class="nk-btn-ghost" data-copy="' . esc_attr($number) . '">' . esc_html(Catalog::line($lang, 'copy')) . '</button></p>'
+            . ($lines !== '' ? '<ul class="nk-thanks-items">' . $lines . '</ul>' : '')
+            . '<p class="nk-thanks-total"><strong>' . esc_html(Catalog::line($lang, 'total')) . ':</strong> '
+            . esc_html(self::money((float) $order['total'], $lang)) . '</p>'
+            . ($awaiting ? '<p class="nk-banner">' . esc_html(Catalog::line($lang, 'wallet_help')) . '</p>' : '')
+            . '<p class="nk-thanks-call">' . esc_html(Catalog::line($lang, 'thank_you_call')) . '</p>'
+            . $wa_btn
+            . '</div>';
     }
 
     private static function purchase_payload(array $payload): ?array {
@@ -504,10 +633,16 @@ final class Renderer {
         return '৳' . number_format($amount, $digits);
     }
 
-    private static function image(string $url, string $alt): string {
+    private static function image(string $url, string $alt, bool $priority = false): string {
         if ($url === '') {
             return '';
         }
-        return '<img src="' . esc_url($url) . '" alt="' . esc_attr($alt) . '">';
+        $attrs = 'src="' . esc_url($url) . '" alt="' . esc_attr($alt) . '" width="800" height="800"';
+        if ($priority) {
+            $attrs .= ' fetchpriority="high" decoding="async"';
+        } else {
+            $attrs .= ' loading="lazy" decoding="async"';
+        }
+        return '<img ' . $attrs . '>';
     }
 }

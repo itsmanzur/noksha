@@ -50,16 +50,27 @@ final class Repository {
         ));
     }
 
-    public static function query(int $limit = 100): array {
+    /**
+     * @param array{page?:int,per_page?:int}|int $args
+     */
+    public static function query($args = 100): array {
         global $wpdb;
+        if (is_int($args)) {
+            $args = ['per_page' => $args, 'page' => 1];
+        }
+        $page = max(1, (int) ($args['page'] ?? 1));
+        $per_page = max(1, min(100, (int) ($args['per_page'] ?? 50)));
+        $offset = ($page - 1) * $per_page;
+        $total = (int) $wpdb->get_var('SELECT COUNT(*) FROM ' . self::table() . ' WHERE converted = 0');
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                'SELECT * FROM ' . self::table() . ' WHERE converted = 0 ORDER BY updated_at DESC LIMIT %d',
-                $limit
+                'SELECT * FROM ' . self::table() . ' WHERE converted = 0 ORDER BY updated_at DESC LIMIT %d OFFSET %d',
+                $per_page,
+                $offset
             ),
             ARRAY_A
         );
-        return array_map(static function (array $row): array {
+        $leads = array_map(static function (array $row): array {
             return [
                 'id' => (int) $row['id'],
                 'pageId' => (int) $row['page_id'],
@@ -69,5 +80,12 @@ final class Repository {
                 'createdAt' => $row['created_at'],
             ];
         }, is_array($rows) ? $rows : []);
+        return [
+            'leads' => $leads,
+            'total' => $total,
+            'page' => $page,
+            'perPage' => $per_page,
+            'totalPages' => max(1, (int) ceil($total / $per_page)),
+        ];
     }
 }

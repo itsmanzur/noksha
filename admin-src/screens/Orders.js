@@ -1,305 +1,545 @@
-import { useEffect, useState } from '@wordpress/element';
-import { api, AsyncView, money, when } from '../api';
+import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
+import { Check, HelpCircle } from 'lucide-react';
+import { api } from '../api';
+import { formatMoney, formatRelative, formatNumber } from '../format';
+import { useToast } from '../providers';
+import {
+	Badge,
+	Button,
+	DateRangePicker,
+	Drawer,
+	Input,
+	Select,
+	StatusPill,
+	Table,
+} from '../ui';
+import { OrderDetail } from './OrderDetail';
+import '../styles/screens.css';
 
-const STATUSES = ['pending', 'awaiting_payment', 'confirmed', 'paid', 'shipped', 'delivered', 'returned', 'cancelled'];
+const STATUS_TABS = [
+	{ id: 'all', status: '' },
+	{ id: 'pending', status: 'pending' },
+	{ id: 'confirmed', status: 'confirmed' },
+	{ id: 'awaiting_payment', status: 'awaiting_payment' },
+	{ id: 'shipped', status: 'shipped' },
+	{ id: 'delivered', status: 'delivered' },
+	{ id: 'returned', status: 'returned' },
+	{ id: 'cancelled_fake', status: 'cancelled_fake' },
+];
 
-export function Orders({ t, go, orderId }) {
-  const [status, setStatus] = useState('loading');
-  const [error, setError] = useState('');
-  const [rows, setRows] = useState([]);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('');
-  const [detail, setDetail] = useState(null);
-  const [note, setNote] = useState('');
-  const [selected, setSelected] = useState([]);
-  const [bulkStatus, setBulkStatus] = useState('confirmed');
-  const [collect, setCollect] = useState('');
-  const [courier, setCourier] = useState('steadfast');
-  const [shipping, setShipping] = useState(null);
+const BULK_STATUSES = [
+	'pending',
+	'awaiting_payment',
+	'confirmed',
+	'no_answer',
+	'fake',
+	'paid',
+	'shipped',
+	'delivered',
+	'returned',
+	'cancelled',
+];
 
-  function load(nextSearch = search, nextFilter = filter) {
-    setStatus('loading');
-    const query = new URLSearchParams();
-    if (nextSearch) query.set('search', nextSearch);
-    if (nextFilter) query.set('status', nextFilter);
-    api('orders?' + query.toString()).then((data) => {
-      setRows(data.orders || []);
-      setSelected([]);
-      setStatus('ready');
-    }).catch((err) => {
-      setError(err.message);
-      setStatus('error');
-    });
-  }
+const PAYMENT_METHODS = ['', 'cod', 'manual_bkash', 'manual_nagad', 'sslcommerz'];
 
-  useEffect(() => {
-    load('', '');
-    api('settings').then((data) => {
-      setShipping(data.shipping || null);
-      const first = (data.shipping?.available || [])[0];
-      if (first) setCourier(first);
-    }).catch(() => {});
-  }, []);
+function toYmd(d) {
+	if (!d) {
+		return '';
+	}
+	const x = d instanceof Date ? d : new Date(d);
+	if (Number.isNaN(x.getTime())) {
+		return '';
+	}
+	const p = (n) => String(n).padStart(2, '0');
+	return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+}
 
-  useEffect(() => {
-    if (!orderId) {
-      setDetail(null);
-      return;
-    }
-    api('orders/' + orderId).then((data) => {
-      setDetail(data);
-      setCollect(String(data.collectAmount != null ? data.collectAmount : data.total));
-    }).catch((err) => setError(err.message));
-  }, [orderId]);
+function waMeUrl(phone) {
+	const digits = String(phone || '').replace(/\D/g, '');
+	let n = digits;
+	if (n.startsWith('0')) {
+		n = '880' + n.slice(1);
+	} else if (!n.startsWith('880')) {
+		n = '880' + n;
+	}
+	return `https://wa.me/${n}`;
+}
 
-  function updateStatus(next) {
-    api('orders/' + detail.id, { method: 'PUT', body: { status: next } }).then((data) => {
-      setDetail(data);
-      load();
-    }).catch((err) => setError(err.message));
-  }
+function telUrl(phone) {
+	const digits = String(phone || '').replace(/\D/g, '');
+	return `tel:${digits || phone}`;
+}
 
-  function saveCollect() {
-    api('orders/' + detail.id, { method: 'PUT', body: { collect_amount: Number(collect) } }).then((data) => {
-      setDetail(data);
-      setNote(t('orders.collectSaved'));
-    }).catch((err) => setError(err.message));
-  }
+function buildListQuery({
+	search,
+	tab,
+	page,
+	perPage,
+	from,
+	to,
+	paymentMethod,
+	statusOverride,
+}) {
+	const query = new URLSearchParams();
+	if (search) {
+		query.set('search', search);
+	}
+	const status = statusOverride !== undefined ? statusOverride : (STATUS_TABS.find((t) => t.id === tab)?.status || '');
+	if (status && status !== 'cancelled_fake') {
+		query.set('status', status);
+	}
+	query.set('page', String(page));
+	query.set('per_page', String(perPage));
+	if (from) {
+		query.set('from', from);
+	}
+	if (to) {
+		query.set('to', to);
+	}
+	if (paymentMethod) {
+		query.set('payment_method', paymentMethod);
+	}
+	return query;
+}
 
-  function confirmTrx() {
-    api('orders/' + detail.id + '/confirm-trx', {
-      method: 'POST',
-      body: { collect_amount: Number(collect) },
-    }).then((data) => {
-      setDetail(data);
-      setCollect(String(data.collectAmount));
-      setNote(t('orders.confirmed'));
-      load();
-    }).catch((err) => setError(err.message));
-  }
+export function Orders({ t, go, orderId, locale }) {
+	const { success, error: toastError } = useToast();
+	const [listStatus, setListStatus] = useState('loading');
+	const [listError, setListError] = useState('');
+	const [rows, setRows] = useState([]);
+	const [total, setTotal] = useState(0);
+	const [totalPages, setTotalPages] = useState(1);
+	const [tab, setTab] = useState('all');
+	const [tabCounts, setTabCounts] = useState({});
+	const [search, setSearch] = useState('');
+	const [searchDraft, setSearchDraft] = useState('');
+	const [dateRange, setDateRange] = useState(null);
+	const [paymentMethod, setPaymentMethod] = useState('');
+	const [riskFilter, setRiskFilter] = useState('');
+	const [page, setPage] = useState(1);
+	const [perPage, setPerPage] = useState(25);
+	const [selected, setSelected] = useState([]);
+	const [bulkStatus, setBulkStatus] = useState('confirmed');
+	const [drawerId, setDrawerId] = useState(0);
 
-  function rejectTrx() {
-    if (!window.confirm(t('orders.rejectConfirm'))) {
-      return;
-    }
-    api('orders/' + detail.id + '/reject-trx', { method: 'POST', body: {} }).then((data) => {
-      setDetail(data);
-      setNote(t('orders.rejected'));
-      load();
-    }).catch((err) => setError(err.message));
-  }
+	const from = dateRange?.from ? toYmd(dateRange.from) : '';
+	const to = dateRange?.to ? toYmd(dateRange.to) : '';
 
-  function shipOrder() {
-    api('orders/' + detail.id + '/ship', { method: 'POST', body: { courier } }).then((data) => {
-      setDetail(data);
-      setNote(t('orders.shipped'));
-      load();
-    }).catch((err) => setError(err.message));
-  }
+	const filteredRows = useMemo(() => {
+		if (!riskFilter) {
+			return rows;
+		}
+		return rows.filter((row) => row.risk === riskFilter);
+	}, [rows, riskFilter]);
 
-  function printSlip() {
-    api('orders/' + detail.id + '/print').then((data) => {
-      const win = window.open('', '_blank');
-      if (!win) {
-        return;
-      }
-      win.document.write(data.html || '');
-      win.document.close();
-    }).catch((err) => setError(err.message));
-  }
+	const loadCounts = useCallback(() => {
+		const statuses = ['', 'pending', 'confirmed', 'awaiting_payment', 'shipped', 'delivered', 'returned', 'cancelled', 'fake'];
+		Promise.all(
+			statuses.map((status) => {
+				const q = buildListQuery({
+					search,
+					tab: 'all',
+					page: 1,
+					perPage: 1,
+					from,
+					to,
+					paymentMethod,
+					statusOverride: status,
+				});
+				return api('orders?' + q.toString()).then((data) => ({
+					status: status || 'all',
+					total: data.total || 0,
+				}));
+			}),
+		)
+			.then((parts) => {
+				const next = {};
+				parts.forEach((p) => {
+					next[p.status] = p.total;
+				});
+				next.cancelled_fake = (next.cancelled || 0) + (next.fake || 0);
+				setTabCounts(next);
+			})
+			.catch(() => {});
+	}, [search, from, to, paymentMethod]);
 
-  function blacklistPhone() {
-    if (!window.confirm(t('orders.blacklistConfirm'))) {
-      return;
-    }
-    api('blacklist', { method: 'POST', body: { phone: detail.phone, note: detail.number } }).then(() => {
-      setNote(t('orders.blacklisted'));
-    }).catch((err) => setError(err.message));
-  }
+	const loadList = useCallback(() => {
+		setListStatus('loading');
+		setListError('');
 
-  function settleCod() {
-    api('orders/' + detail.id + '/settle-cod', {
-      method: 'POST',
-      body: { received: Number(collect) },
-    }).then((data) => {
-      setDetail(data);
-      setCollect(String(data.codReceived != null ? data.codReceived : data.collectAmount));
-      setNote(t('orders.codSettled'));
-      load();
-    }).catch((err) => setError(err.message));
-  }
+		if (tab === 'cancelled_fake') {
+			const q = buildListQuery({ search, tab, page, perPage, from, to, paymentMethod });
+			const qCancel = new URLSearchParams(q.toString());
+			qCancel.set('status', 'cancelled');
+			const qFake = new URLSearchParams(q.toString());
+			qFake.set('status', 'fake');
+			Promise.all([api('orders?' + qCancel.toString()), api('orders?' + qFake.toString())])
+				.then(([a, b]) => {
+					const merged = [...(a.orders || []), ...(b.orders || [])].sort((x, y) => y.id - x.id);
+					const slice = merged.slice(0, perPage);
+					const combTotal = (a.total || 0) + (b.total || 0);
+					setRows(slice);
+					setTotal(combTotal);
+					setTotalPages(Math.max(1, Math.ceil(combTotal / perPage)));
+					setSelected([]);
+					setListStatus('ready');
+				})
+				.catch((err) => {
+					setListError(err.message);
+					setListStatus('error');
+				});
+			return;
+		}
 
-  function verifyTrx() {
-    api('orders/' + detail.id + '/verify-trx', { method: 'POST', body: {} }).then((data) => {
-      setDetail(data);
-      if (data.verify?.verified) {
-        setNote(t('orders.verifyOk'));
-        setCollect(String(data.collectAmount != null ? data.collectAmount : collect));
-      } else {
-        setNote(data.verify?.message || t('orders.verifyPending'));
-      }
-      load();
-    }).catch((err) => setError(err.message));
-  }
+		const q = buildListQuery({ search, tab, page, perPage, from, to, paymentMethod });
+		api('orders?' + q.toString())
+			.then((data) => {
+				setRows(data.orders || []);
+				setTotal(data.total || 0);
+				setTotalPages(data.totalPages || 1);
+				setSelected([]);
+				setListStatus('ready');
+			})
+			.catch((err) => {
+				setListError(err.message);
+				setListStatus('error');
+			});
+	}, [search, tab, page, perPage, from, to, paymentMethod]);
 
-  function toggle(id) {
-    setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : current.concat(id)));
-  }
+	useEffect(() => {
+		loadCounts();
+	}, [loadCounts]);
 
-  function toggleAll() {
-    if (selected.length === rows.length) {
-      setSelected([]);
-      return;
-    }
-    setSelected(rows.map((row) => row.id));
-  }
+	useEffect(() => {
+		loadList();
+	}, [loadList]);
 
-  function runBulk() {
-    if (selected.length === 0) {
-      return;
-    }
-    api('orders/bulk', { method: 'POST', body: { ids: selected, status: bulkStatus } }).then(() => {
-      setNote(t('orders.bulkDone').replace('{n}', String(selected.length)));
-      load();
-    }).catch((err) => setError(err.message));
-  }
+	useEffect(() => {
+		setPage(1);
+	}, [tab, search, from, to, paymentMethod, perPage]);
 
-  function exportCsv() {
-    const query = new URLSearchParams();
-    if (search) query.set('search', search);
-    if (filter) query.set('status', filter);
-    api('orders/export?' + query.toString()).then((data) => {
-      const blob = new window.Blob([data.csv || ''], { type: 'text/csv;charset=utf-8' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = data.filename || 'noksha-orders.csv';
-      link.click();
-      window.URL.revokeObjectURL(url);
-    }).catch((err) => setError(err.message));
-  }
+	function applySearch(event) {
+		event?.preventDefault?.();
+		setSearch(searchDraft.trim());
+	}
 
-  if (orderId && detail) {
-    const attr = detail.attribution || {};
-    const attrBits = [
-      attr.utm_source && `utm_source=${attr.utm_source}`,
-      attr.utm_medium && `utm_medium=${attr.utm_medium}`,
-      attr.utm_campaign && `utm_campaign=${attr.utm_campaign}`,
-      attr.fbclid && 'fbclid',
-      attr.ttclid && 'ttclid',
-      attr.gclid && 'gclid',
-    ].filter(Boolean);
-    return (
-      <div>
-        <button type="button" className="nk-btn-ghost" onClick={() => go('orders')}>{t('orders.back')}</button>
-        {note ? <p className="nk-banner is-ok">{note}</p> : null}
-        {error ? <p className="nk-banner">{error}</p> : null}
-        <h1>{detail.number}</h1>
-        <p>{detail.name} · {detail.phone} <span className={detail.risk === 'review' ? 'nk-chip is-review' : 'nk-chip is-ok'}>{detail.risk === 'review' ? t('orders.riskReview') : t('orders.riskOk')}</span>{detail.variant ? <span className="nk-chip">A/B {String(detail.variant).toUpperCase()}</span> : null}{detail.otpVerified ? <span className="nk-chip is-ok">{t('orders.otpOk')}</span> : null}</p>
-        <label className="nk-field">
-          {t('pages.status')}
-          <select value={detail.status} onChange={(event) => updateStatus(event.target.value)}>
-            {STATUSES.map((item) => <option key={item} value={item}>{t('status.' + item)}</option>)}
-          </select>
-        </label>
-        <p>{t('orders.method')}: {t('pay.' + detail.method)} · {t('orders.total')}: {money(detail.total)}</p>
-        {detail.fraud ? <p>{t('orders.fraud')}: <span className={detail.fraud.label === 'block' ? 'nk-chip is-review' : (detail.fraud.label === 'review' ? 'nk-chip is-review' : 'nk-chip is-ok')}>{detail.fraud.label} ({detail.fraud.score})</span></p> : null}
-        {detail.trxId ? <p>{t('orders.trx')}: {detail.trxId}{detail.trxVerified ? <span className="nk-chip is-ok"> {t('orders.trxVerified')}</span> : null}</p> : null}
-        {detail.trackingCode ? <p>{t('orders.tracking')}: {detail.trackingCode} ({detail.courier})</p> : null}
-        <label className="nk-field">
-          {t('orders.collect')}
-          <input type="number" min="0" step="0.01" value={collect} onChange={(event) => setCollect(event.target.value)} />
-        </label>
-        <p className="nk-muted">{t('orders.collectHelp')}</p>
-        <div className="nk-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <button type="button" className="nk-btn-ghost" onClick={saveCollect}>{t('orders.saveCollect')}</button>
-          <button type="button" className="nk-btn-ghost" onClick={printSlip}>{t('orders.print')}</button>
-          <button type="button" className="nk-btn-ghost" onClick={blacklistPhone}>{t('orders.blacklist')}</button>
-          {(detail.method === 'manual_bkash' || detail.method === 'manual_nagad') && detail.trxId && !detail.trxVerified ? (
-            <>
-              <button type="button" className="nk-btn" onClick={confirmTrx}>{t('orders.confirmTrx')}</button>
-              <button type="button" className="nk-btn-ghost" onClick={verifyTrx}>{t('orders.verifyTrx')}</button>
-              <button type="button" className="nk-btn-ghost" onClick={rejectTrx}>{t('orders.rejectTrx')}</button>
-            </>
-          ) : null}
-          {detail.method === 'cod' && !detail.codSettled ? (
-            <button type="button" className="nk-btn" onClick={settleCod}>{t('orders.settleCod')}</button>
-          ) : null}
-          {detail.method === 'cod' && detail.codSettled ? (
-            <span className="nk-chip is-ok">{t('orders.codSettled')}{detail.codReceived != null ? ` · ${money(detail.codReceived)}` : ''}</span>
-          ) : null}
-        </div>
-        {(shipping?.available || []).length > 0 && detail.status !== 'shipped' && detail.status !== 'delivered' && detail.status !== 'cancelled' ? (
-          <div className="nk-toolbar" style={{ marginBottom: 12 }}>
-            <select value={courier} onChange={(event) => setCourier(event.target.value)}>
-              {(shipping.available || []).map((id) => <option key={id} value={id}>{t('courier.' + id)}</option>)}
-            </select>
-            <button type="button" className="nk-btn" onClick={shipOrder}>{t('orders.bookCourier')}</button>
-          </div>
-        ) : null}
-        {attrBits.length ? <p>{t('orders.source')}: {attrBits.join(' · ')}</p> : null}
-        <h2>{t('orders.address')}</h2>
-        <p>{[detail.address, detail.upazila, detail.district, detail.division].filter(Boolean).join(', ') || '—'}</p>
-        <h2>{t('orders.items')}</h2>
-        <ul>{(detail.items || []).map((item, index) => <li key={index}>{item.qty} × {item.name} · {money(item.price)}</li>)}</ul>
-        {detail.note ? <p>{t('orders.note')}: {detail.note}</p> : null}
-      </div>
-    );
-  }
+	function exportCsv() {
+		const q = buildListQuery({ search, tab, page: 1, perPage: 25, from, to, paymentMethod });
+		if (tab === 'cancelled_fake') {
+			q.delete('status');
+		}
+		api('orders/export?' + q.toString())
+			.then((data) => {
+				const blob = new window.Blob([data.csv || ''], { type: 'text/csv;charset=utf-8' });
+				const url = window.URL.createObjectURL(blob);
+				const link = document.createElement('a');
+				link.href = url;
+				link.download = data.filename || 'noksha-orders.csv';
+				link.click();
+				window.URL.revokeObjectURL(url);
+				success(t('orders.exportDone'));
+			})
+			.catch((err) => toastError(err.message));
+	}
 
-  return (
-    <AsyncView status={status} error={error} t={t} onRetry={() => load()}>
-      <h1>{t('orders.title')}</h1>
-      {note ? <p className="nk-banner is-ok">{note}</p> : null}
-      <form className="nk-toolbar" onSubmit={(event) => { event.preventDefault(); load(); }}>
-        <input aria-label={t('orders.search')} placeholder={t('orders.search')} value={search} onChange={(event) => setSearch(event.target.value)} />
-        <select value={filter} onChange={(event) => { setFilter(event.target.value); load(search, event.target.value); }}>
-          <option value="">{t('orders.all')}</option>
-          {STATUSES.map((item) => <option key={item} value={item}>{t('status.' + item)}</option>)}
-        </select>
-        <button type="submit" className="nk-btn">{t('top.search')}</button>
-        <button type="button" className="nk-btn-ghost" onClick={exportCsv}>{t('orders.export')}</button>
-      </form>
-      {rows.length > 0 ? (
-        <div className="nk-toolbar" style={{ marginTop: 8 }}>
-          <select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value)}>
-            {STATUSES.map((item) => <option key={item} value={item}>{t('status.' + item)}</option>)}
-          </select>
-          <button type="button" className="nk-btn" disabled={selected.length === 0} onClick={runBulk}>{t('orders.bulk').replace('{n}', String(selected.length))}</button>
-        </div>
-      ) : null}
-      {rows.length === 0 ? <p className="nk-muted">{t('orders.empty')}</p> : (
-        <div className="nk-card">
-          <table className="nk-table">
-            <thead>
-              <tr>
-                <th><input type="checkbox" checked={selected.length === rows.length && rows.length > 0} onChange={toggleAll} aria-label={t('orders.selectAll')} /></th>
-                <th>{t('orders.title')}</th>
-                <th>{t('field.name')}</th>
-                <th>{t('orders.phone')}</th>
-                <th>{t('orders.method')}</th>
-                <th>{t('orders.total')}</th>
-                <th>{t('pages.status')}</th>
-                <th>{t('orders.when')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((order) => (
-                <tr key={order.id}>
-                  <td><input type="checkbox" checked={selected.includes(order.id)} onChange={() => toggle(order.id)} aria-label={order.number} /></td>
-                  <td><button type="button" className="link" onClick={() => go('orders/' + order.id)}>{order.number}</button></td>
-                  <td>{order.name}</td>
-                  <td>{order.phone} <span className={order.risk === 'review' ? 'nk-chip is-review' : 'nk-chip is-ok'}>{order.risk === 'review' ? t('orders.riskReview') : t('orders.riskOk')}</span></td>
-                  <td>{t('pay.' + order.method)}{order.trxId ? <div>{order.trxId}</div> : null}</td>
-                  <td>{money(order.total)}</td>
-                  <td>{t('status.' + order.status)}</td>
-                  <td>{when(order.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </AsyncView>
-  );
+	function runBulk(status) {
+		if (selected.length === 0) {
+			return;
+		}
+		api('orders/bulk', { method: 'POST', body: { ids: selected, status } })
+			.then(() => {
+				success(t('orders.bulkDone').replace('{n}', String(selected.length)));
+				loadList();
+				loadCounts();
+			})
+			.catch((err) => toastError(err.message));
+	}
+
+	function openRow(order) {
+		setDrawerId(order.id);
+	}
+
+	const columns = useMemo(
+		() => [
+			{
+				key: 'number',
+				label: t('orders.orderNumber'),
+				render: (order) => (
+					<strong>{order.number}</strong>
+				),
+			},
+			{
+				key: 'customer',
+				label: t('orders.customer'),
+				render: (order) => (
+					<div onClick={(e) => e.stopPropagation()} role="presentation">
+						<div>{order.name || '—'}</div>
+						<div className="nk-phone-actions" style={{ marginTop: 4 }}>
+							<a href={telUrl(order.phone)} className="nk-ui-btn is-ghost is-sm">{order.phone}</a>
+							<a href={waMeUrl(order.phone)} target="_blank" rel="noopener noreferrer" className="nk-ui-btn is-ghost is-sm" aria-label="WhatsApp">WA</a>
+						</div>
+					</div>
+				),
+			},
+			{
+				key: 'total',
+				label: t('orders.total'),
+				render: (order) => formatMoney(order.total, locale),
+			},
+			{
+				key: 'payment',
+				label: t('orders.payment'),
+				render: (order) => (
+					<div>
+						<Badge>{t('pay.' + order.method)}</Badge>
+						{order.trxId ? (
+							<span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+								<span className="nk-muted" style={{ fontSize: 'var(--nk-text-sm)' }}>{order.trxId}</span>
+								{order.trxVerified ? (
+									<Check size={14} className="nk-ui-text-success" aria-label={t('orders.trxVerified')} />
+								) : (
+									<HelpCircle size={14} aria-label="?" />
+								)}
+							</span>
+						) : null}
+					</div>
+				),
+			},
+			{
+				key: 'status',
+				label: t('pages.status'),
+				render: (order) => (
+					<StatusPill status={order.status} label={t('status.' + order.status)} />
+				),
+			},
+			{
+				key: 'risk',
+				label: t('orders.risk'),
+				render: (order) => (
+					<Badge variant={order.risk === 'review' ? 'warning' : 'success'}>
+						{order.risk === 'review' ? t('orders.riskReview') : t('orders.riskOk')}
+					</Badge>
+				),
+			},
+			{
+				key: 'courier',
+				label: t('orders.courier'),
+				render: (order) => (
+					order.trackingCode ? (
+						<span>
+							{order.courier ? t('courier.' + order.courier) || order.courier : '—'}
+							<br />
+							<small className="nk-muted">{order.trackingCode}</small>
+						</span>
+					) : (
+						<span className="nk-muted">—</span>
+					)
+				),
+			},
+			{
+				key: 'createdAt',
+				label: t('orders.when'),
+				render: (order) => formatRelative(order.createdAt, locale),
+			},
+		],
+		[t, locale],
+	);
+
+	if (orderId) {
+		return (
+			<OrderDetail
+				t={t}
+				locale={locale}
+				go={go}
+				orderId={orderId}
+				variant="page"
+				onMutate={loadCounts}
+			/>
+		);
+	}
+
+	const tabLabel = (id) => {
+		if (id === 'all') {
+			return t('orders.tab.all');
+		}
+		if (id === 'pending') {
+			return t('orders.tab.needsCall');
+		}
+		if (id === 'cancelled_fake') {
+			return t('orders.tab.cancelledFake');
+		}
+		return t('status.' + id);
+	};
+
+	return (
+		<div className="nk-screen">
+			<header className="nk-screen-header">
+				<h1>{t('orders.title')}</h1>
+				<div className="nk-screen-actions">
+					<Button variant="secondary" onClick={exportCsv}>
+						{t('orders.export')}
+					</Button>
+				</div>
+			</header>
+
+			<div className="nk-ui-tabs">
+				<div role="tablist" className="nk-ui-tabs-list" aria-label={t('orders.title')}>
+					{STATUS_TABS.map((item) => {
+						const active = tab === item.id;
+						const count = tabCounts[item.id === 'all' ? 'all' : item.id === 'cancelled_fake' ? 'cancelled_fake' : item.status];
+						return (
+							<button
+								key={item.id}
+								type="button"
+								role="tab"
+								aria-selected={active}
+								className={'nk-ui-tab' + (active ? ' is-active' : '')}
+								onClick={() => setTab(item.id)}
+							>
+								{tabLabel(item.id)}
+								{count != null ? (
+									<Badge variant={active ? 'default' : 'default'} style={{ marginInlineStart: 6 }}>
+										{formatNumber(count, locale)}
+									</Badge>
+								) : null}
+							</button>
+						);
+					})}
+				</div>
+			</div>
+
+			<form className="nk-filters" onSubmit={applySearch}>
+				<Input
+					aria-label={t('orders.search')}
+					placeholder={t('orders.search')}
+					value={searchDraft}
+					onChange={(e) => setSearchDraft(e.target.value)}
+				/>
+				<Button type="submit" variant="secondary">
+					{t('top.search')}
+				</Button>
+				<DateRangePicker value={dateRange} onChange={setDateRange} />
+				<Select
+					label={t('orders.method')}
+					value={paymentMethod}
+					onChange={(e) => setPaymentMethod(e.target.value)}
+				>
+					<option value="">{t('orders.filterPaymentAll')}</option>
+					{PAYMENT_METHODS.filter(Boolean).map((m) => (
+						<option key={m} value={m}>
+							{t('pay.' + m)}
+						</option>
+					))}
+				</Select>
+				<Select
+					label={t('orders.filterRisk')}
+					value={riskFilter}
+					onChange={(e) => setRiskFilter(e.target.value)}
+				>
+					<option value="">{t('orders.filterRiskAll')}</option>
+					<option value="ok">{t('orders.riskOk')}</option>
+					<option value="review">{t('orders.riskReview')}</option>
+				</Select>
+			</form>
+
+			{listStatus === 'error' ? (
+				<div className="nk-banner" role="alert">
+					<p>{listError || t('common.error')}</p>
+					<Button onClick={loadList}>{t('common.retry')}</Button>
+				</div>
+			) : (
+				<Table
+					columns={columns}
+					rows={filteredRows}
+					rowKey={(row) => row.id}
+					loading={listStatus === 'loading'}
+					emptyTitle={t('orders.empty')}
+					selectable
+					selectedKeys={selected}
+					onSelectionChange={setSelected}
+					onRowClick={openRow}
+				/>
+			)}
+
+			{listStatus === 'ready' && total > 0 ? (
+				<div className="nk-pager">
+					<span className="nk-muted">
+						{t('orders.pageOf')
+							.replace('{page}', formatNumber(page, locale))
+							.replace('{total}', formatNumber(totalPages, locale))
+							.replace('{count}', formatNumber(total, locale))}
+					</span>
+					<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+						<Select
+							label={t('orders.perPage')}
+							value={String(perPage)}
+							onChange={(e) => setPerPage(Number(e.target.value))}
+						>
+							<option value="25">25</option>
+							<option value="50">50</option>
+							<option value="100">100</option>
+						</Select>
+						<Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+							{t('orders.prev')}
+						</Button>
+						<Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+							{t('orders.next')}
+						</Button>
+					</div>
+				</div>
+			) : null}
+
+			{selected.length > 0 ? (
+				<div className="nk-bulk-bar" role="region" aria-label={t('orders.bulkBar')}>
+					<strong>{t('orders.selected').replace('{n}', formatNumber(selected.length, locale))}</strong>
+					<Button size="sm" onClick={() => runBulk('confirmed')}>
+						{t('orders.bulkConfirm')}
+					</Button>
+					<Button size="sm" variant="secondary" onClick={() => runBulk('fake')}>
+						{t('orders.markFake')}
+					</Button>
+					<Select
+						aria-label={t('orders.bulkStatus')}
+						value={bulkStatus}
+						onChange={(e) => setBulkStatus(e.target.value)}
+					>
+						{BULK_STATUSES.map((s) => (
+							<option key={s} value={s}>
+								{t('status.' + s)}
+							</option>
+						))}
+					</Select>
+					<Button size="sm" variant="secondary" onClick={() => runBulk(bulkStatus)}>
+						{t('orders.bulk').replace('{n}', String(selected.length))}
+					</Button>
+					<Button size="sm" variant="ghost" onClick={exportCsv}>
+						{t('orders.export')}
+					</Button>
+				</div>
+			) : null}
+
+			<Drawer
+				open={drawerId > 0}
+				onClose={() => setDrawerId(0)}
+				title={t('orders.viewOrder')}
+				width={560}
+				closeLabel={t('common.close')}
+			>
+				{drawerId > 0 ? (
+					<OrderDetail
+						t={t}
+						locale={locale}
+						go={go}
+						orderId={drawerId}
+						variant="drawer"
+						onClose={() => setDrawerId(0)}
+						onMutate={() => {
+							loadList();
+							loadCounts();
+						}}
+					/>
+				) : null}
+			</Drawer>
+		</div>
+	);
 }

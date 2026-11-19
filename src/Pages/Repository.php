@@ -55,13 +55,20 @@ final class Repository {
         return self::payload($id);
     }
 
+    /** @var array<int, array|\WP_Error> */
+    private static array $payload_cache = [];
+
     public static function payload(int $id): array|\WP_Error {
+        if (array_key_exists($id, self::$payload_cache)) {
+            return self::$payload_cache[$id];
+        }
         $post = get_post($id);
         if (!$post || $post->post_type !== PostType::TYPE) {
-            return new \WP_Error('noksha_not_found', 'Page not found.', ['status' => 404]);
+            self::$payload_cache[$id] = new \WP_Error('noksha_not_found', 'Page not found.', ['status' => 404]);
+            return self::$payload_cache[$id];
         }
         $doc = self::document($id);
-        return [
+        self::$payload_cache[$id] = [
             'id' => $id,
             'title' => $post->post_title,
             'slug' => $post->post_name,
@@ -77,6 +84,7 @@ final class Repository {
             'seo' => $doc['seo'],
             'ab' => $doc['ab'],
         ];
+        return self::$payload_cache[$id];
     }
 
     public static function document(int $id): array {

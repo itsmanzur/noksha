@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { api, AsyncView, money } from '../api';
+import { useConfirm } from '../providers';
+import { Modal, Tabs } from '../ui';
+import { EditorTopBar } from './EditorTopBar';
+import { EditorSectionList } from './EditorSectionList';
+import { Icon, IconButton, SECTION_ICONS } from './editorShared';
 
 const TYPES = ['hero', 'benefits', 'product', 'countdown', 'reviews', 'faq', 'guarantee', 'html', 'order_form'];
 const HTML_LIMIT = 20000;
@@ -12,17 +17,6 @@ const COLOR_GROUPS = [
   ['colors.surface', ['canvas', 'card', 'text', 'muted', 'border']],
   ['colors.status', ['success', 'warning', 'danger']],
 ];
-const SECTION_ICONS = {
-  hero: 'layout',
-  benefits: 'checks',
-  product: 'box',
-  countdown: 'clock',
-  reviews: 'star',
-  faq: 'help',
-  guarantee: 'shield',
-  html: 'code',
-  order_form: 'cart',
-};
 const PREVIEW_CSS = '[data-nk-section]{cursor:pointer;outline:2px solid transparent;outline-offset:-2px;transition:outline-color .15s}'
   + '[data-nk-section]:hover{outline-color:rgba(34,113,177,.45)}'
   + '[data-nk-section].nk-ed-sel{outline-color:#2271B1}'
@@ -46,52 +40,6 @@ function setByPath(source, path, value) {
   }
   cursor[parts[parts.length - 1]] = value;
   return clone;
-}
-
-const ICONS = {
-  back: <polyline points="15 18 9 12 15 6" />,
-  next: <polyline points="9 18 15 12 9 6" />,
-  up: <polyline points="18 15 12 9 6 15" />,
-  down: <polyline points="6 9 12 15 18 9" />,
-  eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>,
-  eyeOff: <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></>,
-  trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
-  plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
-  phone: <><rect x="5" y="2" width="14" height="20" rx="2" /><line x1="12" y1="18" x2="12.01" y2="18" /></>,
-  desktop: <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></>,
-  external: <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></>,
-  grip: <><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></>,
-  image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></>,
-  layout: <><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /></>,
-  checks: <><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></>,
-  box: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></>,
-  clock: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
-  star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />,
-  help: <><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
-  shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
-  code: <><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></>,
-  cart: <><circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" /></>,
-  tag: <><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></>,
-  card: <><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></>,
-  link: <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>,
-  drop: <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />,
-  alert: <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>,
-};
-
-function Icon({ name, size = 18 }) {
-  return (
-    <svg className="nk-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      {ICONS[name]}
-    </svg>
-  );
-}
-
-function IconButton({ icon, label, onClick, disabled, danger, active }) {
-  return (
-    <button type="button" className={`nk-icon-btn${danger ? ' is-danger' : ''}${active ? ' is-active' : ''}`} aria-label={label} title={label} disabled={disabled} onClick={onClick}>
-      <Icon name={icon} />
-    </button>
-  );
 }
 
 function blankSection(type, t) {
@@ -127,17 +75,6 @@ function chooseImage(onPick) {
   return true;
 }
 
-function summaryOf(section, t) {
-  const props = section.props || {};
-  const text = section.type === 'html'
-    ? String(props.html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-    : String(props.title || props.eyebrow || props.text || '').trim();
-  if (!text) {
-    return t('editor.untitled');
-  }
-  return text.length > 44 ? text.slice(0, 42) + '…' : text;
-}
-
 function gatewayIssue(method, settings) {
   if (!settings || !settings.gateways) {
     return '';
@@ -156,6 +93,7 @@ function gatewayIssue(method, settings) {
 }
 
 export function Editor({ t, id, go }) {
+  const confirm = useConfirm();
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [page, setPage] = useState(null);
@@ -170,6 +108,9 @@ export function Editor({ t, id, go }) {
   const [justSaved, setJustSaved] = useState(false);
   const [settings, setSettings] = useState(null);
   const [history, setHistory] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const [settingsTab, setSettingsTab] = useState('offer');
+  const [addOpen, setAddOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
   const frameRef = useRef(null);
@@ -261,6 +202,10 @@ export function Editor({ t, id, go }) {
       if ((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 'z' && !event.shiftKey) {
         event.preventDefault();
         actionsRef.current.undo();
+      }
+      if ((event.ctrlKey || event.metaKey) && (String(event.key).toLowerCase() === 'y' || (String(event.key).toLowerCase() === 'z' && event.shiftKey))) {
+        event.preventDefault();
+        actionsRef.current.redo();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -428,6 +373,7 @@ export function Editor({ t, id, go }) {
       return;
     }
     setHistory((current) => current.concat(JSON.stringify(snapshot)).slice(-30));
+    setRedoStack([]);
   }
 
   function patch(partial) {
@@ -445,6 +391,10 @@ export function Editor({ t, id, go }) {
   }
 
   function undo() {
+    const currentPage = pageRef.current;
+    if (!currentPage) {
+      return;
+    }
     setHistory((current) => {
       if (current.length === 0) {
         return current;
@@ -453,6 +403,7 @@ export function Editor({ t, id, go }) {
       const raw = next.pop();
       try {
         skipHistoryRef.current = true;
+        setRedoStack((redo) => redo.concat(JSON.stringify(currentPage)).slice(-30));
         setPage(JSON.parse(raw));
       } catch (err) {
         // Ignore bad history entries.
@@ -460,6 +411,30 @@ export function Editor({ t, id, go }) {
       skipHistoryRef.current = false;
       return next;
     });
+  }
+
+  function redo() {
+    setRedoStack((current) => {
+      if (current.length === 0 || !pageRef.current) {
+        return current;
+      }
+      const next = current.slice();
+      const raw = next.pop();
+      try {
+        skipHistoryRef.current = true;
+        setHistory((hist) => hist.concat(JSON.stringify(pageRef.current)).slice(-30));
+        setPage(JSON.parse(raw));
+      } catch (err) {
+        // Ignore bad redo entries.
+      }
+      skipHistoryRef.current = false;
+      return next;
+    });
+  }
+
+  function openSettings(tab) {
+    setSettingsTab(tab);
+    setView({ kind: 'home' });
   }
 
   function patchSection(sectionId, props) {
@@ -487,8 +462,15 @@ export function Editor({ t, id, go }) {
     setSections((sections) => sections.map((item) => (item.id === sectionId ? { ...item, hidden: !item.hidden } : item)));
   }
 
-  function removeSection(sectionId) {
-    if (!window.confirm(t('editor.removeConfirm'))) {
+  async function removeSection(sectionId) {
+    const ok = await confirm({
+      title: t('common.confirm'),
+      message: t('editor.removeConfirm'),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+      danger: true,
+    });
+    if (!ok) {
       return;
     }
     setSections((sections) => sections.filter((item) => item.id !== sectionId));
@@ -507,6 +489,7 @@ export function Editor({ t, id, go }) {
       return next;
     });
     setView({ kind: 'section', id: created.id });
+    setAddOpen(false);
   }
 
   function save(nextStatus) {
@@ -538,16 +521,32 @@ export function Editor({ t, id, go }) {
     });
   }
 
-  function leave(path) {
-    if (dirty && !window.confirm(t('editor.leaveConfirm'))) {
-      return;
+  async function leave(path) {
+    if (dirty) {
+      const ok = await confirm({
+        title: t('common.confirm'),
+        message: t('editor.leaveConfirm'),
+        confirmLabel: t('common.confirm'),
+        cancelLabel: t('common.cancel'),
+        danger: true,
+      });
+      if (!ok) {
+        return;
+      }
     }
     setSaved(JSON.stringify(pageRef.current));
     go(path);
   }
 
-  function removePage() {
-    if (!window.confirm(t('pages.deleteConfirm'))) {
+  async function removePage() {
+    const ok = await confirm({
+      title: t('common.confirm'),
+      message: t('pages.deleteConfirm'),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+      danger: true,
+    });
+    if (!ok) {
       return;
     }
     api('pages/' + page.id, { method: 'DELETE' }).then(() => {
@@ -559,8 +558,11 @@ export function Editor({ t, id, go }) {
   actionsRef.current = {
     save: () => save(),
     undo,
+    redo,
     pick: (sectionId) => setView({ kind: 'section', id: sectionId, from: 'preview' }),
   };
+
+  const deviceClass = device === 'tablet' ? 'is-tablet' : (device === 'desktop' ? 'is-desktop' : 'is-phone');
 
   const section = page && selectedId ? page.sections.find((item) => item.id === selectedId) : null;
   let stateText = t('editor.allSaved');
@@ -571,121 +573,48 @@ export function Editor({ t, id, go }) {
   return (
     <AsyncView status={status} error={error} t={t} onRetry={load}>
       {page ? (
-        <div className={`nk-ed${fullscreen ? ' is-full' : ''}`}>
-          <header className="nk-ed-top">
-            <button type="button" className="nk-ed-back" onClick={() => leave('pages')}>
-              <Icon name="back" /> <span>{t('editor.back')}</span>
-            </button>
-            <div className="nk-ed-name">
-              <input aria-label={t('editor.title')} value={page.title} placeholder={t('editor.title')} onChange={(event) => patch({ title: event.target.value })} />
-              <span className={`nk-pill ${liveStatus === 'publish' ? 'is-live' : 'is-draft'}`}>{liveStatus === 'publish' ? t('editor.live') : t('editor.draft')}</span>
-            </div>
-            <span className={`nk-ed-state${dirty ? ' is-dirty' : ''}`} aria-live="polite">{stateText}</span>
-            <div className="nk-ed-actions">
-              <button type="button" className="nk-btn-ghost nk-btn-icon" disabled={history.length === 0} title={t('editor.undo')} onClick={undo}>{t('editor.undo')}</button>
-              <button type="button" className="nk-btn-ghost nk-btn-icon" title={t('editor.fullscreen')} aria-pressed={fullscreen} onClick={() => setFullscreen((value) => !value)}>{fullscreen ? t('editor.exitFull') : t('editor.fullscreen')}</button>
-              <div className="nk-seg nk-ed-device" role="group" aria-label={t('editor.device')}>
-                <button type="button" className={device === 'phone' ? 'is-active' : ''} aria-pressed={device === 'phone'} title={t('editor.mobile')} onClick={() => setDevice('phone')}><Icon name="phone" size={16} /><span>{t('editor.mobile')}</span></button>
-                <button type="button" className={device === 'desk' ? 'is-active' : ''} aria-pressed={device === 'desk'} title={t('editor.desktop')} onClick={() => setDevice('desk')}><Icon name="desktop" size={16} /><span>{t('editor.desktop')}</span></button>
-              </div>
-              {page.link && liveStatus === 'publish' ? (
-                <a className="nk-btn-ghost nk-btn-icon" href={page.link} target="_blank" rel="noreferrer"><Icon name="external" size={16} /> {t('editor.viewLive')}</a>
-              ) : null}
-              {liveStatus === 'publish' ? (
-                <button type="button" className="nk-btn" disabled={Boolean(saving) || !dirty} title={t('editor.shortcut')} onClick={() => save()}>
-                  {saving ? t('editor.saving') : t('editor.update')}
-                </button>
-              ) : (
-                <>
-                  <button type="button" className="nk-btn-ghost" disabled={Boolean(saving)} title={t('editor.shortcut')} onClick={() => save('draft')}>
-                    {saving === 'save' ? t('editor.saving') : t('editor.saveDraft')}
-                  </button>
-                  <button type="button" className="nk-btn" disabled={Boolean(saving)} onClick={() => save('publish')}>
-                    {saving === 'publish' ? t('editor.saving') : t('editor.publish')}
-                  </button>
-                </>
-              )}
-            </div>
-          </header>
+        <div className={`nk-editor-shell nk-ed${fullscreen ? ' is-full' : ''}`}>
+          <EditorTopBar
+            t={t}
+            page={page}
+            liveStatus={liveStatus}
+            dirty={dirty}
+            saving={saving}
+            stateText={stateText}
+            canUndo={history.length > 0}
+            canRedo={redoStack.length > 0}
+            device={device}
+            fullscreen={fullscreen}
+            onLeave={leave}
+            onTitleChange={(title) => patch({ title })}
+            onUndo={undo}
+            onRedo={redo}
+            onToggleFullscreen={() => setFullscreen((value) => !value)}
+            onDevice={setDevice}
+            onSave={save}
+            onSaveDraft={() => save('draft')}
+            onUnpublish={() => save('draft')}
+          />
           {error ? <div className="nk-banner nk-ed-error" role="alert">{error}</div> : null}
-          <div className="nk-ed-body">
-            <aside className="nk-ed-side">
-              {view.kind === 'home' ? (
-                <ContentList
-                  t={t}
-                  page={page}
-                  onOpen={(sectionId) => setView({ kind: 'section', id: sectionId })}
-                  onToggle={toggleHidden}
-                  onReorder={reorder}
-                  onAdd={() => setView({ kind: 'add' })}
-                  onSettings={(kind) => setView({ kind })}
-                />
-              ) : null}
-              {view.kind === 'add' ? (
-                <Panel t={t} title={t('editor.addTitle')} help={t('editor.addHelp')} onBack={() => setView({ kind: 'home' })}>
-                  <div className="nk-type-grid">
-                    {TYPES.map((type) => {
-                      const taken = type === 'order_form' && page.sections.some((item) => item.type === 'order_form');
-                      return (
-                        <button key={type} type="button" className="nk-type" disabled={taken} onClick={() => addSection(type)}>
-                          <span className="nk-type-icon"><Icon name={SECTION_ICONS[type]} size={20} /></span>
-                          <strong>{t('section.' + type)}</strong>
-                          <small>{taken ? t('editor.alreadyAdded') : t('sectionHelp.' + type)}</small>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Panel>
-              ) : null}
-              {view.kind === 'section' && section ? (
-                <Panel t={t} title={t('section.' + section.type)} help={t('sectionHelp.' + section.type)} icon={SECTION_ICONS[section.type]} onBack={() => setView({ kind: 'home' })}>
-                  {section.hidden ? (
-                    <p className="nk-note"><Icon name="eyeOff" size={16} /> {t('editor.hiddenNote')}</p>
-                  ) : null}
-                  <SectionFields key={section.id} t={t} section={section} onChange={(props) => patchSection(section.id, props)} onOpen={(kind) => setView({ kind })} />
-                  <div className="nk-panel-foot">
-                    <button type="button" className="nk-btn-ghost nk-btn-icon" onClick={() => toggleHidden(section.id)}>
-                      <Icon name={section.hidden ? 'eye' : 'eyeOff'} size={16} /> {section.hidden ? t('editor.showSection') : t('editor.hideSection')}
-                    </button>
-                    <button type="button" className="nk-btn-danger nk-btn-icon" onClick={() => removeSection(section.id)}>
-                      <Icon name="trash" size={16} /> {t('editor.deleteSection')}
-                    </button>
-                  </div>
-                </Panel>
-              ) : null}
-              {view.kind === 'section' && !section ? (
-                <Panel t={t} title={t('editor.content')} onBack={() => setView({ kind: 'home' })}>
-                  <p className="nk-muted">{t('editor.missingSection')}</p>
-                </Panel>
-              ) : null}
-              {view.kind === 'offer' ? (
-                <Panel t={t} title={t('editor.offerTitle')} help={t('offer.helpIntro')} icon="tag" onBack={() => setView({ kind: 'home' })}>
-                  <OfferFields t={t} offer={page.offer} onChange={(offer) => patch({ offer })} />
-                </Panel>
-              ) : null}
-              {view.kind === 'checkout' ? (
-                <Panel t={t} title={t('editor.checkoutTitle')} icon="card" onBack={() => setView({ kind: 'home' })}>
-                  <CheckoutFields t={t} checkout={page.checkout} settings={settings} onChange={(checkout) => patch({ checkout })} onSetup={() => leave('payments')} />
-                </Panel>
-              ) : null}
-              {view.kind === 'page' ? (
-                <Panel t={t} title={t('editor.pageTitle')} icon="link" onBack={() => setView({ kind: 'home' })}>
-                  <PageFields t={t} page={page} onChange={patch} onDelete={removePage} />
-                </Panel>
-              ) : null}
-              {view.kind === 'colors' ? (
-                <Panel t={t} title={t('editor.colorsTitle')} help={t('editor.colorsHelp')} icon="drop" onBack={() => setView({ kind: 'home' })}>
-                  <ColorFields t={t} tokens={page.tokens} onChange={(tokens) => patch({ tokens })} />
-                </Panel>
-              ) : null}
+          <div className="nk-editor-cols nk-ed-body">
+            <aside className="nk-editor-pane nk-ed-side">
+              <EditorSectionList
+                t={t}
+                page={page}
+                selectedId={selectedId}
+                onOpen={(sectionId) => setView({ kind: 'section', id: sectionId })}
+                onToggle={toggleHidden}
+                onReorder={reorder}
+                onAdd={() => setAddOpen(true)}
+              />
             </aside>
-            <section className="nk-ed-stage" aria-label={t('editor.preview')}>
+            <section className="nk-editor-preview nk-ed-stage" aria-label={t('editor.preview')}>
               <div className="nk-ed-stage-bar">
                 <span className="nk-muted">{t('editor.previewHint')}</span>
                 {previewBusy ? <span className="nk-ed-busy">{t('editor.previewUpdating')}</span> : null}
               </div>
-              <div className={`nk-device ${device === 'phone' ? 'is-phone' : 'is-desk'}`} style={{ position: 'relative' }}>
-                {device === 'desk' ? (
+              <div className={`nk-editor-frame nk-device ${deviceClass}`} style={{ position: 'relative' }}>
+                {device === 'desktop' ? (
                   <div className="nk-device-bar" aria-hidden="true">
                     <i /><i /><i />
                     <span>{page.link || (window.location.origin + '/offer/' + page.slug + '/')}</span>
@@ -694,7 +623,7 @@ export function Editor({ t, id, go }) {
                 {previewError ? (
                   <div className="nk-banner">{t('editor.previewFailed')}</div>
                 ) : (
-                  <iframe ref={frameRef} title={t('editor.preview')} srcDoc={html} onLoad={onFrameLoad} />
+                  <iframe ref={frameRef} className="nk-editor-iframe" title={t('editor.preview')} srcDoc={html} onLoad={onFrameLoad} />
                 )}
                 {toolbar && section ? (
                   <div className="nk-canvas-bar" style={{ top: toolbar.top, left: toolbar.left }}>
@@ -716,105 +645,160 @@ export function Editor({ t, id, go }) {
                 ) : null}
               </div>
             </section>
+            <aside className="nk-editor-pane is-inspector nk-ed-side">
+              <EditorInspector
+                t={t}
+                view={view}
+                section={section}
+                page={page}
+                settings={settings}
+                settingsTab={settingsTab}
+                onSettingsTab={setSettingsTab}
+                onBackToSettings={() => setView({ kind: 'home' })}
+                onPatch={patch}
+                onPatchSection={patchSection}
+                onOpenSettings={openSettings}
+                onToggleHidden={toggleHidden}
+                onRemoveSection={removeSection}
+                onRemovePage={removePage}
+                onLeave={leave}
+              />
+            </aside>
           </div>
+          <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('editor.addTitle')} size="lg">
+            <p className="nk-muted">{t('editor.addHelp')}</p>
+            <div className="nk-type-grid">
+              {TYPES.map((type) => {
+                const taken = type === 'order_form' && page.sections.some((item) => item.type === 'order_form');
+                return (
+                  <button key={type} type="button" className="nk-type" disabled={taken} onClick={() => addSection(type)}>
+                    <span className="nk-type-icon"><Icon name={SECTION_ICONS[type]} size={20} /></span>
+                    <strong>{t('section.' + type)}</strong>
+                    <small>{taken ? t('editor.alreadyAdded') : t('sectionHelp.' + type)}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </Modal>
         </div>
       ) : null}
     </AsyncView>
   );
 }
 
-function Panel({ t, title, help, icon, onBack, children }) {
-  return (
-    <div className="nk-panel-view">
-      <div className="nk-panel-head">
-        <button type="button" className="nk-link-back" onClick={onBack}><Icon name="back" size={16} /> {t('editor.backToContent')}</button>
-        <h2>{icon ? <span className="nk-head-icon"><Icon name={icon} /></span> : null}{title}</h2>
-        {help ? <p className="nk-muted">{help}</p> : null}
-      </div>
-      <div className="nk-panel-body">{children}</div>
-    </div>
-  );
-}
-
-function ContentList({ t, page, onOpen, onToggle, onReorder, onAdd, onSettings }) {
-  const dragRef = useRef(-1);
-  const [over, setOver] = useState(-1);
-  const sections = page.sections;
-  const count = page.checkout.payments.length;
-  const custom = Boolean(page.tokens && page.tokens.enabled);
-
-  return (
-    <div className="nk-panel-view">
-      <div className="nk-panel-head">
-        <h2>{t('editor.content')}</h2>
-        <p className="nk-muted">{t('editor.contentHelp')}</p>
-      </div>
-      <div className="nk-panel-body">
-        {sections.length === 0 ? <p className="nk-muted">{t('editor.emptyContent')}</p> : null}
-        <ol className="nk-blocks">
-          {sections.map((item, index) => (
-            <li
-              key={item.id}
-              className={`nk-block${item.hidden ? ' is-hidden' : ''}${over === index ? ' is-over' : ''}`}
-              draggable
-              onDragStart={(event) => {
-                dragRef.current = index;
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', String(index));
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                if (over !== index) setOver(index);
-              }}
-              onDragLeave={() => setOver(-1)}
-              onDrop={(event) => {
-                event.preventDefault();
-                onReorder(dragRef.current, index);
-                dragRef.current = -1;
-                setOver(-1);
-              }}
-              onDragEnd={() => {
-                dragRef.current = -1;
-                setOver(-1);
-              }}
-            >
-              <span className="nk-grip" title={t('editor.dragHint')}><Icon name="grip" size={16} /></span>
-              <button type="button" className="nk-block-main" onClick={() => onOpen(item.id)}>
-                <span className="nk-block-icon"><Icon name={SECTION_ICONS[item.type]} /></span>
-                <span className="nk-block-text">
-                  <strong>{t('section.' + item.type)}{item.hidden ? <em className="nk-tag">{t('editor.hiddenTag')}</em> : null}</strong>
-                  <small>{summaryOf(item, t)}</small>
-                </span>
-              </button>
-              <span className="nk-block-tools">
-                <IconButton icon="up" label={t('editor.up')} disabled={index === 0} onClick={() => onReorder(index, index - 1)} />
-                <IconButton icon="down" label={t('editor.down')} disabled={index === sections.length - 1} onClick={() => onReorder(index, index + 1)} />
-                <IconButton icon={item.hidden ? 'eyeOff' : 'eye'} label={item.hidden ? t('editor.showSection') : t('editor.hideSection')} onClick={() => onToggle(item.id)} />
-              </span>
-            </li>
-          ))}
-        </ol>
-        <button type="button" className="nk-add-block" onClick={onAdd}><Icon name="plus" /> {t('editor.add')}</button>
-
-        <h3 className="nk-group-title">{t('editor.settings')}</h3>
-        <div className="nk-nav-rows">
-          <NavRow icon="tag" title={t('editor.offerTitle')} detail={money(page.offer.price) + ' · ' + t('offer.delivery') + ' ' + money(page.offer.shipping)} onClick={() => onSettings('offer')} />
-          <NavRow icon="card" title={t('editor.checkoutTitle')} detail={t('editor.paymentsCount').replace('{n}', String(count))} onClick={() => onSettings('checkout')} />
-          <NavRow icon="link" title={t('editor.pageTitle')} detail={'/offer/' + page.slug + '/'} onClick={() => onSettings('page')} />
-          <NavRow icon="drop" title={t('editor.colorsTitle')} detail={custom ? t('editor.customColorsOn') : t('editor.brandColors')} onClick={() => onSettings('colors')} />
+function EditorInspector({
+  t,
+  view,
+  section,
+  page,
+  settings,
+  settingsTab,
+  onSettingsTab,
+  onBackToSettings,
+  onPatch,
+  onPatchSection,
+  onOpenSettings,
+  onToggleHidden,
+  onRemoveSection,
+  onRemovePage,
+  onLeave,
+}) {
+  if (view.kind === 'section' && section) {
+    return (
+      <div className="nk-panel-view">
+        <div className="nk-panel-head">
+          <button type="button" className="nk-link-back" onClick={onBackToSettings}>
+            <Icon name="back" size={16} /> {t('editor.pageSettings')}
+          </button>
+          <h2>
+            <span className="nk-head-icon"><Icon name={SECTION_ICONS[section.type]} /></span>
+            {t('section.' + section.type)}
+          </h2>
+          <p className="nk-muted">{t('sectionHelp.' + section.type)}</p>
+        </div>
+        <div className="nk-panel-body">
+          {section.hidden ? (
+            <p className="nk-note"><Icon name="eyeOff" size={16} /> {t('editor.hiddenNote')}</p>
+          ) : null}
+          <SectionFields
+            key={section.id}
+            t={t}
+            section={section}
+            onChange={(props) => onPatchSection(section.id, props)}
+            onOpen={onOpenSettings}
+          />
+          <div className="nk-panel-foot">
+            <button type="button" className="nk-btn-ghost nk-btn-icon" onClick={() => onToggleHidden(section.id)}>
+              <Icon name={section.hidden ? 'eye' : 'eyeOff'} size={16} /> {section.hidden ? t('editor.showSection') : t('editor.hideSection')}
+            </button>
+            <button type="button" className="nk-btn-danger nk-btn-icon" onClick={() => onRemoveSection(section.id)}>
+              <Icon name="trash" size={16} /> {t('editor.deleteSection')}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-function NavRow({ icon, title, detail, onClick }) {
+  if (view.kind === 'section' && !section) {
+    return (
+      <div className="nk-panel-view">
+        <p className="nk-muted">{t('editor.missingSection')}</p>
+      </div>
+    );
+  }
+
+  const settingsTabs = [
+    {
+      value: 'offer',
+      label: t('editor.offerTitle'),
+      content: (
+        <>
+          <p className="nk-muted">{t('offer.helpIntro')}</p>
+          <OfferFields t={t} offer={page.offer} onChange={(offer) => onPatch({ offer })} />
+        </>
+      ),
+    },
+    {
+      value: 'checkout',
+      label: t('editor.checkoutTitle'),
+      content: <CheckoutFields t={t} checkout={page.checkout} settings={settings} onChange={(checkout) => onPatch({ checkout })} onSetup={() => onLeave('payments')} />,
+    },
+    {
+      value: 'seo',
+      label: t('editor.seoTab'),
+      content: <PageSeoFields t={t} page={page} onChange={onPatch} />,
+    },
+    {
+      value: 'ab',
+      label: t('ab.title'),
+      content: <PageAbFields t={t} page={page} onChange={onPatch} />,
+    },
+    {
+      value: 'colors',
+      label: t('editor.colorsTitle'),
+      content: (
+        <>
+          <p className="nk-muted">{t('editor.colorsHelp')}</p>
+          <ColorFields t={t} tokens={page.tokens} onChange={(tokens) => onPatch({ tokens })} />
+        </>
+      ),
+    },
+    {
+      value: 'page',
+      label: t('editor.pageTitle'),
+      content: <PageMetaFields t={t} page={page} onChange={onPatch} onDelete={onRemovePage} />,
+    },
+  ];
+
   return (
-    <button type="button" className="nk-nav-row" onClick={onClick}>
-      <span className="nk-block-icon"><Icon name={icon} /></span>
-      <span className="nk-block-text"><strong>{title}</strong><small>{detail}</small></span>
-      <Icon name="next" size={16} />
-    </button>
+    <div className="nk-panel-view nk-editor-inspector">
+      <div className="nk-panel-head">
+        <h2>{t('editor.pageSettings')}</h2>
+        <p className="nk-muted">{t('editor.settingsHelp')}</p>
+      </div>
+      <Tabs tabs={settingsTabs} value={settingsTab} onChange={onSettingsTab} />
+    </div>
   );
 }
 
@@ -1107,7 +1091,12 @@ function OfferFields({ t, offer, onChange }) {
       ...partial,
       shippingInside: nextInside,
       shippingOutside: nextOutside,
+      shippingDefault: nextOutside,
       shipping: nextOutside,
+      shippingZones: [
+        { id: 'inside_dhaka', label: 'Inside Dhaka', price: nextInside, districtIds: ['47'], upazilaIds: [] },
+        { id: 'outside_dhaka', label: 'Outside Dhaka', price: nextOutside, districtIds: [], upazilaIds: [] },
+      ],
     });
   }
   return (
@@ -1269,27 +1258,11 @@ function CheckoutFields({ t, checkout, settings, onChange, onSetup }) {
   );
 }
 
-function PageFields({ t, page, onChange, onDelete }) {
-  const ab = page.ab || { enabled: false, split: 50, sections: [] };
-  function setAb(partial) {
-    onChange({ ab: { ...ab, ...partial } });
-  }
-  function copyVariantB() {
-    const clone = (page.sections || [])
-      .filter((section) => section.type !== 'order_form')
-      .map((section) => ({
-        ...section,
-        id: 'ab_' + Math.random().toString(36).slice(2, 10),
-        props: { ...(section.props || {}) },
-      }));
-    setAb({ enabled: true, sections: clone });
-  }
-
+function PageMetaFields({ t, page, onChange, onDelete }) {
   const suffix = page.slug + '/';
   const base = page.link && page.link.endsWith(suffix)
     ? page.link.slice(0, page.link.length - suffix.length)
     : window.location.origin + '/offer/';
-  const seo = page.seo || { title: '', description: '', imageUrl: '' };
   return (
     <div className="nk-form-stack">
       <Field label={t('editor.slug')} help={t('editor.slugHelp')}>
@@ -1314,28 +1287,54 @@ function PageFields({ t, page, onChange, onDelete }) {
         ]} />
         <p className="nk-help">{t('editor.statusHelp')}</p>
       </div>
-      <TextField label={t('seo.title')} help={t('seo.titleHelp')} value={seo.title} maxLength={70} onChange={(title) => onChange({ seo: { ...seo, title } })} />
-      <TextField label={t('seo.description')} help={t('seo.descriptionHelp')} value={seo.description} multiline maxLength={200} onChange={(description) => onChange({ seo: { ...seo, description } })} />
-      <ImageField t={t} label={t('seo.image')} value={seo.imageUrl} onChange={(imageUrl) => onChange({ seo: { ...seo, imageUrl } })} />
-      <div className="nk-ed-group">
-        <h3 className="nk-group-title">{t('ab.title')}</h3>
-        <p className="nk-muted">{t('ab.help')}</p>
-        <Switch checked={Boolean(ab.enabled)} label={t('ab.enable')} onChange={(enabled) => setAb({ enabled })} />
-        {ab.enabled ? (
-          <>
-            <Field label={t('ab.split')} help={t('ab.splitHelp')}>
-              <input type="number" min="10" max="90" value={ab.split || 50} onChange={(event) => setAb({ split: Number(event.target.value) || 50 })} />
-            </Field>
-            <p className="nk-muted">{t('ab.sections').replace('{n}', String((ab.sections || []).length))}</p>
-            <button type="button" className="nk-btn-ghost" onClick={copyVariantB}>{t('ab.copy')}</button>
-          </>
-        ) : null}
-      </div>
       <div className="nk-danger">
         <h3>{t('editor.danger')}</h3>
         <p className="nk-help">{t('editor.dangerHelp')}</p>
         <button type="button" className="nk-btn-danger nk-btn-icon" onClick={onDelete}><Icon name="trash" size={16} /> {t('pages.delete')}</button>
       </div>
+    </div>
+  );
+}
+
+function PageSeoFields({ t, page, onChange }) {
+  const seo = page.seo || { title: '', description: '', imageUrl: '' };
+  return (
+    <div className="nk-form-stack">
+      <TextField label={t('seo.title')} help={t('seo.titleHelp')} value={seo.title} maxLength={70} onChange={(title) => onChange({ seo: { ...seo, title } })} />
+      <TextField label={t('seo.description')} help={t('seo.descriptionHelp')} value={seo.description} multiline maxLength={200} onChange={(description) => onChange({ seo: { ...seo, description } })} />
+      <ImageField t={t} label={t('seo.image')} value={seo.imageUrl} onChange={(imageUrl) => onChange({ seo: { ...seo, imageUrl } })} />
+    </div>
+  );
+}
+
+function PageAbFields({ t, page, onChange }) {
+  const ab = page.ab || { enabled: false, split: 50, sections: [] };
+  function setAb(partial) {
+    onChange({ ab: { ...ab, ...partial } });
+  }
+  function copyVariantB() {
+    const clone = (page.sections || [])
+      .filter((section) => section.type !== 'order_form')
+      .map((section) => ({
+        ...section,
+        id: 'ab_' + Math.random().toString(36).slice(2, 10),
+        props: { ...(section.props || {}) },
+      }));
+    setAb({ enabled: true, sections: clone });
+  }
+  return (
+    <div className="nk-form-stack">
+      <p className="nk-muted">{t('ab.help')}</p>
+      <Switch checked={Boolean(ab.enabled)} label={t('ab.enable')} onChange={(enabled) => setAb({ enabled })} />
+      {ab.enabled ? (
+        <>
+          <Field label={t('ab.split')} help={t('ab.splitHelp')}>
+            <input type="number" min="10" max="90" value={ab.split || 50} onChange={(event) => setAb({ split: Number(event.target.value) || 50 })} />
+          </Field>
+          <p className="nk-muted">{t('ab.sections').replace('{n}', String((ab.sections || []).length))}</p>
+          <button type="button" className="nk-btn-ghost" onClick={copyVariantB}>{t('ab.copy')}</button>
+        </>
+      ) : null}
     </div>
   );
 }
