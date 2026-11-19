@@ -111,7 +111,7 @@ final class Repository {
 
     private static function write_meta(int $id, array $doc): void {
         update_post_meta($id, '_noksha_language', $doc['language']);
-        update_post_meta($id, '_noksha_motion', $doc['motion']);
+        update_post_meta($id, '_noksha_motion', $doc['motion'] ?? 'simple');
         update_post_meta($id, '_noksha_sections', $doc['sections']);
         update_post_meta($id, '_noksha_checkout', $doc['checkout']);
         update_post_meta($id, '_noksha_offer', $doc['offer']);

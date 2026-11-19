@@ -141,6 +141,10 @@ export function Welcome({ t, go, locale }) {
         <Select label={t('pages.language')} value={template} onChange={(e) => setTemplate(e.target.value)}>
           <option value="single">{t('pages.single')}</option>
           <option value="lead">{t('pages.lead')}</option>
+          <option value="fashion">{t('pages.fashion')}</option>
+          <option value="food">{t('pages.food')}</option>
+          <option value="health">{t('pages.health')}</option>
+          <option value="home">{t('pages.home')}</option>
           <option value="beauty">{t('pages.beauty')}</option>
           <option value="gadget">{t('pages.gadget')}</option>
         </Select>
