@@ -10,6 +10,15 @@ namespace Noksha\Notify;
 use Noksha\Options;
 
 final class Sms {
+    public static function store_name(): string {
+        $settings = Options::settings();
+        $name = trim((string) ($settings['store_name'] ?? ''));
+        if ($name === '') {
+            $name = trim((string) get_bloginfo('name'));
+        }
+        return $name !== '' ? $name : 'Noksha';
+    }
+
     public static function send(string $phone, string $message): bool {
         $settings = Options::settings();
         if (empty($settings['sms']['enabled'])) {
@@ -44,18 +53,20 @@ final class Sms {
     public static function order_placed(array $order): void {
         $lang = ($order['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
         $number = (string) ($order['order_number'] ?? '');
+        $sign = self::store_name();
         $message = $lang === 'bn'
-            ? "আপনার অর্ডার {$number} গ্রহণ করা হয়েছে। শীঘ্রই ফোন করে কনফার্ম করা হবে। — Noksha"
-            : "We received your order {$number}. We will call to confirm soon. — Noksha";
+            ? "আপনার অর্ডার {$number} গ্রহণ করা হয়েছে। শীঘ্রই ফোন করে কনফার্ম করা হবে। — {$sign}"
+            : "We received your order {$number}. We will call to confirm soon. — {$sign}";
         self::send((string) ($order['phone'] ?? ''), $message);
     }
 
     public static function order_confirmed(array $order): void {
         $lang = ($order['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
         $number = (string) ($order['order_number'] ?? '');
+        $sign = self::store_name();
         $message = $lang === 'bn'
-            ? "আপনার অর্ডার {$number} কনফার্ম হয়েছে। শীঘ্রই পাঠানো হবে। — Noksha"
-            : "Your order {$number} is confirmed. We will ship it soon. — Noksha";
+            ? "আপনার অর্ডার {$number} কনফার্ম হয়েছে। শীঘ্রই পাঠানো হবে। — {$sign}"
+            : "Your order {$number} is confirmed. We will ship it soon. — {$sign}";
         self::send((string) ($order['phone'] ?? ''), $message);
     }
 
@@ -63,18 +74,20 @@ final class Sms {
         $lang = ($order['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
         $number = (string) ($order['order_number'] ?? '');
         $track = (string) ($order['tracking_code'] ?? '');
+        $sign = self::store_name();
         $message = $lang === 'bn'
-            ? ("আপনার অর্ডার {$number} পাঠানো হয়েছে।" . ($track !== '' ? " ট্র্যাকিং: {$track}" : ''))
-            : ("Your order {$number} has been shipped." . ($track !== '' ? " Tracking: {$track}" : ''));
+            ? ("আপনার অর্ডার {$number} পাঠানো হয়েছে।" . ($track !== '' ? " ট্র্যাকিং: {$track}" : '') . " — {$sign}")
+            : ("Your order {$number} has been shipped." . ($track !== '' ? " Tracking: {$track}" : '') . " — {$sign}");
         self::send((string) ($order['phone'] ?? ''), $message);
     }
 
     public static function order_delivered(array $order): void {
         $lang = ($order['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
         $number = (string) ($order['order_number'] ?? '');
+        $sign = self::store_name();
         $message = $lang === 'bn'
-            ? "আপনার অর্ডার {$number} ডেলিভার হয়েছে। ধন্যবাদ! — Noksha"
-            : "Your order {$number} has been delivered. Thank you! — Noksha";
+            ? "আপনার অর্ডার {$number} ডেলিভার হয়েছে। ধন্যবাদ! — {$sign}"
+            : "Your order {$number} has been delivered. Thank you! — {$sign}";
         self::send((string) ($order['phone'] ?? ''), $message);
     }
 }

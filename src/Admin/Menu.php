@@ -102,9 +102,10 @@ final class Menu {
         }
         $locale = Locale::preference();
         $user = wp_get_current_user();
-        $store = (string) (Options::settings()['sms']['sender'] ?? 'Noksha');
+        $settings = Options::settings();
+        $store = trim((string) ($settings['store_name'] ?? ''));
         if ($store === '') {
-            $store = get_bloginfo('name') ?: 'Noksha';
+            $store = trim((string) get_bloginfo('name')) ?: 'Noksha';
         }
         wp_add_inline_script(
             'noksha-admin',
@@ -114,7 +115,7 @@ final class Menu {
                 'locale' => $locale,
                 'theme' => Prefs::theme(),
                 'tokens' => Tokens::current(),
-                'sandbox' => (bool) Options::settings()['sandbox'],
+                'sandbox' => (bool) $settings['sandbox'],
                 'user' => $user->display_name,
                 'userInitial' => strtoupper(substr((string) ($user->display_name ?: $user->user_login), 0, 1)),
                 'storeName' => $store,

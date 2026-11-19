@@ -17,6 +17,7 @@ final class Options {
         return [
             'region' => 'bd',
             'default_language' => 'en',
+            'store_name' => '',
             'sandbox' => true,
             'pixels' => [
                 'meta' => '',
@@ -199,9 +200,14 @@ final class Options {
         $sms = is_array($input['sms'] ?? null) ? $input['sms'] : $current['sms'];
         $couriers = is_array($input['couriers'] ?? null) ? $input['couriers'] : $current['couriers'];
 
+        $store_name = array_key_exists('store_name', $input)
+            ? sanitize_text_field((string) $input['store_name'])
+            : sanitize_text_field((string) ($current['store_name'] ?? ''));
+
         $next = [
             'region' => 'bd',
             'default_language' => $language,
+            'store_name' => $store_name,
             'sandbox' => array_key_exists('sandbox', $input) ? !empty($input['sandbox']) : !empty($current['sandbox']),
             'pixels' => [
                 'meta' => preg_replace('/\D+/', '', (string) ($pixels['meta'] ?? '')) ?? '',

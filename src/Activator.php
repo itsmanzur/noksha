@@ -8,7 +8,34 @@
 namespace Noksha;
 
 final class Activator {
-    public const DB_VERSION = '7';
+    public const DB_VERSION = '8';
+
+    /** @var array<string, int> Table suffix → minimum DB version that created it. */
+    private const TABLE_SINCE = [
+        'orders' => 1,
+        'order_items' => 1,
+        'payments' => 1,
+        'events' => 1,
+        'leads' => 2,
+        'order_notes' => 5,
+        'blacklist' => 6,
+    ];
+
+    /**
+     * Cached table-existence check based on DB version (avoids SHOW TABLES).
+     */
+    public static function has_table(string $suffix): bool {
+        static $memo = [];
+        if (array_key_exists($suffix, $memo)) {
+            return $memo[$suffix];
+        }
+        $need = self::TABLE_SINCE[$suffix] ?? null;
+        if ($need === null) {
+            return $memo[$suffix] = false;
+        }
+        $installed = (float) get_option('noksha_db_version', '0');
+        return $memo[$suffix] = ($installed >= $need);
+    }
 
     public static function activate(): void {
         Caps::install();
@@ -16,6 +43,7 @@ final class Activator {
         self::install_tables();
         self::migrate_event_column();
         self::migrate_order_columns();
+        self::migrate_v8_wallet_collect();
         $type = new Pages\PostType();
         $type->register();
         if (did_action('init')) {
@@ -66,6 +94,7 @@ final class Activator {
         self::install_tables();
         self::migrate_event_column();
         self::migrate_order_columns();
+        self::migrate_v8_wallet_collect();
         \Noksha\Fraud\Blacklist::migrate_from_option();
         if (get_option('noksha_onboarding') === false) {
             add_option('noksha_onboarding', [
@@ -77,6 +106,38 @@ final class Activator {
         }
         update_option('noksha_db_version', self::DB_VERSION, true);
         set_transient('noksha_schema_ok', '1', DAY_IN_SECONDS);
+    }
+
+    /**
+     * Wallet orders already verified must not collect full COD at courier.
+     */
+    private static function migrate_v8_wallet_collect(): void {
+        global $wpdb;
+        $table = $wpdb->prefix . 'noksha_orders';
+        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table)));
+        if ($found !== $table) {
+            return;
+        }
+        $rows = $wpdb->get_results(
+            "SELECT id FROM {$table}
+             WHERE payment_method IN ('manual_bkash','manual_nagad')
+               AND trx_verified = 1
+               AND status IN ('paid','confirmed')
+               AND (consignment_id = '' OR consignment_id IS NULL)
+               AND collect_amount > 0",
+            ARRAY_A
+        );
+        if (!is_array($rows) || $rows === []) {
+            return;
+        }
+        foreach ($rows as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $wpdb->update($table, ['collect_amount' => 0, 'updated_at' => current_time('mysql')], ['id' => $id]);
+            \Noksha\Orders\Repository::add_note($id, 'collect amount reset to 0 (wallet already paid)');
+        }
     }
 
     private static function schema_ready(): bool {

@@ -63,42 +63,82 @@ final class RateLimit {
 
     public static function client_ip(): string {
         $remote = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0';
-        $trusted = apply_filters('noksha_trusted_proxies', self::cloudflare_cidrs());
+        $trusted = apply_filters('noksha_trusted_proxies', self::trusted_proxies());
         if (!is_array($trusted)) {
             $trusted = [];
         }
         if (!self::ip_in_list($remote, $trusted)) {
             return $remote !== '' ? $remote : '0';
         }
-        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+
+        $cf_ranges = apply_filters('noksha_cloudflare_cidrs', self::cloudflare_cidrs());
+        if (!is_array($cf_ranges)) {
+            $cf_ranges = [];
+        }
+        // CF-Connecting-IP only when the immediate peer is a Cloudflare edge.
+        if (self::ip_in_list($remote, $cf_ranges) && !empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
             $cf = sanitize_text_field(wp_unslash($_SERVER['HTTP_CF_CONNECTING_IP']));
             if (filter_var($cf, FILTER_VALIDATE_IP)) {
                 return $cf;
             }
         }
+
+        // Walk X-Forwarded-For from right to left; first IP that is not a trusted proxy.
         if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            $parts = explode(',', (string) wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR']));
-            $first = sanitize_text_field(trim($parts[0] ?? ''));
-            if (filter_var($first, FILTER_VALIDATE_IP)) {
-                return $first;
+            $parts = array_reverse(array_map('trim', explode(',', (string) wp_unslash($_SERVER['HTTP_X_FORWARDED_FOR']))));
+            foreach ($parts as $part) {
+                $ip = sanitize_text_field($part);
+                if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+                    continue;
+                }
+                if (!self::ip_in_list($ip, $trusted)) {
+                    return $ip;
+                }
             }
         }
+
         return $remote !== '' ? $remote : '0';
     }
 
     /**
+     * Trusted reverse proxies (Cloudflare + local). Filterable via noksha_trusted_proxies.
+     *
      * @return array<int, string>
      */
+    private static function trusted_proxies(): array {
+        return array_merge(self::cloudflare_cidrs(), ['127.0.0.1/32', '::1/128']);
+    }
+
+    /**
+     * Cloudflare published IPv4/IPv6 ranges (filterable via noksha_cloudflare_cidrs).
+     *
+     * @return array<int, string>
+     * @see https://www.cloudflare.com/ips/
+     */
     private static function cloudflare_cidrs(): array {
-        // Subset of Cloudflare published ranges — filterable via noksha_trusted_proxies.
         return [
-            '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '104.16.0.0/13',
-            '104.24.0.0/14', '108.162.192.0/18', '131.0.72.0/22', '141.101.64.0/18',
-            '162.158.0.0/15', '172.64.0.0/13', '173.245.48.0/20', '188.114.96.0/20',
-            '190.93.240.0/20', '197.234.240.0/22', '198.41.128.0/17',
-            '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
-            '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
-            '127.0.0.1/32', '::1/128',
+            '173.245.48.0/20',
+            '103.21.244.0/22',
+            '103.22.200.0/22',
+            '103.31.4.0/22',
+            '141.101.64.0/18',
+            '108.162.192.0/18',
+            '190.93.240.0/20',
+            '188.114.96.0/20',
+            '197.234.240.0/22',
+            '198.41.128.0/17',
+            '162.158.0.0/15',
+            '104.16.0.0/13',
+            '104.24.0.0/14',
+            '172.64.0.0/13',
+            '131.0.72.0/22',
+            '2400:cb00::/32',
+            '2606:4700::/32',
+            '2803:f800::/32',
+            '2405:b500::/32',
+            '2405:8100::/32',
+            '2a06:98c0::/29',
+            '2c0f:f248::/32',
         ];
     }
 

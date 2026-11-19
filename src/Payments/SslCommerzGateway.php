@@ -82,7 +82,7 @@ final class SslCommerzGateway implements Gateway {
         $page = get_permalink((int) $order['page_id']) ?: home_url('/');
         if ($result === 'cancel') {
             if ($order['status'] === 'pending') {
-                Repository::update((int) $order['id'], ['status' => 'cancelled']);
+                Repository::update((int) $order['id'], ['status' => 'cancelled'], true, 'sslcommerz');
                 Repository::update_payment((int) $order['id'], ['status' => 'cancelled']);
             }
             return add_query_arg('nk_payment', 'cancelled', $page);
@@ -162,7 +162,7 @@ final class SslCommerzGateway implements Gateway {
             'status' => 'paid',
             'trx_id' => $val_id,
             'trx_verified' => 1,
-        ]);
+        ], true, 'sslcommerz');
         Repository::update_payment((int) $order['id'], [
             'status' => 'paid',
             'transaction_id' => $val_id,

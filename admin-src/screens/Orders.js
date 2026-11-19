@@ -113,7 +113,7 @@ export function Orders({ t, go, orderId, locale }) {
 	const [tabCounts, setTabCounts] = useState({});
 	const [search, setSearch] = useState('');
 	const [searchDraft, setSearchDraft] = useState('');
-	const [dateRange, setDateRange] = useState(null);
+	const [dateRange, setDateRange] = useState({ preset: 'all' });
 	const [paymentMethod, setPaymentMethod] = useState('');
 	const [riskFilter, setRiskFilter] = useState('');
 	const [page, setPage] = useState(1);
@@ -122,8 +122,8 @@ export function Orders({ t, go, orderId, locale }) {
 	const [bulkStatus, setBulkStatus] = useState('confirmed');
 	const [drawerId, setDrawerId] = useState(0);
 
-	const from = dateRange?.from ? toYmd(dateRange.from) : '';
-	const to = dateRange?.to ? toYmd(dateRange.to) : '';
+	const from = dateRange?.preset === 'all' || !dateRange?.from ? '' : toYmd(dateRange.from);
+	const to = dateRange?.preset === 'all' || !dateRange?.to ? '' : toYmd(dateRange.to);
 
 	const filteredRows = useMemo(() => {
 		if (!riskFilter) {
@@ -132,31 +132,34 @@ export function Orders({ t, go, orderId, locale }) {
 		return rows.filter((row) => row.risk === riskFilter);
 	}, [rows, riskFilter]);
 
+	const datePresets = useMemo(
+		() => [
+			{ id: 'all', label: t('orders.allTime') },
+			{ id: 'today', label: t('home.rangeToday') },
+			{ id: '7d', label: t('home.range7d') },
+			{ id: '30d', label: t('home.range30d') },
+			{ id: 'custom', label: t('orders.customRange') || 'Custom' },
+		],
+		[t],
+	);
+
 	const loadCounts = useCallback(() => {
-		const statuses = ['', 'pending', 'confirmed', 'awaiting_payment', 'shipped', 'delivered', 'returned', 'cancelled', 'fake'];
-		Promise.all(
-			statuses.map((status) => {
-				const q = buildListQuery({
-					search,
-					tab: 'all',
-					page: 1,
-					perPage: 1,
-					from,
-					to,
-					paymentMethod,
-					statusOverride: status,
-				});
-				return api('orders?' + q.toString()).then((data) => ({
-					status: status || 'all',
-					total: data.total || 0,
-				}));
-			}),
-		)
-			.then((parts) => {
-				const next = {};
-				parts.forEach((p) => {
-					next[p.status] = p.total;
-				});
+		const q = new URLSearchParams();
+		if (search) {
+			q.set('search', search);
+		}
+		if (from) {
+			q.set('from', from);
+		}
+		if (to) {
+			q.set('to', to);
+		}
+		if (paymentMethod) {
+			q.set('payment_method', paymentMethod);
+		}
+		api('orders/counts?' + q.toString())
+			.then((data) => {
+				const next = { ...(data || {}) };
 				next.cancelled_fake = (next.cancelled || 0) + (next.fake || 0);
 				setTabCounts(next);
 			})
@@ -408,19 +411,25 @@ export function Orders({ t, go, orderId, locale }) {
 				</div>
 			</div>
 
-			<form className="nk-filters" onSubmit={applySearch}>
-				<Input
-					aria-label={t('orders.search')}
-					placeholder={t('orders.search')}
-					value={searchDraft}
-					onChange={(e) => setSearchDraft(e.target.value)}
+			<form className="nk-filters nk-orders-filters" onSubmit={applySearch}>
+				<div className="nk-orders-search">
+					<Input
+						aria-label={t('orders.search')}
+						placeholder={t('orders.search')}
+						value={searchDraft}
+						onChange={(e) => setSearchDraft(e.target.value)}
+					/>
+					<Button type="submit" variant="secondary">
+						{t('orders.searchAction')}
+					</Button>
+				</div>
+				<DateRangePicker
+					value={dateRange}
+					onChange={(next) => setDateRange(next?.preset === 'all' ? { preset: 'all' } : next)}
+					presets={datePresets}
 				/>
-				<Button type="submit" variant="secondary">
-					{t('top.search')}
-				</Button>
-				<DateRangePicker value={dateRange} onChange={setDateRange} />
 				<Select
-					label={t('orders.method')}
+					aria-label={t('orders.method')}
 					value={paymentMethod}
 					onChange={(e) => setPaymentMethod(e.target.value)}
 				>
@@ -432,7 +441,7 @@ export function Orders({ t, go, orderId, locale }) {
 					))}
 				</Select>
 				<Select
-					label={t('orders.filterRisk')}
+					aria-label={t('orders.filterRisk')}
 					value={riskFilter}
 					onChange={(e) => setRiskFilter(e.target.value)}
 				>

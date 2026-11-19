@@ -161,9 +161,10 @@ export function Settings({ t, locale }) {
         </Select>
         <Input
           label={t('settings.storeName')}
-          help={t('settings.storeHelp')}
-          value={settings.sms?.sender || ''}
-          onChange={(e) => patch({ sms: { ...(settings.sms || {}), sender: e.target.value } })}
+          help={t('settings.storeNameHelp')}
+          value={settings.store_name || ''}
+          onChange={(e) => patch({ store_name: e.target.value })}
+          placeholder={typeof window !== 'undefined' ? (window.nokshaBoot?.storeName || '') : ''}
         />
         <Toggle
           label={t('settings.bnDigits')}

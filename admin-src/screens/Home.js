@@ -149,7 +149,7 @@ export function Home({ t, go, locale }) {
   const [shell, setShell] = useState({ needsCall: 0, leadsToday: 0 });
   const [range, setRange] = useState({ preset: '7d' });
 
-  const storeName = (window.nokshaBoot && window.nokshaBoot.storeName) || 'Noksha';
+  const userName = (window.nokshaBoot && window.nokshaBoot.user) || 'there';
 
   const load = useCallback(() => {
     setStatus('loading');
@@ -262,7 +262,7 @@ export function Home({ t, go, locale }) {
           <h1>
             {t(greetingKey())},{' '}
             <span className="nk-muted" style={{ fontWeight: 500 }}>
-              {storeName}
+              {userName}
             </span>
           </h1>
         </div>
@@ -329,8 +329,12 @@ export function Home({ t, go, locale }) {
         />
         <StatCard
           label={t('home.conversion')}
-          value={`${formatNumber(kpi?.conversion ?? 0, locale)}%`}
-          delta={deltas.conversion}
+          value={
+            kpi?.conversion == null
+              ? t('home.notEnoughData')
+              : `${formatNumber(kpi.conversion, locale)}%`
+          }
+          delta={kpi?.conversion == null ? undefined : deltas.conversion}
         />
         <StatCard
           label={t('home.needsCall')}

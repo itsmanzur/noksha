@@ -91,6 +91,11 @@ final class Controller {
             'callback' => [$this, 'list_orders'],
             'permission_callback' => [$this, 'can_manage'],
         ]);
+        register_rest_route('noksha/v1', '/orders/counts', [
+            'methods' => 'GET',
+            'callback' => [$this, 'order_counts'],
+            'permission_callback' => [$this, 'can_manage'],
+        ]);
         register_rest_route('noksha/v1', '/orders/export', [
             'methods' => 'GET',
             'callback' => [$this, 'export_orders'],
@@ -336,6 +341,15 @@ final class Controller {
         ]);
     }
 
+    public function order_counts(\WP_REST_Request $request): array {
+        return Orders::counts([
+            'search' => sanitize_text_field((string) $request->get_param('search')),
+            'from' => sanitize_text_field((string) $request->get_param('from')),
+            'to' => sanitize_text_field((string) $request->get_param('to')),
+            'payment_method' => sanitize_key((string) $request->get_param('payment_method')),
+        ]);
+    }
+
     public function get_order(\WP_REST_Request $request) {
         $order = Orders::find((int) $request['id']);
         if (!$order) {
@@ -495,9 +509,14 @@ final class Controller {
     }
 
     public function export_orders(\WP_REST_Request $request) {
-        $search = sanitize_text_field((string) $request->get_param('search'));
-        $status = sanitize_key((string) $request->get_param('status'));
-        $rows = Orders::export_rows($search, $status, 2000);
+        $rows = Orders::export_rows([
+            'search' => sanitize_text_field((string) $request->get_param('search')),
+            'status' => sanitize_key((string) $request->get_param('status')),
+            'from' => sanitize_text_field((string) $request->get_param('from')),
+            'to' => sanitize_text_field((string) $request->get_param('to')),
+            'payment_method' => sanitize_key((string) $request->get_param('payment_method')),
+            'limit' => 5000,
+        ]);
         $lines = [];
         $lines[] = 'order_number,status,name,phone,email,division,district,upazila,address,method,trx_id,trx_verified,subtotal,shipping,total,collect_amount,utm_source,utm_medium,utm_campaign,fbclid,ttclid,created_at';
         foreach ($rows as $row) {

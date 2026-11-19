@@ -7,7 +7,6 @@
 
 namespace Noksha\Shipping;
 
-use Noksha\Notify\Sms;
 use Noksha\Options;
 use Noksha\Orders\Repository as Orders;
 
@@ -41,6 +40,9 @@ final class Manager {
         if (in_array($status, ['cancelled', 'returned', 'delivered'], true)) {
             return new \WP_Error('noksha_not_bookable', 'This order cannot be booked.', ['status' => 409]);
         }
+        if (!$force && !in_array($status, ['confirmed', 'paid'], true)) {
+            return new \WP_Error('noksha_confirm_first', 'Confirm the order first.', ['status' => 409]);
+        }
         if (!$force && ($order['consignment_id'] ?? '') !== '') {
             return new \WP_Error(
                 'noksha_already_booked',
@@ -59,17 +61,15 @@ final class Manager {
                 'raw' => $result['raw'] ?? '',
             ]);
         }
+        // Status change fires noksha_order_status_changed → Sms::order_shipped once.
         Orders::update($order_id, [
             'status' => 'shipped',
             'courier' => $courier_id,
             'consignment_id' => $result['consignment_id'] ?? '',
             'tracking_code' => $result['tracking_code'] ?? '',
             'courier_status' => 'booked',
-        ]);
+        ], true, 'courier');
         $fresh = Orders::find($order_id);
-        if ($fresh) {
-            Sms::order_shipped($fresh);
-        }
         return Orders::detail($fresh ?: $order);
     }
 

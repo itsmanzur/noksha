@@ -217,28 +217,54 @@ final class Checkout {
             return $this->error('page_closed', $lang, 500);
         }
         $order['product_name'] = $doc['offer']['productName'] !== '' ? $doc['offer']['productName'] : $post->post_title;
-        $result = $gateway->start($order, $input);
 
-        Repository::add_payment([
-            'order_id' => $id,
-            'gateway' => $method,
-            'amount' => $total,
-            'status' => $result['payment_status'] ?? 'failed',
-            'transaction_id' => $result['transaction_id'] ?? '',
-            'gateway_ref' => isset($result['gateway_ref']) ? noksha_clip((string) $result['gateway_ref'], 191) : '',
-            'raw_response' => isset($result['raw_response']) ? noksha_clip((string) $result['raw_response'], 20000) : '',
-        ]);
-
-        if (!empty($result['error'])) {
-            $wpdb->query('ROLLBACK');
-            return $this->error((string) $result['error'], $lang, 422);
+        // Network gateways: commit insert first so row locks are not held during HTTP.
+        $network_gateway = ($method === 'sslcommerz');
+        if ($network_gateway) {
+            $wpdb->query('COMMIT');
         }
 
-        Repository::update($id, [
-            'status' => $result['status'],
-            'trx_id' => $result['transaction_id'] ?? '',
-        ]);
-        $wpdb->query('COMMIT');
+        $result = $gateway->start($order, $input);
+
+        if ($network_gateway) {
+            Repository::add_payment([
+                'order_id' => $id,
+                'gateway' => $method,
+                'amount' => $total,
+                'status' => $result['payment_status'] ?? 'failed',
+                'transaction_id' => $result['transaction_id'] ?? '',
+                'gateway_ref' => isset($result['gateway_ref']) ? noksha_clip((string) $result['gateway_ref'], 191) : '',
+                'raw_response' => isset($result['raw_response']) ? noksha_clip((string) $result['raw_response'], 20000) : '',
+            ]);
+            if (!empty($result['error'])) {
+                Repository::update($id, ['status' => 'cancelled'], true, 'sslcommerz');
+                Repository::add_note($id, 'Gateway failed: ' . (string) $result['error']);
+                return $this->error((string) $result['error'], $lang, 422);
+            }
+            Repository::update($id, [
+                'status' => $result['status'],
+                'trx_id' => $result['transaction_id'] ?? '',
+            ], true, 'sslcommerz');
+        } else {
+            Repository::add_payment([
+                'order_id' => $id,
+                'gateway' => $method,
+                'amount' => $total,
+                'status' => $result['payment_status'] ?? 'failed',
+                'transaction_id' => $result['transaction_id'] ?? '',
+                'gateway_ref' => isset($result['gateway_ref']) ? noksha_clip((string) $result['gateway_ref'], 191) : '',
+                'raw_response' => isset($result['raw_response']) ? noksha_clip((string) $result['raw_response'], 20000) : '',
+            ]);
+            if (!empty($result['error'])) {
+                $wpdb->query('ROLLBACK');
+                return $this->error((string) $result['error'], $lang, 422);
+            }
+            Repository::update($id, [
+                'status' => $result['status'],
+                'trx_id' => $result['transaction_id'] ?? '',
+            ]);
+            $wpdb->query('COMMIT');
+        }
         if (in_array($method, ['manual_bkash', 'manual_nagad'], true)) {
             WalletVerifier::maybe_auto_verify($id);
         }

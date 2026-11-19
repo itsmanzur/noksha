@@ -34,7 +34,24 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--nk-space-2);
-  align-items: flex-end;
+  align-items: center;
+}
+
+.nk-orders-filters .nk-orders-search {
+  display: flex;
+  flex: 1 1 280px;
+  gap: var(--nk-space-2);
+  min-width: 240px;
+  align-items: center;
+}
+
+.nk-orders-filters .nk-orders-search .nk-ui-field {
+  flex: 1 1 auto;
+  min-width: 200px;
+}
+
+.nk-orders-filters .nk-ui-date-range {
+  flex: 0 1 auto;
 }
 
 .nk-kpi-row {

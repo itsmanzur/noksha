@@ -148,7 +148,10 @@ export function Analytics({ t, locale }) {
               ))}
             </div>
             <p className="nk-muted">
-              {t('analytics.conversion')}: {formatNumber(funnel.conversion, locale)}%
+              {t('analytics.conversion')}:{' '}
+              {funnel.conversion == null
+                ? t('home.notEnoughData')
+                : `${formatNumber(funnel.conversion, locale)}%`}
               {' · '}
               {t('analytics.cod')}: {formatNumber(funnel.cod, locale)}
               {' · '}

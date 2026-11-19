@@ -77,7 +77,7 @@ final class WalletVerifier {
             'status' => 'paid',
             'trx_verified' => 1,
             'collect_amount' => 0,
-        ]);
+        ], true, 'wallet');
         Orders::update_payment($order_id, [
             'status' => 'paid',
             'transaction_id' => $trx,
@@ -86,8 +86,12 @@ final class WalletVerifier {
         return ['ok' => true, 'verified' => true, 'source' => 'api', 'raw' => $result['raw'] ?? ''];
     }
 
+    /** Delays (seconds) before attempt 1..4. */
+    private const RETRY_DELAYS = [5, 120, 600, 1800];
+
     /**
      * Schedule async verify so checkout is not blocked by wallet APIs.
+     * One event at a time — WordPress drops identical hook+args inside 10 minutes.
      */
     public static function maybe_auto_verify(int $order_id): void {
         $order = Orders::find($order_id);
@@ -98,23 +102,38 @@ final class WalletVerifier {
         if (!self::ready($method)) {
             return;
         }
-        if (!wp_next_scheduled('noksha_verify_trx', [$order_id])) {
-            wp_schedule_single_event(time() + 5, 'noksha_verify_trx', [$order_id]);
-            wp_schedule_single_event(time() + 120, 'noksha_verify_trx', [$order_id]);
-            wp_schedule_single_event(time() + 600, 'noksha_verify_trx', [$order_id]);
-        }
+        self::schedule_attempt($order_id, 1);
     }
 
     public static function register_hooks(): void {
-        add_action('noksha_verify_trx', [self::class, 'cron_verify']);
+        add_action('noksha_verify_trx', [self::class, 'cron_verify'], 10, 2);
     }
 
-    public static function cron_verify(int $order_id): void {
+    public static function cron_verify(int $order_id, int $attempt = 1): void {
+        $attempt = max(1, $attempt);
         $order = Orders::find($order_id);
         if (!$order || (int) ($order['trx_verified'] ?? 0) === 1) {
             return;
         }
-        self::verify_order($order_id);
+        $result = self::verify_order($order_id);
+        if (!empty($result['verified'])) {
+            return;
+        }
+        $next = $attempt + 1;
+        if ($next > count(self::RETRY_DELAYS)) {
+            return;
+        }
+        self::schedule_attempt($order_id, $next);
+    }
+
+    private static function schedule_attempt(int $order_id, int $attempt): void {
+        $attempt = max(1, min(count(self::RETRY_DELAYS), $attempt));
+        $args = [$order_id, $attempt];
+        if (wp_next_scheduled('noksha_verify_trx', $args)) {
+            return;
+        }
+        $delay = self::RETRY_DELAYS[$attempt - 1];
+        wp_schedule_single_event(time() + $delay, 'noksha_verify_trx', $args);
     }
 
     /**

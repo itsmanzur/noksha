@@ -61,7 +61,7 @@ final class Webhooks {
             }
         }
 
-        Orders::update((int) $order['id'], $fields);
+        Orders::update((int) $order['id'], $fields, true, 'webhook');
         return [
             'ok' => true,
             'matched' => true,

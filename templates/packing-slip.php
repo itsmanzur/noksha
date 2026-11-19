@@ -33,9 +33,12 @@ if (!empty($noksha_layout) && in_array($noksha_layout, ['a4', 'labels'], true)) 
 }
 
 $settings = Options::settings();
-$store_name = trim((string) ($settings['sms']['sender'] ?? ''));
+$store_name = trim((string) ($settings['store_name'] ?? ''));
 if ($store_name === '') {
-    $store_name = (string) get_bloginfo('name');
+    $store_name = trim((string) get_bloginfo('name'));
+}
+if ($store_name === '') {
+    $store_name = 'Noksha';
 }
 
 $money = static function ($amount): string {

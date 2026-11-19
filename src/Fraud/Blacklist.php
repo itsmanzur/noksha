@@ -18,12 +18,11 @@ final class Blacklist {
     }
 
     public static function migrate_from_option(): void {
-        global $wpdb;
-        $table = self::table();
-        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table)));
-        if ($found !== $table) {
+        if (!\Noksha\Activator::has_table('blacklist')) {
             return;
         }
+        global $wpdb;
+        $table = self::table();
         $stored = get_option(self::OPTION, []);
         if (!is_array($stored) || $stored === []) {
             return;
@@ -48,13 +47,12 @@ final class Blacklist {
     }
 
     public static function all(): array {
-        global $wpdb;
-        $table = self::table();
-        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table)));
-        if ($found !== $table) {
+        if (!\Noksha\Activator::has_table('blacklist')) {
             $stored = get_option(self::OPTION, []);
             return is_array($stored) ? array_values($stored) : [];
         }
+        global $wpdb;
+        $table = self::table();
         $rows = $wpdb->get_results("SELECT phone, note, created_at, created_by FROM {$table} ORDER BY id DESC LIMIT 2000", ARRAY_A);
         return is_array($rows) ? $rows : [];
     }
@@ -64,11 +62,9 @@ final class Blacklist {
         if (Phone::error($phone)) {
             return false;
         }
-        global $wpdb;
-        $table = self::table();
-        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table)));
-        if ($found === $table) {
-            return (int) $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE phone = %s LIMIT 1", $phone)) > 0;
+        if (\Noksha\Activator::has_table('blacklist')) {
+            global $wpdb;
+            return (int) $wpdb->get_var($wpdb->prepare('SELECT id FROM ' . self::table() . ' WHERE phone = %s LIMIT 1', $phone)) > 0;
         }
         foreach (self::all() as $row) {
             if (($row['phone'] ?? '') === $phone) {
@@ -83,11 +79,9 @@ final class Blacklist {
         if (Phone::error($phone)) {
             return new \WP_Error('noksha_invalid_phone', 'Invalid phone.', ['status' => 400]);
         }
-        global $wpdb;
-        $table = self::table();
-        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table)));
-        if ($found === $table) {
-            $wpdb->replace($table, [
+        if (\Noksha\Activator::has_table('blacklist')) {
+            global $wpdb;
+            $wpdb->replace(self::table(), [
                 'phone' => $phone,
                 'note' => sanitize_text_field($note),
                 'created_at' => current_time('mysql'),
@@ -112,11 +106,9 @@ final class Blacklist {
 
     public static function remove(string $phone): array {
         $phone = Phone::normalize($phone);
-        global $wpdb;
-        $table = self::table();
-        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table)));
-        if ($found === $table) {
-            $wpdb->delete($table, ['phone' => $phone]);
+        if (\Noksha\Activator::has_table('blacklist')) {
+            global $wpdb;
+            $wpdb->delete(self::table(), ['phone' => $phone]);
             return self::all();
         }
         $rows = array_values(array_filter(self::all(), static fn ($row) => ($row['phone'] ?? '') !== $phone));

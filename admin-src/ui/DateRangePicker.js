@@ -25,6 +25,9 @@ function endOfDay(d) {
 function resolvePreset(preset) {
 	const now = new Date();
 	const todayStart = startOfDay(now);
+	if (preset === 'all') {
+		return { from: null, to: null };
+	}
 	if (preset === 'today') {
 		return { from: todayStart, to: endOfDay(now) };
 	}
@@ -79,6 +82,9 @@ export function DateRangePicker({ value, onChange, presets = PRESETS, className 
 	}, [value?.preset]); // eslint-disable-line react-hooks/exhaustive-deps -- sync external preset only
 
 	const range = useMemo(() => {
+		if (mode === 'all') {
+			return { from: null, to: null };
+		}
 		if (value?.from && value?.to) {
 			return value;
 		}
@@ -88,7 +94,7 @@ export function DateRangePicker({ value, onChange, presets = PRESETS, className 
 
 	const showInputs = hasCustom && mode === 'custom';
 	const summary =
-		!showInputs && range.from && range.to
+		!showInputs && mode !== 'all' && range.from && range.to
 			? `${formatShort(range.from)} – ${formatShort(range.to)}`
 			: '';
 
@@ -101,6 +107,10 @@ export function DateRangePicker({ value, onChange, presets = PRESETS, className 
 				from: range.from || fallback.from,
 				to: range.to || fallback.to,
 			});
+			return;
+		}
+		if (id === 'all') {
+			onChange?.({ preset: 'all', from: null, to: null });
 			return;
 		}
 		const next = resolvePreset(id);

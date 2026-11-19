@@ -100,8 +100,8 @@ final class Tracker {
         ];
     }
 
-    private static function pct_delta(float $current, float $previous): ?int {
-        if ($previous <= 0) {
+    private static function pct_delta(?float $current, ?float $previous): ?int {
+        if ($current === null || $previous === null || $previous <= 0) {
             return null;
         }
         return (int) round(($current - $previous) / $previous * 100);
@@ -122,7 +122,7 @@ final class Tracker {
         return [
             'orders' => $orders,
             'revenue' => (float) ($row['revenue'] ?? 0),
-            'conversion' => $visits > 0 ? round($buyers / $visits * 100, 1) : 0,
+            'conversion' => self::conversion_rate($visits, $buyers),
         ];
     }
 
@@ -162,9 +162,10 @@ final class Tracker {
         global $wpdb;
         $row = $wpdb->get_row(
             "SELECT COUNT(*) open_count,
-                COALESCE(SUM(CASE WHEN IFNULL(cod_settled, 0) = 0 THEN COALESCE(NULLIF(collect_amount, 0), total) ELSE 0 END), 0) unsettled
+                COALESCE(SUM(COALESCE(NULLIF(collect_amount, 0), total)), 0) unsettled
              FROM " . Orders::table() . "
              WHERE payment_method = 'cod'
+               AND IFNULL(cod_settled, 0) = 0
                AND status IN ('confirmed','paid','shipped','delivered')",
             ARRAY_A
         );
@@ -345,7 +346,7 @@ final class Tracker {
             'orders' => $orders,
             'revenue' => (float) ($row['revenue'] ?? 0),
             'visits' => $visits,
-            'conversion' => $visits > 0 ? round($buyers / $visits * 100, 1) : 0,
+            'conversion' => self::conversion_rate($visits, $buyers),
             'codShare' => $orders > 0 ? round(((int) $row['cod']) / $orders * 100) : 0,
         ];
     }
@@ -369,8 +370,16 @@ final class Tracker {
             'revenue' => (float) ($row['revenue'] ?? 0),
             'cod' => $cod,
             'prepaid' => max(0, $orders - $cod),
-            'conversion' => $visits > 0 ? round($buyers / $visits * 100, 1) : 0,
+            'conversion' => self::conversion_rate($visits, $buyers),
         ];
+    }
+
+    /** @return float|null Null when not enough visit volume. */
+    private static function conversion_rate(int $visits, int $buyers): ?float {
+        if ($visits < 30) {
+            return null;
+        }
+        return round($buyers / $visits * 100, 1);
     }
 
     private static function series(string $start, int $days): array {
