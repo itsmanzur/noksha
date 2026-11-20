@@ -72,6 +72,10 @@ final class Controller {
             ['methods' => 'GET', 'callback' => [$this, 'get_brand']] + $admin,
             ['methods' => 'PUT', 'callback' => [$this, 'put_brand']] + $admin,
         ]);
+        register_rest_route('noksha/v1', '/sms/test', [
+            'methods' => 'POST',
+            'callback' => [$this, 'sms_test'],
+        ] + $admin);
         register_rest_route('noksha/v1', '/pages', [
             ['methods' => 'GET', 'callback' => [$this, 'list_pages']] + $admin,
             ['methods' => 'POST', 'callback' => [$this, 'create_page']] + $admin,
@@ -235,6 +239,12 @@ final class Controller {
     public function put_settings(\WP_REST_Request $request): array {
         $params = $request->get_json_params();
         return Options::update_settings(is_array($params) ? $params : []);
+    }
+
+    public function sms_test(\WP_REST_Request $request): array {
+        $params = $request->get_json_params();
+        $phone = \Noksha\Region\Phone::normalize((string) (is_array($params) ? ($params['phone'] ?? '') : ''));
+        return \Noksha\Notify\Sms::send_test($phone !== '' ? $phone : (string) (is_array($params) ? ($params['phone'] ?? '') : ''));
     }
 
     public function get_brand(): array {

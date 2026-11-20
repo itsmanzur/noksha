@@ -154,6 +154,9 @@ final class Repository {
             Sms::order_shipped($order);
         } elseif ($new === 'delivered') {
             Sms::order_delivered($order);
+        } elseif ($new === 'cancelled' && !in_array($old, ['pending', 'fake'], true)) {
+            // Only a cancelled order the customer was already told about; a failed checkout stays silent.
+            Sms::order_cancelled($order);
         }
     }
 

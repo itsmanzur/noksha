@@ -9,8 +9,11 @@ import {
   SecretField,
   Select,
   Skeleton,
+  Textarea,
   Toggle,
 } from '../ui';
+
+const SMS_EVENTS = ['placed', 'confirmed', 'shipped', 'delivered', 'cancelled'];
 
 const TABS = [
   { id: 'general', labelKey: 'settings.tabGeneral' },
@@ -42,6 +45,25 @@ export function Settings({ t, locale }) {
   const [smsKey, setSmsKey] = useState('');
   const [bnDigits, setBnDigits] = useState(() => window.localStorage.getItem('noksha_bn_digits') === '1');
   const [saving, setSaving] = useState(false);
+  const [testPhone, setTestPhone] = useState('');
+  const [testing, setTesting] = useState(false);
+
+  function sendTest() {
+    if (testing || testPhone.trim() === '') {
+      return;
+    }
+    setTesting(true);
+    api('sms/test', { method: 'POST', body: { phone: testPhone.trim() } })
+      .then((result) => {
+        if (result.ok) {
+          success(t('sms.testSent'));
+        } else {
+          toastError(`${t('sms.testFailed')} ${result.body || result.error || ''}`.trim());
+        }
+      })
+      .catch((err) => toastError(err.message || t('common.error')))
+      .finally(() => setTesting(false));
+  }
 
   function load() {
     setStatus('loading');
@@ -249,6 +271,57 @@ export function Settings({ t, locale }) {
           value={String(settings.sms?.otp_ttl ?? 300)}
           onChange={(e) => patch({ sms: { ...(settings.sms || {}), otp_ttl: Number(e.target.value) || 300 } })}
         />
+        <h3 style={{ margin: '20px 0 4px' }}>{t('sms.testTitle')}</h3>
+        <p className="nk-muted" style={{ margin: 0 }}>{t('sms.testHelp')}</p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
+          <Input
+            label={t('sms.testPhone')}
+            value={testPhone}
+            onChange={(e) => setTestPhone(e.target.value)}
+            placeholder="01XXXXXXXXX"
+          />
+          <Button type="button" variant="secondary" onClick={sendTest} disabled={testing || testPhone.trim() === ''}>
+            {t('sms.testSend')}
+          </Button>
+        </div>
+        <h3 style={{ margin: '24px 0 4px' }}>{t('sms.eventsTitle')}</h3>
+        <p className="nk-muted" style={{ margin: 0 }}>{t('sms.eventsHelp')}</p>
+        {SMS_EVENTS.map((event) => {
+          const row = settings.sms?.events?.[event] || {};
+          const defaults = settings.sms_defaults?.[event] || {};
+          const setRow = (partial) => patch({
+            sms: {
+              ...(settings.sms || {}),
+              events: { ...(settings.sms?.events || {}), [event]: { ...row, ...partial } },
+            },
+          });
+          return (
+            <div key={event} style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--nk-border)' }}>
+              <Toggle
+                label={t(`sms.event.${event}`)}
+                help={event === 'cancelled' ? t('sms.cancelledHelp') : undefined}
+                checked={Boolean(row.enabled)}
+                onChange={(v) => setRow({ enabled: v })}
+              />
+              <Textarea
+                label={t('sms.textEn')}
+                rows={2}
+                maxLength={320}
+                value={row.en || ''}
+                placeholder={defaults.en || ''}
+                onChange={(e) => setRow({ en: e.target.value })}
+              />
+              <Textarea
+                label={t('sms.textBn')}
+                rows={2}
+                maxLength={320}
+                value={row.bn || ''}
+                placeholder={defaults.bn || ''}
+                onChange={(e) => setRow({ bn: e.target.value })}
+              />
+            </div>
+          );
+        })}
       </Card>
     );
   } else if (tab === 'fraud') {
