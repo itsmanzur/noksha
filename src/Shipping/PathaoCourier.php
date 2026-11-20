@@ -10,15 +10,6 @@ namespace Noksha\Shipping;
 use Noksha\Options;
 
 final class PathaoCourier implements Courier {
-    /** Bangladesh district spellings that differ from Pathao's city and zone names. */
-    private const ALIASES = [
-        'chattogram' => 'chittagong',
-        'cumilla' => 'comilla',
-        'barishal' => 'barisal',
-        'jashore' => 'jessore',
-        'bogura' => 'bogra',
-    ];
-
     public function id(): string {
         return 'pathao';
     }
@@ -91,12 +82,12 @@ final class PathaoCourier implements Courier {
 
     /** @return array{0:int|null,1:int|null} Pathao city and zone ids for the order's district and upazila. */
     private function location(array $order): array {
-        $city = $this->match($this->names('/aladdin/api/v1/city-list', 'city'), (string) ($order['district_name'] ?? ''));
+        $city = NameMatch::find($this->names('/aladdin/api/v1/city-list', 'city'), (string) ($order['district_name'] ?? ''));
         if ($city === null) {
             return [null, null];
         }
         $zones = $this->names('/aladdin/api/v1/cities/' . $city . '/zone-list', 'zone');
-        return [$city, $this->match($zones, (string) ($order['upazila_name'] ?? ''))];
+        return [$city, NameMatch::find($zones, (string) ($order['upazila_name'] ?? ''))];
     }
 
     /** @return array<int,string> Pathao id => name, cached for a day. */
@@ -118,31 +109,6 @@ final class PathaoCourier implements Courier {
             set_transient($key, $list, DAY_IN_SECONDS);
         }
         return $list;
-    }
-
-    /** @param array<int,string> $list */
-    private function match(array $list, string $wanted): ?int {
-        $wanted = $this->normalize($wanted);
-        if ($wanted === '' || $list === []) {
-            return null;
-        }
-        $loose = null;
-        foreach ($list as $id => $name) {
-            $name = $this->normalize($name);
-            if ($name === $wanted) {
-                return (int) $id;
-            }
-            if ($loose === null && strlen($name) >= 4 && strlen($wanted) >= 4 && (str_contains($name, $wanted) || str_contains($wanted, $name))) {
-                $loose = (int) $id;
-            }
-        }
-        return $loose;
-    }
-
-    private function normalize(string $value): string {
-        $value = preg_replace('/[^a-z0-9]+/', '', strtolower($value)) ?? '';
-        $value = preg_replace('/(thana|upazila|sadar)$/', '', $value) ?? $value;
-        return self::ALIASES[$value] ?? $value;
     }
 
     private function base(): string {
