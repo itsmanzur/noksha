@@ -16,6 +16,7 @@ import {
 import { api } from '../api';
 import { formatNumber } from '../format';
 import { useConfirm, useToast } from '../providers';
+import { TemplateThumb } from './TemplateThumb';
 
 const TEMPLATES = [
   { value: 'single', labelKey: 'pages.single', descKey: 'pages.singleBody' },
@@ -151,6 +152,7 @@ export function Pages({ t, go, locale }) {
     value: tpl.value,
     label: t(tpl.labelKey),
     description: t(tpl.descKey),
+    icon: <TemplateThumb id={tpl.value} />,
   }));
 
   if (status === 'loading' && !pages.length) {
@@ -368,6 +370,7 @@ export function Pages({ t, go, locale }) {
         <div className="nk-detail-stack">
           <RadioCards
             legend={t('pages.templatePick')}
+            className="nk-template-picker"
             value={createTemplate}
             onChange={setCreateTemplate}
             options={templateOptions}
