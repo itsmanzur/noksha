@@ -493,17 +493,62 @@
 
 .nk-uikit {
   display: grid;
-  gap: var(--nk-space-6);
+  gap: var(--nk-space-5);
+  max-width: 960px;
 }
 
 .nk-uikit section {
   display: grid;
-  gap: var(--nk-space-3);
+  gap: var(--nk-space-4);
+  padding: var(--nk-space-5);
+  background: var(--nk-surface);
+  border: 1px solid var(--nk-border);
+  border-radius: var(--nk-radius);
+  box-shadow: var(--nk-shadow-sm);
 }
 
 .nk-uikit h2 {
   margin: 0;
-  font-size: var(--nk-text-xl);
+  padding-bottom: var(--nk-space-3);
+  border-bottom: 1px solid var(--nk-border);
+  font-size: var(--nk-text-lg, 1.05rem);
+}
+
+.nk-uikit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--nk-space-4);
+  align-items: start;
+}
+
+.nk-uikit section.is-bare {
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.nk-uikit section.is-bare h2 {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.nk-uikit .nk-ui-select {
+  min-height: 38px;
+  line-height: 1.4;
+  border-color: var(--nk-border);
+  border-radius: var(--nk-radius-sm);
+  box-shadow: none;
+}
+
+.nk-uikit-row.nk-uikit-row-loose .nk-ui-checkbox-label {
+  align-items: center;
+  min-height: 26px;
+}
+
+.nk-uikit-row.nk-uikit-row-loose {
+  align-items: flex-end;
+  gap: var(--nk-space-6);
 }
 
 .nk-uikit-row {
