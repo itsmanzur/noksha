@@ -376,6 +376,15 @@ final class Checkout {
                 $out[$key] = noksha_clip($value, 191);
             }
         }
+        // Customer IP and browser, kept so server-side events (Meta CAPI) can match the buyer.
+        $ip = \Noksha\Support\RateLimit::client_ip();
+        if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+            $out['cip'] = $ip;
+        }
+        $agent = sanitize_text_field(wp_unslash((string) ($_SERVER['HTTP_USER_AGENT'] ?? '')));
+        if ($agent !== '') {
+            $out['cua'] = noksha_clip($agent, 300);
+        }
         return $out;
     }
 

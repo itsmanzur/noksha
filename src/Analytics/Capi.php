@@ -36,6 +36,30 @@ final class Capi {
             $user['em'] = [hash('sha256', $email)];
         }
         $attr = self::attribution($order);
+        $user['country'] = [hash('sha256', 'bd')];
+        if ($phone !== '') {
+            $user['external_id'] = [hash('sha256', $phone)];
+        }
+        $parts = preg_split('/\s+/u', mb_strtolower(trim((string) ($order['customer_name'] ?? '')))) ?: [];
+        $parts = array_values(array_filter($parts, static fn ($part) => $part !== ''));
+        if ($parts !== []) {
+            $user['fn'] = [hash('sha256', $parts[0])];
+            if (count($parts) > 1) {
+                $user['ln'] = [hash('sha256', $parts[count($parts) - 1])];
+            }
+        }
+        foreach (['ct' => 'district_name', 'st' => 'division_name'] as $key => $column) {
+            $value = preg_replace('/[^\p{L}\p{N}]+/u', '', mb_strtolower((string) ($order[$column] ?? ''))) ?? '';
+            if ($value !== '') {
+                $user[$key] = [hash('sha256', $value)];
+            }
+        }
+        if (filter_var((string) ($attr['cip'] ?? ''), FILTER_VALIDATE_IP)) {
+            $user['client_ip_address'] = (string) $attr['cip'];
+        }
+        if (($attr['cua'] ?? '') !== '') {
+            $user['client_user_agent'] = (string) $attr['cua'];
+        }
         if (($attr['fbp'] ?? '') !== '') {
             $user['fbp'] = $attr['fbp'];
         }
@@ -84,13 +108,31 @@ final class Capi {
             ]],
         ];
 
-        $url = 'https://graph.facebook.com/v19.0/' . rawurlencode($pixel) . '/events?access_token=' . rawurlencode($token);
-        wp_remote_post($url, [
-            'timeout' => 8,
+        // With a test event code the call is synchronous and its result lands in the order notes.
+        $test = preg_replace('/[^A-Za-z0-9]/', '', (string) ($settings['pixels']['meta_test'] ?? '')) ?? '';
+        if ($test !== '') {
+            $payload['test_event_code'] = $test;
+        }
+
+        $url = 'https://graph.facebook.com/v23.0/' . rawurlencode($pixel) . '/events?access_token=' . rawurlencode($token);
+        $response = wp_remote_post($url, [
+            'timeout' => $test !== '' ? 10 : 8,
             'headers' => ['Content-Type' => 'application/json'],
             'body' => wp_json_encode($payload),
-            'blocking' => false,
+            'blocking' => $test !== '',
         ]);
+        if ($test !== '' && !empty($order['id'])) {
+            if (is_wp_error($response)) {
+                $note = 'Meta CAPI test: ' . $response->get_error_message();
+            } else {
+                $code = (int) wp_remote_retrieve_response_code($response);
+                $body = json_decode((string) wp_remote_retrieve_body($response), true);
+                $note = $code === 200
+                    ? 'Meta CAPI test: Purchase accepted (events received: ' . (int) ($body['events_received'] ?? 0) . ').'
+                    : 'Meta CAPI test failed (' . $code . '): ' . noksha_clip((string) ($body['error']['message'] ?? 'unknown error'), 200);
+            }
+            \Noksha\Orders\Repository::add_note((int) $order['id'], $note);
+        }
     }
 
     private static function attribution(array $order): array {

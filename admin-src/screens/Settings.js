@@ -197,6 +197,12 @@ export function Settings({ t, locale }) {
           value={settings.pixels?.tiktok || ''}
           onChange={(e) => patch({ pixels: { ...settings.pixels, tiktok: e.target.value } })}
         />
+        <Input
+          label={t('settings.metaTest')}
+          help={t('settings.metaTestHelp')}
+          value={settings.pixels?.meta_test || ''}
+          onChange={(e) => patch({ pixels: { ...settings.pixels, meta_test: e.target.value } })}
+        />
         <SecretField
           label={t('settings.metaCapi')}
           help={t('settings.metaCapiHelp')}

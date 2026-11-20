@@ -23,6 +23,7 @@ final class Options {
                 'meta' => '',
                 'ga4' => '',
                 'tiktok' => '',
+                'meta_test' => '',
             ],
             'gateways' => [
                 'cod' => ['enabled' => true],
@@ -213,6 +214,7 @@ final class Options {
                 'meta' => preg_replace('/\D+/', '', (string) ($pixels['meta'] ?? '')) ?? '',
                 'ga4' => self::ga4((string) ($pixels['ga4'] ?? '')),
                 'tiktok' => preg_replace('/[^A-Za-z0-9]/', '', (string) ($pixels['tiktok'] ?? '')) ?? '',
+                'meta_test' => substr(preg_replace('/[^A-Za-z0-9]/', '', (string) ($pixels['meta_test'] ?? '')) ?? '', 0, 20),
             ],
             'gateways' => [
                 'cod' => [
