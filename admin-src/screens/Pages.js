@@ -16,20 +16,7 @@ import {
 import { api } from '../api';
 import { formatNumber } from '../format';
 import { useConfirm, useToast } from '../providers';
-import { TemplateThumb } from './TemplateThumb';
-
-const TEMPLATES = [
-  { value: 'single', labelKey: 'pages.single', descKey: 'pages.singleBody' },
-  { value: 'lead', labelKey: 'pages.lead', descKey: 'pages.leadBody' },
-  { value: 'festival', labelKey: 'pages.festival', descKey: 'pages.festivalBody' },
-  { value: 'fashion', labelKey: 'pages.fashion', descKey: 'pages.fashionBody' },
-  { value: 'food', labelKey: 'pages.food', descKey: 'pages.foodBody' },
-  { value: 'health', labelKey: 'pages.health', descKey: 'pages.healthBody' },
-  { value: 'home', labelKey: 'pages.home', descKey: 'pages.homeBody' },
-  { value: 'beauty', labelKey: 'pages.beauty', descKey: 'pages.beautyBody' },
-  { value: 'gadget', labelKey: 'pages.gadget', descKey: 'pages.gadgetBody' },
-  { value: 'blank', labelKey: 'pages.blank', descKey: 'pages.singleBody' },
-];
+import { templateOptions as pickerOptions } from './TemplateThumb';
 
 export function Pages({ t, go, locale }) {
   const confirm = useConfirm();
@@ -148,12 +135,7 @@ export function Pages({ t, go, locale }) {
       });
   }
 
-  const templateOptions = TEMPLATES.map((tpl) => ({
-    value: tpl.value,
-    label: t(tpl.labelKey),
-    description: t(tpl.descKey),
-    icon: <TemplateThumb id={tpl.value} />,
-  }));
+  const templateOptions = pickerOptions(t);
 
   if (status === 'loading' && !pages.length) {
     return (

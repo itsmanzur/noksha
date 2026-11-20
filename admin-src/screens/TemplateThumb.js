@@ -2,6 +2,19 @@
  * Mini page sketch for the template picker: the template's own section order in its own brand colour.
  */
 
+export const TEMPLATES = [
+  { value: 'single', labelKey: 'pages.single', descKey: 'pages.singleBody' },
+  { value: 'lead', labelKey: 'pages.lead', descKey: 'pages.leadBody' },
+  { value: 'festival', labelKey: 'pages.festival', descKey: 'pages.festivalBody' },
+  { value: 'fashion', labelKey: 'pages.fashion', descKey: 'pages.fashionBody' },
+  { value: 'food', labelKey: 'pages.food', descKey: 'pages.foodBody' },
+  { value: 'health', labelKey: 'pages.health', descKey: 'pages.healthBody' },
+  { value: 'home', labelKey: 'pages.home', descKey: 'pages.homeBody' },
+  { value: 'beauty', labelKey: 'pages.beauty', descKey: 'pages.beautyBody' },
+  { value: 'gadget', labelKey: 'pages.gadget', descKey: 'pages.gadgetBody' },
+  { value: 'blank', labelKey: 'pages.blank', descKey: 'pages.singleBody' },
+];
+
 const LOOKS = {
   single: { brand: '#0F766E', canvas: '#F4FAF9', blocks: ['hero', 'benefits', 'product', 'reviews'] },
   lead: { brand: '#0F766E', canvas: '#F4FAF9', blocks: ['hero', 'benefits', 'reviews', 'faq'] },
@@ -134,6 +147,16 @@ const BLOCKS = {
     ),
   }),
 };
+
+/** Options for RadioCards: name, description and a page sketch for each template. */
+export function templateOptions(t, skip = []) {
+  return TEMPLATES.filter((tpl) => !skip.includes(tpl.value)).map((tpl) => ({
+    value: tpl.value,
+    label: t(tpl.labelKey),
+    description: t(tpl.descKey),
+    icon: <TemplateThumb id={tpl.value} />,
+  }));
+}
 
 export function TemplateThumb({ id }) {
   const look = LOOKS[id] || LOOKS.single;
