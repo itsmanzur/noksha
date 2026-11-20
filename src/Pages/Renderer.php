@@ -170,7 +170,7 @@ final class Renderer {
         $offer = $payload['offer'];
         return [
             'root' => esc_url_raw(rest_url('noksha/v1/')),
-            'nonce' => wp_create_nonce('noksha_public'),
+            'nonce' => \Noksha\Support\PublicNonce::create(),
             'nonceCreatedAt' => time(),
             'pageId' => (int) ($payload['id'] ?? 0),
             'geoUrl' => esc_url_raw(NOKSHA_URL . 'data/bd-geo.json'),

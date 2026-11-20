@@ -519,7 +519,7 @@ final class Controller {
 
     public function public_nonce(): array {
         return [
-            'nonce' => wp_create_nonce('noksha_public'),
+            'nonce' => \Noksha\Support\PublicNonce::create(),
             'createdAt' => time(),
         ];
     }
@@ -639,7 +639,7 @@ final class Controller {
             return new \WP_Error('noksha_rate', 'Too many requests.', ['status' => 429]);
         }
         $params = $this->params($request);
-        if (!wp_verify_nonce((string) ($params['nonce'] ?? ''), 'noksha_public')) {
+        if (!\Noksha\Support\PublicNonce::verify((string) ($params['nonce'] ?? ''))) {
             return new \WP_Error('noksha_nonce', 'The form expired.', ['status' => 403]);
         }
         $page_id = (int) ($params['page_id'] ?? 0);
@@ -710,7 +710,7 @@ final class Controller {
             return new \WP_Error('noksha_rate', 'Too many events.', ['status' => 429]);
         }
         $params = $this->params($request);
-        if (!wp_verify_nonce((string) ($params['nonce'] ?? ''), 'noksha_public')) {
+        if (!\Noksha\Support\PublicNonce::verify((string) ($params['nonce'] ?? ''))) {
             return new \WP_Error('noksha_nonce', 'The form expired.', ['status' => 403]);
         }
         $event = sanitize_key((string) ($params['event'] ?? ''));
@@ -737,7 +737,7 @@ final class Controller {
             return new \WP_Error('noksha_rate', 'Too many OTP requests.', ['status' => 429]);
         }
         $params = $this->params($request);
-        if (!wp_verify_nonce((string) ($params['nonce'] ?? ''), 'noksha_public')) {
+        if (!\Noksha\Support\PublicNonce::verify((string) ($params['nonce'] ?? ''))) {
             return new \WP_Error('noksha_nonce', 'The form expired.', ['status' => 403]);
         }
         $lang = ($params['lang'] ?? '') === 'bn' ? 'bn' : 'en';

@@ -32,7 +32,7 @@ final class Checkout {
         if (!empty($input['company_website'])) {
             return $this->error('invalid_payment', $lang, 400);
         }
-        if (!wp_verify_nonce((string) ($input['nonce'] ?? ''), 'noksha_public')) {
+        if (!\Noksha\Support\PublicNonce::verify((string) ($input['nonce'] ?? ''))) {
             return $this->error('nonce', $lang, 403);
         }
 
