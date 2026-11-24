@@ -160,7 +160,9 @@ final class WcProduct {
             $offer['imageUrl'] = $image;
         }
         $offer['variationId'] = $buy->get_id() === $parent->get_id() ? 0 : $buy->get_id();
+        $sale_to = $buy->is_on_sale() ? ($buy->get_date_on_sale_to() ?: $parent->get_date_on_sale_to()) : null;
         $offer['wc'] = [
+            'saleEndsAt' => $sale_to ? $sale_to->format('c') : '',
             'available' => $in_stock,
             'reason' => $in_stock ? '' : ($price > 0 ? 'out_of_stock' : 'no_price'),
             'type' => $parent->get_type(),
@@ -225,6 +227,7 @@ final class WcProduct {
      */
     private static function unavailable(string $reason): array {
         return [
+            'saleEndsAt' => '',
             'available' => false,
             'reason' => $reason,
             'type' => '',

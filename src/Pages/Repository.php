@@ -60,6 +60,15 @@ final class Repository {
     /** @var array<int, array|\WP_Error> */
     private static array $payload_cache = [];
 
+    /**
+     * Drop the payload kept for this request, so the next read is fresh.
+     * A request reads each page once; this is for code that changes a product
+     * and then reads the page again (long scripts, tests).
+     */
+    public static function forget_cached(int $id): void {
+        unset(self::$payload_cache[$id]);
+    }
+
     public static function payload(int $id): array|\WP_Error {
         if (array_key_exists($id, self::$payload_cache)) {
             return self::$payload_cache[$id];

@@ -289,6 +289,8 @@ final class Sanitizer {
         }
         $base['trustBadges'] = $badges;
         $base['deliveryNote'] = self::long($checkout['deliveryNote'] ?? '', 300);
+        // A coupon field, offered only for a WooCommerce product.
+        $base['coupon'] = !empty($checkout['coupon']);
         return $base;
     }
 

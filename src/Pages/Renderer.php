@@ -154,7 +154,9 @@ final class Renderer {
             }
             $html .= self::section($section, $payload, $preview);
         }
-        if ($has_form && self::thanks($payload) === '') {
+        $offer_for_cta = is_array($payload['offer'] ?? null) ? $payload['offer'] : [];
+        $cannot_order = isset($offer_for_cta['wc']) && empty($offer_for_cta['wc']['available']);
+        if ($has_form && !$cannot_order && self::thanks($payload) === '') {
             $offer = is_array($payload['offer'] ?? null) ? $payload['offer'] : [];
             $html .= '<div class="nk-sticky-cta" role="complementary">'
                 . '<div class="nk-sticky-cta-price">' . esc_html(self::money((float) ($offer['price'] ?? 0), $lang)) . '</div>'
@@ -216,6 +218,8 @@ final class Renderer {
                 'otpSent' => Catalog::line($lang, 'otp_sent'),
                 'otpResend' => Catalog::line($lang, 'otp_resend'),
                 'bumpAdd' => Catalog::line($lang, 'bump_add'),
+                'couponApplied' => Catalog::line($lang, 'coupon_applied'),
+                'couponInvalid' => Catalog::line($lang, 'coupon_invalid'),
                 'invalidPhone' => Catalog::line($lang, 'invalid_phone'),
                 'copy' => Catalog::line($lang, 'copy'),
                 'copied' => Catalog::line($lang, 'copied'),
@@ -324,9 +328,18 @@ final class Renderer {
 
     private static function countdown(array $props, array $payload, bool $preview = false): string {
         $lang = $payload['language'];
-        if ($props['endsAt'] === '') {
+        // A store product on sale follows its sale end date unless a time is set by hand.
+        $ends_at = (string) $props['endsAt'];
+        if ($ends_at === '') {
+            $sale_end = (string) ($payload['offer']['wc']['saleEndsAt'] ?? '');
+            if ($sale_end !== '' && strtotime($sale_end) > time()) {
+                $ends_at = $sale_end;
+            }
+        }
+        if ($ends_at === '') {
             return '';
         }
+        $props['endsAt'] = $ends_at;
         $units = '';
         foreach (['days', 'hours', 'minutes', 'seconds'] as $unit) {
             $units .= '<div><strong data-unit="' . esc_attr($unit) . '">00</strong><span>' . esc_html(Catalog::line($lang, $unit)) . '</span></div>';
@@ -484,9 +497,22 @@ final class Renderer {
                 . '<span>' . esc_html(Catalog::line($lang, 'choose_option')) . '</span>'
                 . '<select name="variation_id" form="nk-order" data-variation>' . $options . '</select></label>';
         }
+        $unavailable_key = ($wc['reason'] ?? '') === 'out_of_stock' ? 'out_of_stock' : 'product_unavailable';
         $sold_out_html = $sold_out
-            ? '<p class="nk-form-error nk-sold-out" role="alert">' . esc_html(Catalog::line($lang, 'out_of_stock')) . '</p>'
+            ? '<p class="nk-form-error nk-sold-out" role="alert">' . esc_html(Catalog::line($lang, $unavailable_key)) . '</p>'
             : '';
+
+        $coupon_html = '';
+        if (!empty($checkout['coupon']) && WcProduct::is_wc_offer($offer) && !$sold_out) {
+            $coupon_html = '<div class="nk-coupon">'
+                . '<label for="nk-coupon-code">' . esc_html(Catalog::line($lang, 'coupon_label')) . '</label>'
+                . '<div class="nk-coupon-row">'
+                . '<input id="nk-coupon-code" name="coupon_code" form="nk-order" autocomplete="off" maxlength="64">'
+                . '<button type="button" class="nk-btn-ghost" data-coupon-apply>' . esc_html(Catalog::line($lang, 'coupon_apply')) . '</button>'
+                . '</div>'
+                . '<p class="nk-coupon-msg" data-coupon-msg role="status" hidden></p>'
+                . '</div>';
+        }
 
         $summary = '<aside class="nk-summary"><h3>' . esc_html(Catalog::line($lang, 'summary')) . '</h3>'
             . '<p class="nk-summary-name">' . esc_html($offer['productName']) . '</p>'
@@ -500,9 +526,11 @@ final class Renderer {
             . '<button type="button" class="nk-qty-btn" data-qty-inc aria-label="+">+</button>'
             . '</div></div>'
             . $bump_html
+            . $coupon_html
             . '<dl>'
             . '<div><dt>' . esc_html(Catalog::line($lang, 'subtotal')) . '</dt><dd data-subtotal>' . esc_html(self::money($price, $lang)) . '</dd></div>'
             . '<div><dt>' . esc_html(Catalog::line($lang, 'shipping')) . '</dt><dd data-shipping>' . esc_html(self::money($shipping, $lang)) . '</dd></div>'
+            . '<div class="nk-discount-row" data-discount-row hidden><dt>' . esc_html(Catalog::line($lang, 'discount')) . '</dt><dd data-discount></dd></div>'
             . '<div class="nk-total-row"><dt>' . esc_html(Catalog::line($lang, 'total')) . '</dt><dd data-total>' . esc_html(self::money($price + $shipping, $lang)) . '</dd></div>'
             . '</dl>'
             . ($checkout['deliveryNote'] !== '' ? '<p class="nk-note">' . esc_html($checkout['deliveryNote']) . '</p>' : '')

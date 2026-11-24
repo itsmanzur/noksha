@@ -147,6 +147,10 @@ final class Controller {
             'methods' => 'POST',
             'callback' => [$this, 'courier_webhook'],
         ] + $public);
+        register_rest_route('noksha/v1', '/coupon', [
+            'methods' => 'POST',
+            'callback' => [$this, 'coupon'],
+        ] + $public);
         register_rest_route('noksha/v1', '/otp/send', [
             'methods' => 'POST',
             'callback' => [$this, 'send_otp'],
@@ -723,6 +727,38 @@ final class Controller {
         $variant = in_array($variant, ['a', 'b'], true) ? $variant : '';
         Tracker::record($page_id, $event, $session, $variant);
         return ['ok' => true];
+    }
+
+    /**
+     * What a coupon would take off, for the page's order summary. Saves nothing.
+     */
+    public function coupon(\WP_REST_Request $request) {
+        if (RateLimit::hit('coupon', 30)) {
+            return new \WP_Error('noksha_rate', 'Too many attempts.', ['status' => 429]);
+        }
+        $params = $this->params($request);
+        if (!wp_verify_nonce((string) ($params['nonce'] ?? ''), 'noksha_public')) {
+            return new \WP_Error('noksha_nonce', 'The form expired.', ['status' => 403]);
+        }
+        $page_id = (int) ($params['page_id'] ?? 0);
+        $post = get_post($page_id);
+        if (!$post || $post->post_type !== \Noksha\Pages\PostType::TYPE || $post->post_status !== 'publish') {
+            return new \WP_Error('noksha_page_closed', 'This page is not taking orders.', ['status' => 409]);
+        }
+        $doc = Pages::document($page_id);
+        $lang = $doc['language'];
+        if (!\Noksha\Catalog\WcCoupon::enabled_for($doc)) {
+            return new \WP_Error('noksha_coupon_invalid', \Noksha\I18n\Catalog::line($lang, 'coupon_invalid'), ['status' => 400]);
+        }
+        $offer = \Noksha\Catalog\WcProduct::apply($doc['offer'], max(0, (int) ($params['variation_id'] ?? 0)));
+        $qty = max(1, min(10, (int) ($params['qty'] ?? 1)));
+        $with_bump = !empty($params['bump']) && !empty($offer['bump']['enabled']);
+        $result = \Noksha\Catalog\WcCoupon::preview($offer, $qty, $with_bump, (string) ($params['code'] ?? ''));
+        if (is_wp_error($result)) {
+            $message = $result->get_error_message();
+            return new \WP_Error('noksha_coupon_invalid', $message !== '' ? $message : \Noksha\I18n\Catalog::line($lang, 'coupon_invalid'), ['status' => 400]);
+        }
+        return ['ok' => true, 'discount' => $result['discount'], 'code' => $result['code']];
     }
 
     public function send_otp(\WP_REST_Request $request) {

@@ -1172,3 +1172,46 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Coupon field and discount row (WooCommerce products) */
+.nk-coupon {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.nk-coupon label {
+  font-weight: 600;
+}
+.nk-coupon-row {
+  display: flex;
+  gap: 8px;
+}
+.nk-coupon-row input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: var(--noksha-radius);
+  background: var(--noksha-color-card);
+  color: var(--noksha-color-text);
+  font: inherit;
+  text-transform: uppercase;
+}
+.nk-coupon-msg {
+  margin: 0;
+  font-size: 0.9em;
+}
+.nk-coupon-msg.is-ok {
+  color: var(--noksha-color-success);
+}
+.nk-coupon-msg.is-error {
+  color: var(--noksha-color-danger);
+}
+.nk-discount-row dd {
+  color: var(--noksha-color-success);
+}
+
+.nk-summary [hidden] {
+  display: none !important;
+}

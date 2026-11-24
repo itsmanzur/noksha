@@ -109,9 +109,10 @@ final class WcBridge {
      * @param array<string, mixed>      $row   Noksha order row (already inserted).
      * @param array<string, mixed>      $offer Resolved offer (WcProduct::apply).
      * @param array{name:string,price:float}|null $bump Paid add-on, if chosen.
-     * @return int|\WP_Error WooCommerce order id.
+     * @param string                    $coupon WooCommerce coupon code, or ''.
+     * @return array{id:int,discount:float,total:float}|\WP_Error
      */
-    public static function create(array $row, array $offer, int $qty, ?array $bump, string $method) {
+    public static function create(array $row, array $offer, int $qty, ?array $bump, string $method, string $coupon = '') {
         if (!WcProduct::active()) {
             return new \WP_Error('noksha_wc_inactive', 'WooCommerce is not active.');
         }
@@ -175,6 +176,14 @@ final class WcBridge {
             $order->update_meta_data('_noksha_attribution', (string) ($row['attribution'] ?? ''));
 
             $order->calculate_totals(false);
+            if ($coupon !== '') {
+                // WooCommerce checks the coupon again on the real order (usage, dates, emails).
+                $applied = $order->apply_coupon($coupon);
+                if (is_wp_error($applied)) {
+                    return new \WP_Error('noksha_coupon_invalid', wp_strip_all_tags($applied->get_error_message()));
+                }
+                $order->calculate_totals(false);
+            }
             $order->set_status(self::wc_status_for((string) ($row['status'] ?? 'pending')));
             $order->add_order_note(sprintf(
                 /* translators: %s: Noksha order number. */
@@ -186,7 +195,11 @@ final class WcBridge {
             // Hold the stock now, whatever the status, so two buyers cannot take the last unit.
             wc_reduce_stock_levels($order->get_id());
 
-            return $order->get_id();
+            return [
+                'id' => $order->get_id(),
+                'discount' => round((float) $order->get_discount_total(), 2),
+                'total' => round((float) $order->get_total(), 2),
+            ];
         } catch (\Throwable $error) {
             return new \WP_Error('noksha_wc_order_failed', $error->getMessage());
         } finally {

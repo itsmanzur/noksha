@@ -28,6 +28,12 @@ Build a one-page offer, take cash on delivery, bKash, Nagad, or SSLCommerz on th
 * A store product can also be the order bump (simple products). It is read live and added to the same WooCommerce order; a sold-out bump is hidden.
 * Settings > General: choose whether WooCommerce sends its own emails for landing page orders.
 * Hooks for stores: filter `noksha_wc_shipped_status` (WooCommerce status for a shipped order, default processing) and action `noksha_wc_before_push`.
+* Checkout refuses a price the buyer did not see (a cached page with an old price) and returns the new one to confirm. Landing page caches are cleared when the WooCommerce product changes.
+* The countdown follows the WooCommerce sale end date when no time is set. A product that is sold out or not published shows a clear message and no sticky buy button.
+* Coupon field for WooCommerce products (Order form tab). WooCommerce checks the coupon; the discount shows live and is recorded on both orders.
+* Fixed: the add-on checkbox did not change the total or reach the order. Fixed: the editor crashed on opening a page.
+* Browser tests in tests/e2e (Playwright).
+* Database version 10: `discount` and `coupon` on orders.
 * Database version 9: `wc_order_id` on orders, product and variation ids on order items.
 
 = 0.1.5 =

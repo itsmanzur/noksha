@@ -9,9 +9,11 @@ if (!defined('ABSPATH')) {
 }
 
 use Noksha\Brand\Tokens;
+use Noksha\Front\CachePurge;
 use Noksha\Options;
 use Noksha\Orders\Checkout;
 use Noksha\Orders\Repository as Orders;
+use Noksha\Pages\Renderer;
 use Noksha\Pages\Repository as Pages;
 
 // The checks reuse a few phone numbers and are run again and again, so the
@@ -291,6 +293,110 @@ if (Noksha\Catalog\WcProduct::active()) {
     check($gone['wc']['available'] === false, 'deleted product is not orderable');
     $custom = Noksha\Catalog\WcProduct::apply(['source' => 'custom', 'price' => 10]);
     check(!isset($custom['wc']) && $custom['price'] === 10, 'custom offer passes through untouched');
+
+    // ---- A stale page, page cache, sale countdown and an unavailable product ----
+    $simple->set_manage_stock(true);
+    $simple->set_stock_quantity(5);
+    $simple->set_stock_status('instock');
+    $simple->set_status('publish');
+    $simple->save();
+
+    $stale = $checkout->place(['phone' => '01712340001'] + $base + ['qty' => 1, 'expected_price' => 999]);
+    $stale_data = is_wp_error($stale) ? (array) $stale->get_error_data() : [];
+    check(is_wp_error($stale) && $stale->get_error_code() === 'noksha_price_changed' && (float) ($stale_data['price'] ?? 0) === 750.0, 'a stale page price is refused with the live price');
+    $fresh = $checkout->place(['phone' => '01712340002'] + $base + ['qty' => 1, 'expected_price' => 750]);
+    check(is_array($fresh), 'the price the buyer saw is accepted');
+
+    $purged = [];
+    add_action('noksha_page_cache_purged', static function ($page_id) use (&$purged) {
+        $purged[] = (int) $page_id;
+    });
+    check(in_array($wc_page, CachePurge::pages_using($simple_id), true), 'the page is found from its product');
+    $simple->set_sale_price('700');
+    $simple->save();
+    check(in_array($wc_page, $purged, true), 'changing the product clears the page cache');
+
+    $simple->set_date_on_sale_to(gmdate('Y-m-d', time() + 3 * DAY_IN_SECONDS));
+    $simple->save();
+    $sale_end = (string) Pages::document($wc_page)['offer']['wc']['saleEndsAt'];
+    check($sale_end !== '', 'the WooCommerce sale end date is read');
+    $fest = Pages::create('festival', 'en', 'Smoke festival');
+    $fest_doc = Pages::payload($fest);
+    $fest_offer = $fest_doc['offer'];
+    $fest_offer['source'] = 'woocommerce';
+    $fest_offer['productId'] = $simple_id;
+    $fest_sections = $fest_doc['sections'];
+    foreach ($fest_sections as $i => $section) {
+        if ($section['type'] === 'countdown') {
+            $fest_sections[$i]['props']['endsAt'] = '';
+        }
+    }
+    Pages::update($fest, ['status' => 'publish', 'offer' => $fest_offer, 'sections' => $fest_sections]);
+    $fest_html = Renderer::article_for_post($fest);
+    check(str_contains($fest_html, 'data-ends="' . substr($sale_end, 0, 10)), 'the countdown follows the sale end date');
+    wp_delete_post($fest, true);
+
+    // ---- Coupons: WooCommerce decides, Noksha follows ----
+    $coupon = new WC_Coupon();
+    $coupon->set_code('smoke10');
+    $coupon->set_discount_type('percent');
+    $coupon->set_amount(10);
+    $coupon->set_usage_limit(5);
+    $coupon_id = $coupon->save();
+    $expired = new WC_Coupon();
+    $expired->set_code('smokeold');
+    $expired->set_discount_type('percent');
+    $expired->set_amount(50);
+    $expired->set_date_expires(time() - DAY_IN_SECONDS);
+    $expired_id = $expired->save();
+
+    $co_doc = Pages::payload($wc_page);
+    $co_checkout = $co_doc['checkout'];
+    $co_checkout['coupon'] = true;
+    Pages::update($wc_page, ['checkout' => $co_checkout]);
+    Pages::forget_cached($wc_page);
+    check(Pages::payload($wc_page)['checkout']['coupon'] === true, 'the coupon setting is saved on the page');
+
+    $live_offer = Pages::document($wc_page)['offer'];
+    $preview = Noksha\Catalog\WcCoupon::preview($live_offer, 2, false, 'SMOKE10');
+    check(!is_wp_error($preview) && (float) $preview['discount'] === round(0.10 * 2 * (float) $live_offer['price'], 2), 'the coupon preview is 10% of the lines');
+    check(is_wp_error(Noksha\Catalog\WcCoupon::preview($live_offer, 1, false, 'NOPE')), 'an unknown coupon is refused');
+    check(is_wp_error(Noksha\Catalog\WcCoupon::preview($live_offer, 1, false, 'smokeold')), 'an expired coupon is refused');
+
+    $before = (int) $GLOBALS['wpdb']->get_var('SELECT COUNT(*) FROM ' . Orders::table());
+    $bad_coupon = $checkout->place(['phone' => '01712340003'] + $base + ['qty' => 1, 'coupon' => 'NOPE']);
+    check(is_wp_error($bad_coupon) && $bad_coupon->get_error_code() === 'noksha_coupon_invalid', 'checkout refuses an unknown coupon');
+    check((int) $GLOBALS['wpdb']->get_var('SELECT COUNT(*) FROM ' . Orders::table()) === $before, 'a refused coupon leaves no order behind');
+
+    $with = $checkout->place(['phone' => '01712340004'] + $base + ['qty' => 2, 'coupon' => 'smoke10']);
+    check(is_array($with), 'order with a coupon placed');
+    if (is_array($with)) {
+        $co_row = Orders::find_by_number($with['orderNumber']);
+        $co_wc = wc_get_order((int) $co_row['wc_order_id']);
+        $gross = 2 * (float) $live_offer['price'];
+        check((float) $co_row['discount'] === round($gross * 0.10, 2) && $co_row['coupon'] === 'smoke10', 'the Noksha order records the discount and coupon');
+        check((float) $co_row['total'] === round($gross - $gross * 0.10 + (float) $co_row['shipping'], 2), 'total = lines - discount + delivery');
+        check((float) $co_row['collect_amount'] === (float) $co_row['total'], 'the courier collects the discounted total');
+        check($co_wc instanceof WC_Order && (float) $co_wc->get_total() === (float) $co_row['total'], 'the WooCommerce total matches');
+        check($co_wc instanceof WC_Order && in_array('smoke10', $co_wc->get_coupon_codes(), true), 'the coupon is on the WooCommerce order');
+        $used = new WC_Coupon($coupon_id);
+        check((int) $used->get_usage_count() === 1, 'WooCommerce counts the coupon use');
+        check((float) $with['value'] === (float) $co_row['total'], 'the page is told the discounted total');
+    }
+    wp_delete_post($coupon_id, true);
+    wp_delete_post($expired_id, true);
+
+    $simple->set_stock_quantity(0);
+    $simple->set_stock_status('outofstock');
+    $simple->save();
+    Pages::forget_cached($wc_page);
+    $sold_html = Renderer::article_for_post($wc_page);
+    check(str_contains($sold_html, 'out of stock') && !str_contains($sold_html, 'nk-sticky-cta'), 'a sold-out page says so and has no sticky buy button');
+    $simple->set_status('draft');
+    $simple->save();
+    Pages::forget_cached($wc_page);
+    $draft_html = Renderer::article_for_post($wc_page);
+    check(str_contains($draft_html, 'not available right now'), 'an unpublished product shows the unavailable message');
 
     wp_delete_post($wc_page, true);
     wp_delete_post($variable_id, true);

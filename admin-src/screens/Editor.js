@@ -1084,7 +1084,6 @@ function ItemsEditor({ t, type, items, onChange }) {
 function WcSearchList({ t, selectedId, simpleOnly, onPick }) {
   const [query, setQuery] = useState('');
   const [state, setState] = useState({ status: 'loading', active: true, products: [] });
-  const wc = offer.wc || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -1411,6 +1410,12 @@ function CheckoutFields({ t, checkout, settings, onChange, onSetup }) {
         </div>
       </div>
 
+      <Switch
+        checked={Boolean(checkout.coupon)}
+        label={t('checkout.coupon')}
+        onChange={(coupon) => onChange({ ...checkout, coupon })}
+      />
+      <p className="nk-help">{t('checkout.couponHelp')}</p>
       <TextField label={t('checkout.note')} help={t('checkout.noteHelp')} value={checkout.deliveryNote} multiline maxLength={300} onChange={(deliveryNote) => onChange({ ...checkout, deliveryNote })} />
     </div>
   );

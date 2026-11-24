@@ -80,6 +80,13 @@ final class Catalog {
             'stock_limit' => 'Not enough stock for that quantity. Lower the quantity and try again.',
             'choose_option' => 'Choose an option',
             'sold_out' => 'Sold out',
+            'coupon_label' => 'Coupon code',
+            'coupon_apply' => 'Apply',
+            'coupon_applied' => 'Coupon applied',
+            'coupon_invalid' => 'This coupon cannot be used.',
+            'discount' => 'Discount',
+            'price_changed' => 'The price changed. Check the new total, then place the order again.',
+            'product_unavailable' => 'This product is not available right now.',
         ],
         'bn' => [
             'name' => 'নাম',
@@ -152,6 +159,13 @@ final class Catalog {
             'stock_limit' => 'এই পরিমাণ পণ্য স্টকে নেই। পরিমাণ কমিয়ে আবার চেষ্টা করুন।',
             'choose_option' => 'একটি অপশন বেছে নিন',
             'sold_out' => 'স্টক শেষ',
+            'coupon_label' => 'কুপন কোড',
+            'coupon_apply' => 'প্রয়োগ করুন',
+            'coupon_applied' => 'কুপন প্রয়োগ হয়েছে',
+            'coupon_invalid' => 'এই কুপনটি ব্যবহার করা যাবে না।',
+            'discount' => 'ছাড়',
+            'price_changed' => 'দাম বদলে গেছে। নতুন মোট টাকা দেখে আবার অর্ডার করুন।',
+            'product_unavailable' => 'এই পণ্যটি এখন পাওয়া যাচ্ছে না।',
         ],
     ];
 

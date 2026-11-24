@@ -1,0 +1,12 @@
+{
+  "name": "noksha-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Real-browser checks for Noksha landing pages. Not part of the plugin zip.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}

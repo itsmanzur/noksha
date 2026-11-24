@@ -401,7 +401,8 @@
   var phoneInput = form.querySelector('[name="phone"]');
   var nameInput = form.querySelector('[name="name"]');
   var qty = landing.querySelector('[name="qty"]');
-  var bumpInput = form.querySelector('[name="bump"]');
+  // The add-on box is in the order summary, beside the form, not inside it.
+  var bumpInput = landing.querySelector('[name="bump"]');
 
   var division = form.querySelector('[data-geo="division"]');
   var district = form.querySelector('[data-geo="district"]');
@@ -514,6 +515,81 @@
     return Number(cfg.shippingOutside != null ? cfg.shippingOutside : cfg.shipping) || 0;
   }
 
+  /* ---- Coupon: WooCommerce works out the discount; this only shows it ---- */
+
+  var couponInput = landing.querySelector('[name="coupon_code"]');
+  var couponButton = landing.querySelector('[data-coupon-apply]');
+  var couponMsg = landing.querySelector('[data-coupon-msg]');
+  var couponDiscount = 0;
+  var couponApplied = '';
+  var couponTimer = 0;
+
+  function setCouponMessage(text, ok) {
+    if (!couponMsg) {
+      return;
+    }
+    couponMsg.hidden = !text;
+    couponMsg.textContent = text || '';
+    couponMsg.className = 'nk-coupon-msg ' + (ok ? 'is-ok' : 'is-error');
+  }
+
+  function applyCoupon() {
+    var code = couponInput ? couponInput.value.trim() : '';
+    if (!code) {
+      couponDiscount = 0;
+      couponApplied = '';
+      setCouponMessage('', true);
+      updateTotals();
+      return;
+    }
+    if (couponButton) {
+      couponButton.disabled = true;
+    }
+    post('coupon', {
+      nonce: cfg.nonce,
+      page_id: cfg.pageId,
+      code: code,
+      qty: Number(qty && qty.value) || 1,
+      variation_id: variationSelect ? Number(variationSelect.value) || 0 : 0,
+      bump: bumpInput && bumpInput.checked ? 1 : 0
+    }).then(function (result) {
+      couponDiscount = Number(result.discount) || 0;
+      couponApplied = result.code || code;
+      setCouponMessage((strings.couponApplied || 'Coupon applied') + ': ' + couponApplied, true);
+      updateTotals();
+    }).catch(function (error) {
+      couponDiscount = 0;
+      couponApplied = '';
+      setCouponMessage(error.message || strings.couponInvalid || 'Invalid coupon', false);
+      updateTotals();
+    }).then(function () {
+      if (couponButton) {
+        couponButton.disabled = false;
+      }
+    });
+  }
+
+  // The discount depends on quantity, option and add-on; ask again when they change.
+  function refreshCoupon() {
+    if (!couponApplied) {
+      return;
+    }
+    window.clearTimeout(couponTimer);
+    couponTimer = window.setTimeout(applyCoupon, 350);
+  }
+
+  if (couponButton) {
+    couponButton.addEventListener('click', applyCoupon);
+  }
+  if (couponInput) {
+    couponInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applyCoupon();
+      }
+    });
+  }
+
   function maxQty() {
     return Math.max(1, Math.min(10, Number(cfg.maxQty) || 10));
   }
@@ -568,6 +644,7 @@
 
   if (variationSelect) {
     variationSelect.addEventListener('change', applyVariation);
+    variationSelect.addEventListener('change', refreshCoupon);
   }
 
   function bumpPrice() {
@@ -584,6 +661,7 @@
     }
     var sub = (Number(cfg.price || 0) * count) + bumpPrice();
     var shipping = currentShipping();
+    var discount = Math.min(couponDiscount, sub);
     var subEl = landing.querySelector('[data-subtotal]');
     var shipEl = landing.querySelector('[data-shipping]');
     var totalEl = landing.querySelector('[data-total]');
@@ -593,8 +671,14 @@
     if (shipEl) {
       shipEl.textContent = money(shipping);
     }
+    var discountRow = landing.querySelector('[data-discount-row]');
+    var discountEl = landing.querySelector('[data-discount]');
+    if (discountRow && discountEl) {
+      discountRow.hidden = discount <= 0;
+      discountEl.textContent = '−' + money(discount);
+    }
     if (totalEl) {
-      totalEl.textContent = money(sub + shipping);
+      totalEl.textContent = money(sub - discount + shipping);
       totalEl.classList.add('nk-total-pop');
       window.setTimeout(function () { totalEl.classList.remove('nk-total-pop'); }, 320);
     }
@@ -828,9 +912,12 @@
   if (qty) {
     qty.addEventListener('input', updateTotals);
     qty.addEventListener('change', updateTotals);
+    qty.addEventListener('input', refreshCoupon);
+    qty.addEventListener('change', refreshCoupon);
   }
   if (bumpInput) {
     bumpInput.addEventListener('change', updateTotals);
+    bumpInput.addEventListener('change', refreshCoupon);
   }
   updateTotals();
 
@@ -1259,6 +1346,9 @@
       variant: cfg.variant || '',
       bump: bumpInput && bumpInput.checked ? 1 : 0,
       variation_id: variationSelect ? Number(variationSelect.value) || 0 : 0,
+      coupon: couponInput ? couponInput.value.trim() : '',
+      expected_price: Number(cfg.price) || 0,
+      expected_bump_price: bumpInput && bumpInput.checked && cfg.bump ? Number(cfg.bump.price) || 0 : 0,
       otp_code: data.get('otp_code') || '',
       name: data.get('name') || '',
       phone: data.get('phone') || '',
@@ -1301,6 +1391,17 @@
         if (!(data.get('otp_code') || '')) {
           sendOtp();
         }
+      }
+      if (code === 'noksha_price_changed' && payload.data) {
+        // The page was out of date. Show the new total so the buyer can confirm it.
+        cfg.price = Number(payload.data.price) || cfg.price;
+        if (cfg.bump && payload.data.bump_price) {
+          cfg.bump.price = Number(payload.data.bump_price);
+        }
+        landing.querySelectorAll('.nk-price-now').forEach(function (el) {
+          el.textContent = money(cfg.price);
+        });
+        updateTotals();
       }
       var field = errorCodeToField(code);
       showFormError(error.message || 'Error', field);

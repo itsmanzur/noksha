@@ -9,6 +9,7 @@ namespace Noksha\Orders;
 
 use Noksha\Analytics\Capi;
 use Noksha\Analytics\Tracker;
+use Noksha\Catalog\WcCoupon;
 use Noksha\Catalog\WcProduct;
 use Noksha\Fraud\Blacklist;
 use Noksha\I18n\Catalog;
@@ -140,6 +141,29 @@ final class Checkout {
         $bump = is_array($doc['offer']['bump'] ?? null) ? $doc['offer']['bump'] : [];
         $want_bump = !empty($input['bump']) && !empty($bump['enabled']) && (float) ($bump['price'] ?? 0) > 0;
         $bump_price = $want_bump ? round((float) $bump['price'], 2) : 0.0;
+
+        // A coupon is checked by WooCommerce before anything is saved.
+        $coupon_code = '';
+        if (WcCoupon::enabled_for($doc) && !empty($input['coupon'])) {
+            $checked = WcCoupon::preview($doc['offer'], $qty, $want_bump, (string) $input['coupon']);
+            if (is_wp_error($checked)) {
+                return $this->coupon_error($checked, $lang);
+            }
+            $coupon_code = $checked['code'];
+        }
+
+        // The page may come from a cache and show an old price. Never charge a price
+        // the buyer did not see: send the new one back and let them confirm.
+        $expected = isset($input['expected_price']) ? round((float) $input['expected_price'], 2) : 0.0;
+        $expected_bump = isset($input['expected_bump_price']) ? round((float) $input['expected_bump_price'], 2) : 0.0;
+        if (($expected > 0 && abs($expected - $price) > 0.009)
+            || ($want_bump && $expected_bump > 0 && abs($expected_bump - $bump_price) > 0.009)) {
+            return new \WP_Error('noksha_price_changed', Catalog::line($lang, 'price_changed'), [
+                'status' => 409,
+                'price' => $price,
+                'bump_price' => $bump_price,
+            ]);
+        }
         $subtotal = round(($price * $qty) + $bump_price, 2);
         $total = round($subtotal + $shipping, 2);
         $event_id = self::event_id((string) ($input['event_id'] ?? ''), $number = Repository::next_number());
@@ -246,7 +270,7 @@ final class Checkout {
         // WooCommerce product: create the real WC order (items, totals, stock) now,
         // inside the same transaction, so a failure leaves nothing behind.
         if ($is_wc) {
-            $wc_order_id = WcBridge::create(
+            $created = WcBridge::create(
                 $order,
                 $doc['offer'],
                 $qty,
@@ -255,14 +279,26 @@ final class Checkout {
                     'price' => $bump_price,
                     'productId' => (int) ($bump['productId'] ?? 0),
                 ] : null,
-                $method
+                $method,
+                $coupon_code
             );
-            if (is_wp_error($wc_order_id)) {
+            if (is_wp_error($created)) {
                 $wpdb->query('ROLLBACK');
-                return $this->error('out_of_stock', $lang, 409);
+                return $created->get_error_code() === 'noksha_coupon_invalid'
+                    ? $this->coupon_error($created, $lang)
+                    : $this->error('out_of_stock', $lang, 409);
             }
-            Repository::update($id, ['wc_order_id' => $wc_order_id], false);
-            $order['wc_order_id'] = $wc_order_id;
+            // WooCommerce worked out the discount and the total; the Noksha row follows it.
+            $total = (float) $created['total'];
+            Repository::update($id, [
+                'wc_order_id' => $created['id'],
+                'discount' => $created['discount'],
+                'coupon' => $coupon_code,
+                'total' => $total,
+                'collect_amount' => $total,
+            ], false);
+            $order = Repository::find($id) ?: $order;
+            $order['product_name'] = $doc['offer']['productName'] !== '' ? $doc['offer']['productName'] : $post->post_title;
         }
 
         // Network gateways: commit insert first so row locks are not held during HTTP.
@@ -436,6 +472,14 @@ final class Checkout {
     private static function variant(string $value): string {
         $value = strtolower($value);
         return in_array($value, ['a', 'b'], true) ? $value : '';
+    }
+
+    /**
+     * A coupon that cannot be used. WooCommerce's own reason is shown when it gave one.
+     */
+    private function coupon_error(\WP_Error $error, string $lang): \WP_Error {
+        $message = $error->get_error_message();
+        return new \WP_Error('noksha_coupon_invalid', $message !== '' ? $message : Catalog::line($lang, 'coupon_invalid'), ['status' => 400]);
     }
 
     private function error(string $code, string $lang, int $status): \WP_Error {
