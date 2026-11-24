@@ -8,6 +8,7 @@
 namespace Noksha\Pages;
 
 use Noksha\Brand\Tokens;
+use Noksha\Catalog\WcProduct;
 use Noksha\I18n\Catalog;
 use Noksha\Options;
 
@@ -183,6 +184,9 @@ final class Renderer {
             'shippingZones' => is_array($offer['shippingZones'] ?? null) ? $offer['shippingZones'] : [],
             'dhakaDistrictId' => '47',
             'productName' => (string) ($offer['productName'] ?? ''),
+            'variationId' => (int) ($offer['variationId'] ?? 0),
+            'variations' => is_array($offer['wc']['variations'] ?? null) ? $offer['wc']['variations'] : [],
+            'maxQty' => WcProduct::max_qty($offer) !== null ? max(1, min(10, (int) WcProduct::max_qty($offer))) : 10,
             'bump' => is_array($offer['bump'] ?? null) ? $offer['bump'] : ['enabled' => false],
             'variant' => (string) ($payload['variant'] ?? 'a'),
             'otpMode' => (string) (Options::settings()['sms']['otp_mode'] ?? 'risk'),
@@ -420,6 +424,8 @@ final class Renderer {
 
         $price = (float) $offer['price'];
         $shipping = (float) $offer['shipping'];
+        $wc = is_array($offer['wc'] ?? null) ? $offer['wc'] : null;
+        $sold_out = $wc !== null && empty($wc['available']);
         $button = $props['buttonLabel'] !== '' ? $props['buttonLabel'] : Catalog::line($lang, 'place_order');
 
         $bump = is_array($offer['bump'] ?? null) ? $offer['bump'] : [];
@@ -456,16 +462,41 @@ final class Renderer {
             . '<input name="trx_id" inputmode="text" autocomplete="off" maxlength="40"></label>'
             . '</div>'
             . '<div class="nk-hp" aria-hidden="true"><label>Website<input name="company_website" tabindex="-1" autocomplete="off"></label></div>'
-            . '<button class="nk-btn nk-submit" type="submit"><span class="nk-btn-label">' . esc_html($button) . '</span><span class="nk-btn-spinner" aria-hidden="true"></span></button>'
+            . '<button class="nk-btn nk-submit" type="submit"' . ($sold_out && !$preview ? ' disabled' : '') . '><span class="nk-btn-label">' . esc_html($button) . '</span><span class="nk-btn-spinner" aria-hidden="true"></span></button>'
             . '</form>';
+
+        $max_qty = WcProduct::max_qty($offer);
+        $qty_max = $max_qty !== null ? max(1, min(10, $max_qty)) : 10;
+        $variation_html = '';
+        if ($wc !== null && !empty($wc['variations'])) {
+            $options = '';
+            foreach ($wc['variations'] as $variation) {
+                $label = (string) $variation['label'] . ' · ' . self::money((float) $variation['price'], $lang);
+                if (empty($variation['inStock'])) {
+                    $label .= ' (' . Catalog::line($lang, 'sold_out') . ')';
+                }
+                $options .= '<option value="' . esc_attr((string) $variation['id']) . '"'
+                    . selected((int) $variation['id'], (int) $offer['variationId'], false)
+                    . (empty($variation['inStock']) ? ' disabled' : '') . '>'
+                    . esc_html($label) . '</option>';
+            }
+            $variation_html = '<label class="nk-variation">'
+                . '<span>' . esc_html(Catalog::line($lang, 'choose_option')) . '</span>'
+                . '<select name="variation_id" form="nk-order" data-variation>' . $options . '</select></label>';
+        }
+        $sold_out_html = $sold_out
+            ? '<p class="nk-form-error nk-sold-out" role="alert">' . esc_html(Catalog::line($lang, 'out_of_stock')) . '</p>'
+            : '';
 
         $summary = '<aside class="nk-summary"><h3>' . esc_html(Catalog::line($lang, 'summary')) . '</h3>'
             . '<p class="nk-summary-name">' . esc_html($offer['productName']) . '</p>'
+            . $variation_html
+            . $sold_out_html
             . '<div class="nk-qty">'
             . '<span>' . esc_html(Catalog::line($lang, 'qty')) . '</span>'
             . '<div class="nk-qty-stepper">'
             . '<button type="button" class="nk-qty-btn" data-qty-dec aria-label="-">−</button>'
-            . '<input name="qty" form="nk-order" type="number" min="1" max="10" value="1" inputmode="numeric">'
+            . '<input name="qty" form="nk-order" type="number" min="1" max="' . esc_attr((string) $qty_max) . '" value="1" inputmode="numeric">'
             . '<button type="button" class="nk-qty-btn" data-qty-inc aria-label="+">+</button>'
             . '</div></div>'
             . $bump_html

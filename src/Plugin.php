@@ -25,6 +25,8 @@ final class Plugin {
     public function boot(): void {
         Activator::maybe_upgrade();
         WalletVerifier::register_hooks();
+        add_action('before_woocommerce_init', [\Noksha\Orders\WcBridge::class, 'declare_hpos_compat']);
+        add_action('plugins_loaded', [\Noksha\Orders\WcBridge::class, 'register_hooks'], 20);
         add_action('noksha_order_status_changed', [Orders::class, 'on_status_changed'], 10, 3);
         (new Locale())->register();
         (new PostType())->register();

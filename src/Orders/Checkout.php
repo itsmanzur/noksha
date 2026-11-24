@@ -9,6 +9,7 @@ namespace Noksha\Orders;
 
 use Noksha\Analytics\Capi;
 use Noksha\Analytics\Tracker;
+use Noksha\Catalog\WcProduct;
 use Noksha\Fraud\Blacklist;
 use Noksha\I18n\Catalog;
 use Noksha\Leads\Repository as Leads;
@@ -111,6 +112,25 @@ final class Checkout {
 
         $qty = (int) ($input['qty'] ?? 1);
         $qty = max(1, min(10, $qty));
+
+        // WooCommerce offers: price, name and stock come from the product now,
+        // never from what the browser sent.
+        $requested_variation = max(0, (int) ($input['variation_id'] ?? 0));
+        $doc['offer'] = WcProduct::apply($doc['offer'], $requested_variation);
+        if (WcProduct::is_wc_offer($doc['offer'])) {
+            $wc = $doc['offer']['wc'];
+            if (empty($wc['available'])) {
+                return $this->error('out_of_stock', $lang, 409);
+            }
+            if ($requested_variation > 0 && (int) $doc['offer']['variationId'] !== $requested_variation) {
+                return $this->error('out_of_stock', $lang, 409);
+            }
+            $limit = WcProduct::max_qty($doc['offer']);
+            if ($limit !== null && $qty > $limit) {
+                return $this->error('stock_limit', $lang, 409);
+            }
+        }
+
         $price = round((float) $doc['offer']['price'], 2);
         $shipping = self::shipping_for(
             $doc['offer'],
@@ -157,16 +177,21 @@ final class Checkout {
             }
         }
 
+        $is_wc = WcProduct::is_wc_offer($doc['offer']);
         $items = [[
             'name' => $doc['offer']['productName'] !== '' ? $doc['offer']['productName'] : $post->post_title,
             'qty' => $qty,
             'price' => $price,
+            'product_id' => $is_wc ? (int) $doc['offer']['productId'] : 0,
+            'variation_id' => $is_wc ? (int) $doc['offer']['variationId'] : 0,
         ]];
         if ($want_bump) {
             $items[] = [
                 'name' => (string) ($bump['name'] !== '' ? $bump['name'] : 'Add-on'),
                 'qty' => 1,
                 'price' => $bump_price,
+                'product_id' => (int) ($bump['productId'] ?? 0),
+                'variation_id' => 0,
             ];
         }
 
@@ -217,6 +242,28 @@ final class Checkout {
             return $this->error('page_closed', $lang, 500);
         }
         $order['product_name'] = $doc['offer']['productName'] !== '' ? $doc['offer']['productName'] : $post->post_title;
+
+        // WooCommerce product: create the real WC order (items, totals, stock) now,
+        // inside the same transaction, so a failure leaves nothing behind.
+        if ($is_wc) {
+            $wc_order_id = WcBridge::create(
+                $order,
+                $doc['offer'],
+                $qty,
+                $want_bump ? [
+                    'name' => (string) ($bump['name'] !== '' ? $bump['name'] : 'Add-on'),
+                    'price' => $bump_price,
+                    'productId' => (int) ($bump['productId'] ?? 0),
+                ] : null,
+                $method
+            );
+            if (is_wp_error($wc_order_id)) {
+                $wpdb->query('ROLLBACK');
+                return $this->error('out_of_stock', $lang, 409);
+            }
+            Repository::update($id, ['wc_order_id' => $wc_order_id], false);
+            $order['wc_order_id'] = $wc_order_id;
+        }
 
         // Network gateways: commit insert first so row locks are not held during HTTP.
         $network_gateway = ($method === 'sslcommerz');
@@ -301,6 +348,8 @@ final class Checkout {
             'message' => Catalog::line($lang, 'thank_you_text'),
             'key' => Renderer::order_key($order),
         ];
+        // Pixels and the catalog feed match on the store product id when there is one.
+        $content_id = $is_wc ? (string) $doc['offer']['productId'] : (string) $page_id;
         // Do not fire Purchase before an external payment redirect completes.
         if (empty($result['redirect'])) {
             $payload['purchase'] = [
@@ -309,11 +358,11 @@ final class Checkout {
                 'event_id' => $order['event_id'],
                 'order_number' => $order['order_number'],
                 'content_name' => $doc['offer']['productName'],
-                'content_ids' => [(string) $page_id],
+                'content_ids' => [$content_id],
                 'num_items' => (int) $order['qty'],
-                'contents' => array_map(static function (array $item) use ($page_id): array {
+                'contents' => array_map(static function (array $item) use ($content_id): array {
                     return [
-                        'id' => (string) $page_id,
+                        'id' => $content_id,
                         'quantity' => (int) ($item['qty'] ?? 1),
                         'item_price' => (float) ($item['price'] ?? 0),
                     ];

@@ -1077,6 +1077,107 @@ function ItemsEditor({ t, type, items, onChange }) {
   );
 }
 
+/**
+ * Picks a WooCommerce product. Only ids are saved; name, price, image and
+ * stock shown here are read live from WooCommerce and cannot be edited.
+ */
+function WcSearchList({ t, selectedId, simpleOnly, onPick }) {
+  const [query, setQuery] = useState('');
+  const [state, setState] = useState({ status: 'loading', active: true, products: [] });
+  const wc = offer.wc || null;
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setState((prev) => ({ ...prev, status: 'loading' }));
+      api('wc-products?q=' + encodeURIComponent(query) + (simpleOnly ? '&simple=1' : ''))
+        .then((data) => {
+          if (!cancelled) setState({ status: 'ready', active: data.active !== false, products: data.products || [] });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ status: 'error', active: true, products: [] });
+        });
+    }, query ? 250 : 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query, simpleOnly]);
+
+  if (state.status !== 'loading' && !state.active) {
+    return <p className="nk-banner" role="alert">{t('offer.wcInactive')}</p>;
+  }
+
+  return (
+    <>
+      <label className="nk-field">
+        <span>{t('offer.wcSearch')}</span>
+        <input type="search" value={query} placeholder={t('offer.wcSearchPlaceholder')} onChange={(event) => setQuery(event.target.value)} />
+      </label>
+      {state.status === 'error' ? <p className="nk-banner" role="alert">{t('common.error')}</p> : null}
+      {state.status === 'ready' && state.products.length === 0 ? <p className="nk-muted">{t('offer.wcNone')}</p> : null}
+      <ul className="nk-wc-results">
+        {state.products.map((product) => (
+          <li key={product.id}>
+            <button type="button" className="nk-wc-result" onClick={() => { onPick(product); setQuery(''); }} aria-pressed={product.id === selectedId}>
+              {product.imageUrl ? <img src={product.imageUrl} alt="" width="40" height="40" /> : <span className="nk-wc-noimg" />}
+              <span>
+                <strong>{product.name}</strong>
+                <small>{product.priceHtml}{product.sku ? ' · ' + product.sku : ''}{product.type === 'variable' ? ' · ' + t('offer.wcVariable') : ''}{product.inStock ? '' : ' · ' + t('offer.wcOut')}</small>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function WcProductPicker({ t, offer, onChange }) {
+  function pick(product) {
+    onChange({
+      ...offer,
+      source: 'woocommerce',
+      productId: product.id,
+      variationId: 0,
+      productName: product.name,
+      price: product.price,
+      imageUrl: product.imageUrl || '',
+      wc: null,
+    });
+  }
+
+  const wc = offer.wc || null;
+  const selected = offer.productId > 0;
+  return (
+    <div className="nk-wc-picker">
+      {selected ? (
+        <div className="nk-wc-selected">
+          {offer.imageUrl ? <img src={offer.imageUrl} alt="" width="56" height="56" /> : null}
+          <div>
+            <strong>{offer.productName || '#' + offer.productId}</strong>
+            <div className="nk-muted">
+              {money(offer.price)}
+              {offer.compareAt > offer.price ? <s> {money(offer.compareAt)}</s> : null}
+              {wc && wc.stock != null ? ' · ' + t('offer.wcStock').replace('{n}', String(wc.stock)) : ''}
+            </div>
+            {wc && wc.available === false ? (
+              <em className="nk-tag is-warn">{t('offer.wcUnavailable')}</em>
+            ) : null}
+            {wc && wc.variations && wc.variations.length ? (
+              <div className="nk-muted">{t('offer.wcVariations').replace('{n}', String(wc.variations.length))}</div>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <p className="nk-muted">{t('offer.wcPick')}</p>
+      )}
+      <p className="nk-help">{t('offer.wcLive')}</p>
+      <WcSearchList t={t} selectedId={offer.productId} onPick={pick} />
+    </div>
+  );
+}
+
 function OfferFields({ t, offer, onChange }) {
   const price = Number(offer.price) || 0;
   const compare = Number(offer.compareAt) || 0;
@@ -1099,13 +1200,32 @@ function OfferFields({ t, offer, onChange }) {
       ],
     });
   }
+  const isWc = offer.source === 'woocommerce';
+  const bumpIsWc = isWc && offer.bump?.source === 'woocommerce';
   return (
     <div className="nk-form-stack">
-      <TextField label={t('offer.productName')} value={offer.productName} maxLength={180} onChange={(productName) => onChange({ ...offer, productName })} />
-      <div className="nk-two">
-        <MoneyField label={t('offer.price')} value={offer.price} onChange={(value) => onChange({ ...offer, price: value })} />
-        <MoneyField label={t('offer.compareAt')} help={t('offer.compareHelp')} value={offer.compareAt} onChange={(value) => onChange({ ...offer, compareAt: value })} />
-      </div>
+      <fieldset className="nk-source">
+        <legend>{t('offer.source')}</legend>
+        <label>
+          <input type="radio" name="nk-offer-source" checked={!isWc} onChange={() => onChange({ ...offer, source: 'custom', productId: 0, variationId: 0 })} />
+          {' '}{t('offer.sourceCustom')}
+        </label>
+        <label>
+          <input type="radio" name="nk-offer-source" checked={isWc} onChange={() => onChange({ ...offer, source: 'woocommerce' })} />
+          {' '}{t('offer.sourceWc')}
+        </label>
+      </fieldset>
+      {isWc ? (
+        <WcProductPicker t={t} offer={offer} onChange={onChange} />
+      ) : (
+        <>
+          <TextField label={t('offer.productName')} value={offer.productName} maxLength={180} onChange={(productName) => onChange({ ...offer, productName })} />
+          <div className="nk-two">
+            <MoneyField label={t('offer.price')} value={offer.price} onChange={(value) => onChange({ ...offer, price: value })} />
+            <MoneyField label={t('offer.compareAt')} help={t('offer.compareHelp')} value={offer.compareAt} onChange={(value) => onChange({ ...offer, compareAt: value })} />
+          </div>
+        </>
+      )}
       <div className="nk-two">
         <MoneyField label={t('offer.shippingInside')} help={t('offer.shippingInsideHelp')} value={inside} onChange={(value) => setShipping({ shippingInside: value })} />
         <MoneyField label={t('offer.shippingOutside')} help={t('offer.shippingOutsideHelp')} value={outside} onChange={(value) => setShipping({ shippingOutside: value })} />
@@ -1120,7 +1240,9 @@ function OfferFields({ t, offer, onChange }) {
           {off > 0 ? <em className="nk-tag is-ok">{t('offer.off').replace('{n}', String(off))}</em> : null}
         </small>
       </div>
-      <ImageField t={t} label={t('offer.image')} value={offer.imageUrl} onChange={(imageUrl) => onChange({ ...offer, imageUrl })} />
+      {isWc ? null : (
+        <ImageField t={t} label={t('offer.image')} value={offer.imageUrl} onChange={(imageUrl) => onChange({ ...offer, imageUrl })} />
+      )}
       <div className="nk-ed-group">
         <h3 className="nk-group-title">{t('offer.bumpTitle')}</h3>
         <p className="nk-muted">{t('offer.bumpHelp')}</p>
@@ -1131,8 +1253,44 @@ function OfferFields({ t, offer, onChange }) {
         />
         {offer.bump?.enabled ? (
           <>
-            <TextField label={t('offer.bumpName')} value={offer.bump?.name || ''} maxLength={120} onChange={(name) => onChange({ ...offer, bump: { ...(offer.bump || {}), name } })} />
-            <MoneyField label={t('offer.bumpPrice')} value={offer.bump?.price || 0} onChange={(value) => onChange({ ...offer, bump: { ...(offer.bump || {}), price: value } })} />
+            {isWc ? (
+              <fieldset className="nk-source">
+                <legend>{t('offer.source')}</legend>
+                <label>
+                  <input type="radio" name="nk-bump-source" checked={!bumpIsWc} onChange={() => onChange({ ...offer, bump: { ...(offer.bump || {}), source: 'custom', productId: 0 } })} />
+                  {' '}{t('offer.sourceCustom')}
+                </label>
+                <label>
+                  <input type="radio" name="nk-bump-source" checked={bumpIsWc} onChange={() => onChange({ ...offer, bump: { ...(offer.bump || {}), source: 'woocommerce' } })} />
+                  {' '}{t('offer.sourceWc')}
+                </label>
+              </fieldset>
+            ) : null}
+            {bumpIsWc ? (
+              <div className="nk-wc-picker">
+                {offer.bump?.productId > 0 ? (
+                  <div className="nk-wc-selected">
+                    {offer.bump?.imageUrl ? <img src={offer.bump.imageUrl} alt="" width="56" height="56" /> : null}
+                    <div>
+                      <strong>{offer.bump?.name || '#' + offer.bump.productId}</strong>
+                      <div className="nk-muted">{money(offer.bump?.price || 0)}</div>
+                    </div>
+                  </div>
+                ) : <p className="nk-muted">{t('offer.wcPick')}</p>}
+                <p className="nk-help">{t('offer.bumpWcHelp')}</p>
+                <WcSearchList
+                  t={t}
+                  simpleOnly
+                  selectedId={offer.bump?.productId}
+                  onPick={(product) => onChange({ ...offer, bump: { ...(offer.bump || {}), source: 'woocommerce', productId: product.id, name: product.name, price: product.price, imageUrl: product.imageUrl || '' } })}
+                />
+              </div>
+            ) : (
+              <>
+                <TextField label={t('offer.bumpName')} value={offer.bump?.name || ''} maxLength={120} onChange={(name) => onChange({ ...offer, bump: { ...(offer.bump || {}), name } })} />
+                <MoneyField label={t('offer.bumpPrice')} value={offer.bump?.price || 0} onChange={(value) => onChange({ ...offer, bump: { ...(offer.bump || {}), price: value } })} />
+              </>
+            )}
             <Switch
               checked={Boolean(offer.bump?.checkedDefault)}
               label={t('offer.bumpDefault')}

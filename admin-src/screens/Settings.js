@@ -167,6 +167,12 @@ export function Settings({ t, locale }) {
           placeholder={typeof window !== 'undefined' ? (window.nokshaBoot?.storeName || '') : ''}
         />
         <Toggle
+          label={t('settings.wcEmails')}
+          help={t('settings.wcEmailsHelp')}
+          checked={settings.woocommerce?.emails !== false}
+          onChange={(v) => patch({ woocommerce: { ...(settings.woocommerce || {}), emails: v } })}
+        />
+        <Toggle
           label={t('settings.bnDigits')}
           help={t('settings.bnDigitsHelp')}
           checked={bnDigits}

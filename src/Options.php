@@ -46,6 +46,10 @@ final class Options {
                 'otp_mode' => 'risk',
                 'otp_ttl' => 300,
             ],
+            'woocommerce' => [
+                // Send WooCommerce's own emails for orders placed on a landing page.
+                'emails' => true,
+            ],
             'couriers' => [
                 'steadfast' => ['enabled' => false],
                 'pathao' => ['enabled' => false, 'store_id' => ''],
@@ -199,6 +203,7 @@ final class Options {
         $gateways = is_array($input['gateways'] ?? null) ? $input['gateways'] : $current['gateways'];
         $sms = is_array($input['sms'] ?? null) ? $input['sms'] : $current['sms'];
         $couriers = is_array($input['couriers'] ?? null) ? $input['couriers'] : $current['couriers'];
+        $woocommerce = is_array($input['woocommerce'] ?? null) ? $input['woocommerce'] : [];
 
         $store_name = array_key_exists('store_name', $input)
             ? sanitize_text_field((string) $input['store_name'])
@@ -231,6 +236,11 @@ final class Options {
                     ? (string) ($sms['otp_mode'] ?? $current['sms']['otp_mode'] ?? 'risk')
                     : 'risk',
                 'otp_ttl' => max(120, min(900, (int) ($sms['otp_ttl'] ?? $current['sms']['otp_ttl'] ?? 300))),
+            ],
+            'woocommerce' => [
+                'emails' => array_key_exists('emails', $woocommerce)
+                    ? !empty($woocommerce['emails'])
+                    : !empty($current['woocommerce']['emails']),
             ],
             'couriers' => [
                 'steadfast' => [

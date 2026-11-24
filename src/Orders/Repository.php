@@ -355,6 +355,8 @@ final class Repository {
         $summary['codSettled'] = (int) ($row['cod_settled'] ?? 0) === 1;
         $summary['codSettledAt'] = (string) ($row['cod_settled_at'] ?? '');
         $summary['codShort'] = (float) ($row['cod_short'] ?? 0);
+        $summary['wcOrderId'] = (int) ($row['wc_order_id'] ?? 0);
+        $summary['wcEditUrl'] = WcBridge::edit_url((int) ($row['wc_order_id'] ?? 0));
         $summary['items'] = self::items((int) $row['id']);
         $summary['notes'] = self::notes((int) $row['id']);
         $summary['allowedStatuses'] = self::TRANSITIONS[(string) $row['status']] ?? [];

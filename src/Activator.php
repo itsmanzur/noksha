@@ -8,7 +8,7 @@
 namespace Noksha;
 
 final class Activator {
-    public const DB_VERSION = '8';
+    public const DB_VERSION = '9';
 
     /** @var array<string, int> Table suffix → minimum DB version that created it. */
     private const TABLE_SINCE = [
@@ -147,7 +147,7 @@ final class Activator {
         if ($found !== $orders) {
             return false;
         }
-        foreach (['otp_verified', 'variant', 'cod_settled', 'call_attempts', 'cod_short'] as $column) {
+        foreach (['otp_verified', 'variant', 'cod_settled', 'call_attempts', 'cod_short', 'wc_order_id'] as $column) {
             if (!$wpdb->get_var("SHOW COLUMNS FROM {$orders} LIKE '{$column}'")) {
                 return false;
             }
@@ -189,6 +189,7 @@ final class Activator {
             'cod_short' => 'decimal(12,2) NOT NULL DEFAULT 0.00',
             'call_attempts' => 'int(11) unsigned NOT NULL DEFAULT 0',
             'last_call_at' => 'datetime NULL',
+            'wc_order_id' => 'bigint(20) unsigned NOT NULL DEFAULT 0',
         ];
         foreach ($columns as $name => $definition) {
             $exists = $wpdb->get_var("SHOW COLUMNS FROM {$table} LIKE '{$name}'");
@@ -198,6 +199,15 @@ final class Activator {
         }
         $wpdb->query("UPDATE {$table} SET collect_amount = total WHERE collect_amount = 0 AND total > 0");
         $wpdb->query("UPDATE {$table} SET cod_settled = 0 WHERE cod_settled IS NULL");
+
+        $items = $wpdb->prefix . 'noksha_order_items';
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($items))) === $items) {
+            foreach (['product_id', 'variation_id'] as $name) {
+                if (!$wpdb->get_var("SHOW COLUMNS FROM {$items} LIKE '{$name}'")) {
+                    $wpdb->query("ALTER TABLE {$items} ADD COLUMN {$name} bigint(20) unsigned NOT NULL DEFAULT 0");
+                }
+            }
+        }
 
         $events = $wpdb->prefix . 'noksha_events';
         $events_found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($events)));
@@ -284,6 +294,7 @@ final class Activator {
             cod_short decimal(12,2) NOT NULL DEFAULT 0.00,
             call_attempts int(11) unsigned NOT NULL DEFAULT 0,
             last_call_at datetime NULL,
+            wc_order_id bigint(20) unsigned NOT NULL DEFAULT 0,
             customer_note text NULL,
             session_id varchar(64) NOT NULL DEFAULT '',
             language varchar(8) NOT NULL DEFAULT 'en',
@@ -294,6 +305,7 @@ final class Activator {
             KEY page_id (page_id),
             KEY status (status),
             KEY phone (phone),
+            KEY wc_order_id (wc_order_id),
             KEY created_at (created_at)
         ) {$charset};
         CREATE TABLE {$items} (
@@ -302,6 +314,8 @@ final class Activator {
             name varchar(191) NOT NULL DEFAULT '',
             qty int(11) unsigned NOT NULL DEFAULT 1,
             price decimal(12,2) NOT NULL DEFAULT 0.00,
+            product_id bigint(20) unsigned NOT NULL DEFAULT 0,
+            variation_id bigint(20) unsigned NOT NULL DEFAULT 0,
             PRIMARY KEY  (id),
             KEY order_id (order_id)
         ) {$charset};

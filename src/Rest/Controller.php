@@ -81,6 +81,9 @@ final class Controller {
             ['methods' => 'PUT', 'callback' => [$this, 'put_page']] + $admin,
             ['methods' => 'DELETE', 'callback' => [$this, 'delete_page']] + $admin,
         ]);
+        register_rest_route('noksha/v1', '/wc-products', [
+            ['methods' => 'GET', 'callback' => [$this, 'wc_products']] + $admin,
+        ]);
         register_rest_route('noksha/v1', '/preview', [
             'methods' => 'POST',
             'callback' => [$this, 'preview'],
@@ -320,10 +323,21 @@ final class Controller {
         return ['deleted' => true];
     }
 
+    public function wc_products(\WP_REST_Request $request): array {
+        $active = \Noksha\Catalog\WcProduct::active();
+        return [
+            'active' => $active,
+            'products' => $active
+                ? \Noksha\Catalog\WcProduct::search(sanitize_text_field((string) $request->get_param('q')), 20, !empty($request->get_param('simple')))
+                : [],
+        ];
+    }
+
     public function preview(\WP_REST_Request $request): array {
         $params = $request->get_json_params();
         $params = is_array($params) ? $params : [];
         $doc = Sanitizer::document($params);
+        $doc['offer'] = \Noksha\Catalog\WcProduct::apply($doc['offer']);
         $doc['id'] = (int) ($params['id'] ?? 0);
         $doc['title'] = sanitize_text_field((string) ($params['title'] ?? ''));
         return ['html' => Renderer::document($doc, true)];

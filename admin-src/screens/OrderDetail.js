@@ -389,6 +389,16 @@ export function OrderDetail({ t, locale, go, orderId, variant = 'page', onClose,
 						</Button>
 					</div>
 				) : null}
+				{detail.wcOrderId > 0 ? (
+					<p className="nk-muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+						<strong>{t('orders.wcOrder')}:</strong>{' '}
+						{detail.wcEditUrl ? (
+							<a href={detail.wcEditUrl} target="_blank" rel="noreferrer">#{detail.wcOrderId}</a>
+						) : (
+							<span>#{detail.wcOrderId}</span>
+						)}
+					</p>
+				) : null}
 				{detail.status === 'shipped' && detail.trackingCode ? (
 					<p className="nk-muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
 						<strong>{t('orders.tracking')}:</strong> {detail.trackingCode}

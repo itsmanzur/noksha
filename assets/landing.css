@@ -1147,3 +1147,28 @@
     transition: none;
   }
 }
+/* WooCommerce variation picker and sold-out notice */
+.nk-variation {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  font-weight: 600;
+}
+.nk-variation select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: var(--noksha-radius);
+  background: var(--noksha-color-card);
+  color: var(--noksha-color-text);
+  font: inherit;
+}
+.nk-sold-out {
+  display: block;
+  margin: 8px 0;
+}
+.nk-submit[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

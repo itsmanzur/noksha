@@ -20,6 +20,16 @@ Build a one-page offer, take cash on delivery, bKash, Nagad, or SSLCommerz on th
 
 == Changelog ==
 
+= Unreleased =
+* Sell a WooCommerce product from a landing page. Pick it in the editor (Offer tab); name, price, image and stock are read live, so the page and the order always agree. Variable products show an option picker.
+* A WooCommerce product order creates a real WooCommerce order (items, totals, address, stock) and links it to the Noksha order. Statuses stay in step both ways. Cancelling gives the stock back.
+* Out-of-stock products and quantities above stock are refused at checkout.
+* Pixel and catalog events use the WooCommerce product id for store products.
+* A store product can also be the order bump (simple products). It is read live and added to the same WooCommerce order; a sold-out bump is hidden.
+* Settings > General: choose whether WooCommerce sends its own emails for landing page orders.
+* Hooks for stores: filter `noksha_wc_shipped_status` (WooCommerce status for a shipped order, default processing) and action `noksha_wc_before_push`.
+* Database version 9: `wc_order_id` on orders, product and variation ids on order items.
+
 = 0.1.5 =
 * Wallet auto-verify (bKash merchant / Nagad), courier webhooks, confirm/return analytics, canvas editor polish.
 

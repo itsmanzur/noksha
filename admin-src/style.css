@@ -1675,3 +1675,79 @@ a.nk-btn-ghost {
     top: 46px;
   }
 }
+
+/* WooCommerce product picker (offer tab) */
+.nk-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.nk-source legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 600;
+}
+.nk-wc-picker {
+  display: grid;
+  gap: 10px;
+}
+.nk-wc-selected {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: var(--noksha-radius, 8px);
+  background: var(--noksha-color-card);
+}
+.nk-wc-selected img {
+  object-fit: cover;
+  border-radius: 6px;
+}
+.nk-wc-results {
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.nk-wc-result {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: 6px;
+  background: var(--noksha-color-card);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.nk-wc-result:hover,
+.nk-wc-result[aria-pressed="true"] {
+  border-color: var(--noksha-color-brand);
+}
+.nk-wc-result img,
+.nk-wc-noimg {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--noksha-color-border);
+}
+.nk-wc-result span {
+  display: grid;
+}
+.nk-wc-result small {
+  color: var(--noksha-color-muted);
+}
+.nk-tag.is-warn {
+  color: var(--noksha-color-warning);
+}

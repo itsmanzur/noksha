@@ -168,3 +168,7 @@ msgstr "ফর্মের মেয়াদ শেষ। পেইজ রিল�
 
 msgid "Noksha admin assets are missing. Run npm run build inside the plugin folder."
 msgstr "Noksha-র অ্যাডমিন অ্যাসেট নেই। প্লাগিন ফোল্ডারে npm run build চালান।"
+
+#. translators: %s: Noksha order number.
+msgid "Placed on a Noksha landing page. Order %s."
+msgstr "Noksha ল্যান্ডিং পেইজ থেকে অর্ডার। অর্ডার %s।"

@@ -76,6 +76,10 @@ final class Catalog {
             'otp_resend' => 'Resend code',
             'thank_you_call' => 'We will call you soon to confirm.',
             'whatsapp_us' => 'Message us on WhatsApp',
+            'out_of_stock' => 'Sorry, this product is out of stock.',
+            'stock_limit' => 'Not enough stock for that quantity. Lower the quantity and try again.',
+            'choose_option' => 'Choose an option',
+            'sold_out' => 'Sold out',
         ],
         'bn' => [
             'name' => 'নাম',
@@ -144,6 +148,10 @@ final class Catalog {
             'otp_resend' => 'আবার কোড পাঠান',
             'thank_you_call' => 'আমরা শীঘ্রই ফোন করে কনফার্ম করব।',
             'whatsapp_us' => 'WhatsApp-এ মেসেজ করুন',
+            'out_of_stock' => 'দুঃখিত, এই পণ্যটি এখন স্টকে নেই।',
+            'stock_limit' => 'এই পরিমাণ পণ্য স্টকে নেই। পরিমাণ কমিয়ে আবার চেষ্টা করুন।',
+            'choose_option' => 'একটি অপশন বেছে নিন',
+            'sold_out' => 'স্টক শেষ',
         ],
     ];
 

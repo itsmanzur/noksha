@@ -14,6 +14,14 @@ use Noksha\Orders\Checkout;
 use Noksha\Orders\Repository as Orders;
 use Noksha\Pages\Repository as Pages;
 
+// The checks reuse a few phone numbers and are run again and again, so the
+// per-phone and per-IP checkout limits must not turn a rerun into a failure.
+add_filter('noksha_rate_limits', static function (array $limits): array {
+    $limits['checkout'] = 100000;
+    $limits['phone_checkout'] = 100000;
+    return $limits;
+});
+
 $GLOBALS['noksha_fail'] = 0;
 function check(bool $ok, string $message): void {
     if ($ok) {
@@ -60,7 +68,7 @@ $order = $checkout->place([
     'qty' => 2,
     'session_id' => 'smokesession1',
 ]);
-check(is_array($order) && $order['status'] === 'confirmed', 'cod order confirmed');
+check(is_array($order) && $order['status'] === 'pending', 'cod order waits for the confirmation call');
 check(is_array($order) && is_string($order['orderNumber']) && str_starts_with($order['orderNumber'], 'NK-'), 'order number');
 if (is_array($order)) {
     $row = Orders::find_by_number($order['orderNumber']);
@@ -96,7 +104,7 @@ $ssl = $checkout->place([
     'qty' => 1,
     'session_id' => 'smokesession2',
 ]);
-check(is_wp_error($ssl) && $ssl->get_error_code() === 'noksha_sslcommerz_not_configured', 'ssl without credentials is not paid ' . (is_wp_error($ssl) ? $ssl->get_error_code() : 'not-error'));
+check(is_wp_error($ssl) && $ssl->get_error_code() === 'noksha_invalid_payment', 'ssl without credentials is not offered ' . (is_wp_error($ssl) ? $ssl->get_error_code() : 'not-error'));
 
 $wallet = $checkout->place([
     'nonce' => wp_create_nonce('noksha_public'),
@@ -108,7 +116,7 @@ $wallet = $checkout->place([
     'upazila_id' => '',
     'address' => 'Halishahar',
     'payment_method' => 'manual_bkash',
-    'trx_id' => 'ABC123XYZ',
+    'trx_id' => 'SMK' . strtoupper(wp_generate_password(8, false, false)), // TrxIDs are unique, so a rerun needs a fresh one.
     'qty' => 1,
     'session_id' => 'smokesession3',
 ]);
@@ -135,6 +143,160 @@ check($report['funnel']['orders'] >= 1, 'analytics counts orders');
 $html = Noksha\Pages\Renderer::article_for_post($id);
 check(str_contains($html, 'Smoke mustard') || str_contains($html, 'Pure mustard oil'), 'renderer prints the page');
 check(str_contains($html, 'data-geo="division"'), 'checkout renders address fields');
+
+// ---- WooCommerce products on a landing page ----
+if (Noksha\Catalog\WcProduct::active()) {
+    $simple = new WC_Product_Simple();
+    $simple->set_name('Smoke WC simple');
+    $simple->set_regular_price('900');
+    $simple->set_sale_price('750');
+    $simple->set_manage_stock(true);
+    $simple->set_stock_quantity(3);
+    $simple->set_status('publish');
+    $simple_id = $simple->save();
+
+    $wc_page = Pages::create('single', 'en', 'Smoke WC page');
+    $offer = Pages::payload($wc_page)['offer'];
+    $offer['source'] = 'woocommerce';
+    $offer['productId'] = $simple_id;
+    $offer['price'] = 1; // A price sent by the browser must never win.
+    Pages::update($wc_page, ['status' => 'publish', 'offer' => $offer]);
+    $live = Pages::payload($wc_page)['offer'];
+    check($live['source'] === 'woocommerce' && (float) $live['price'] === 750.0, 'wc offer reads the live sale price');
+    check((float) $live['compareAt'] === 900.0 && $live['productName'] === 'Smoke WC simple', 'wc offer reads compare price and name');
+    $stored = get_post_meta($wc_page, '_noksha_offer', true);
+    check(is_array($stored) && (int) $stored['productId'] === $simple_id && !isset($stored['wc']), 'only the id is stored on the page');
+
+    $base = [
+        'nonce' => wp_create_nonce('noksha_public'),
+        'page_id' => $wc_page,
+        'name' => 'Rafi',
+        'phone' => '01812345678',
+        'division_id' => '6',
+        'district_id' => '47',
+        'upazila_id' => 'thana-dhanmondi',
+        'address' => 'Road 9',
+        'payment_method' => 'cod',
+        'session_id' => 'smokesession2',
+    ];
+    $too_many = $checkout->place($base + ['qty' => 5]);
+    check(is_wp_error($too_many) && $too_many->get_error_code() === 'noksha_stock_limit', 'qty above stock is refused');
+
+    $placed = $checkout->place($base + ['qty' => 2]);
+    check(is_array($placed), 'wc order placed');
+    if (is_array($placed)) {
+        $row = Orders::find_by_number($placed['orderNumber']);
+        check($row && (float) $row['subtotal'] === 1500.0, 'order uses the live price, not the browser price');
+
+        $wc_id = (int) ($row['wc_order_id'] ?? 0);
+        $wo = $wc_id > 0 ? wc_get_order($wc_id) : null;
+        check($wo instanceof WC_Order, 'a real WooCommerce order is created');
+        if ($wo instanceof WC_Order) {
+            check($wo->get_status() === 'on-hold', 'an unconfirmed COD order waits "on-hold" in WooCommerce');
+            // Noksha → WooCommerce: confirming after the call moves the WC order on.
+            Orders::update((int) $row['id'], ['status' => 'confirmed']);
+            $wo = wc_get_order($wc_id);
+            check($wo->get_status() === 'processing', 'confirmed COD order is "processing" in WooCommerce');
+            check((float) $wo->get_total() === (float) $row['total'], 'WC order total matches the Noksha total');
+            check((int) $wo->get_meta('_noksha_order_id') === (int) $row['id'], 'WC order carries the Noksha order id');
+            $item = array_values($wo->get_items())[0] ?? null;
+            check($item && $item->get_product_id() === $simple_id && $item->get_quantity() === 2, 'WC order has the product line');
+            check($wo->get_billing_phone() === '01812345678' && $wo->get_billing_country() === 'BD', 'WC order carries the customer');
+            check((int) wc_get_product($simple_id)->get_stock_quantity() === 1, 'stock is reduced by the order');
+
+            // Noksha → WooCommerce: cancelling gives the stock back.
+            Orders::update((int) $row['id'], ['status' => 'cancelled']);
+            $wo = wc_get_order($wc_id);
+            check($wo->get_status() === 'cancelled', 'cancelling in Noksha cancels the WC order');
+            check((int) wc_get_product($simple_id)->get_stock_quantity() === 3, 'cancelling restores stock');
+        }
+
+        // A store product as the order bump rides on the same WooCommerce order.
+        $addon = new WC_Product_Simple();
+        $addon->set_name('Smoke WC addon');
+        $addon->set_regular_price('200');
+        $addon->set_manage_stock(true);
+        $addon->set_stock_quantity(5);
+        $addon->set_status('publish');
+        $addon_id = $addon->save();
+        $offer = Pages::payload($wc_page)['offer'];
+        $offer['bump'] = ['enabled' => true, 'source' => 'woocommerce', 'productId' => $addon_id, 'name' => 'ignored', 'price' => 1, 'checkedDefault' => false];
+        Pages::update($wc_page, ['offer' => $offer]);
+        $live_bump = Pages::payload($wc_page)['offer']['bump'];
+        check($live_bump['enabled'] && (float) $live_bump['price'] === 200.0 && $live_bump['name'] === 'Smoke WC addon', 'wc bump reads the live name and price');
+
+        $with_bump = $checkout->place(['phone' => '01512345678'] + $base + ['qty' => 1, 'bump' => 1]);
+        check(is_array($with_bump), 'order with a wc bump placed');
+        if (is_array($with_bump)) {
+            $row3 = Orders::find_by_number($with_bump['orderNumber']);
+            $wo3 = wc_get_order((int) $row3['wc_order_id']);
+            check($wo3 instanceof WC_Order && count($wo3->get_items()) === 2, 'the bump is a second product line');
+            check($wo3 instanceof WC_Order && (float) $wo3->get_total() === (float) $row3['total'], 'WC total includes the bump');
+            check((float) $row3['subtotal'] === 950.0, 'bump uses the live price, not the browser price');
+            check((int) wc_get_product($addon_id)->get_stock_quantity() === 4, 'bump stock is reduced');
+        }
+        $addon->set_stock_quantity(0);
+        $addon->set_stock_status('outofstock');
+        $addon->save();
+        check(Pages::payload($wc_page)['offer']['bump']['enabled'] === false, 'a sold-out wc bump is hidden');
+        wp_delete_post($addon_id, true);
+
+        // WooCommerce → Noksha.
+        $second = $checkout->place(['phone' => '01612345678'] + $base + ['qty' => 1]);
+        if (is_array($second)) {
+            $row2 = Orders::find_by_number($second['orderNumber']);
+            Orders::update((int) $row2['id'], ['status' => 'confirmed']);
+            $wo2 = wc_get_order((int) $row2['wc_order_id']);
+            $wo2->update_status('completed');
+            $row2 = Orders::find((int) $row2['id']);
+            check($row2['status'] === 'delivered', 'completing the WC order marks Noksha delivered');
+        } else {
+            check(false, 'second wc order placed');
+        }
+    }
+
+    $simple->set_stock_quantity(0);
+    $simple->set_stock_status('outofstock');
+    $simple->save();
+    $sold = $checkout->place(['phone' => '01912345678'] + $base + ['qty' => 1]);
+    check(is_wp_error($sold) && $sold->get_error_code() === 'noksha_out_of_stock', 'out of stock product is refused');
+
+    $variable = new WC_Product_Variable();
+    $variable->set_name('Smoke WC variable');
+    $attr = new WC_Product_Attribute();
+    $attr->set_name('Size');
+    $attr->set_options(['S', 'L']);
+    $attr->set_visible(true);
+    $attr->set_variation(true);
+    $variable->set_attributes([$attr]);
+    $variable->set_status('publish');
+    $variable_id = $variable->save();
+    $variation_ids = [];
+    foreach (['S' => '500', 'L' => '650'] as $size => $amount) {
+        $variation = new WC_Product_Variation();
+        $variation->set_parent_id($variable_id);
+        $variation->set_attributes(['size' => $size]);
+        $variation->set_regular_price($amount);
+        $variation->set_status('publish');
+        $variation_ids[$size] = $variation->save();
+    }
+    WC_Product_Variable::sync($variable_id);
+
+    $resolved = Noksha\Catalog\WcProduct::apply(['source' => 'woocommerce', 'productId' => $variable_id], $variation_ids['L']);
+    check((float) $resolved['price'] === 650.0 && count($resolved['wc']['variations']) === 2, 'variable product resolves the chosen variation');
+    $fallback = Noksha\Catalog\WcProduct::apply(['source' => 'woocommerce', 'productId' => $variable_id], 999999);
+    check((int) $fallback['variationId'] !== 999999 && $fallback['wc']['available'], 'unknown variation falls back to a real one');
+    $gone = Noksha\Catalog\WcProduct::apply(['source' => 'woocommerce', 'productId' => 99999999]);
+    check($gone['wc']['available'] === false, 'deleted product is not orderable');
+    $custom = Noksha\Catalog\WcProduct::apply(['source' => 'custom', 'price' => 10]);
+    check(!isset($custom['wc']) && $custom['price'] === 10, 'custom offer passes through untouched');
+
+    wp_delete_post($wc_page, true);
+    wp_delete_post($variable_id, true);
+    wp_delete_post($simple_id, true);
+} else {
+    echo "skip WooCommerce checks (plugin not active)\n";
+}
 
 if ($GLOBALS['noksha_fail'] > 0) {
     echo $GLOBALS['noksha_fail'] . " failed\n";

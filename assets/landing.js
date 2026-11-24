@@ -514,6 +514,62 @@
     return Number(cfg.shippingOutside != null ? cfg.shippingOutside : cfg.shipping) || 0;
   }
 
+  function maxQty() {
+    return Math.max(1, Math.min(10, Number(cfg.maxQty) || 10));
+  }
+
+  /* ---- WooCommerce variations: price, image and stock follow the choice ---- */
+
+  var variationSelect = landing.querySelector('[data-variation]');
+
+  function applyVariation() {
+    if (!variationSelect || !Array.isArray(cfg.variations)) {
+      return;
+    }
+    var id = Number(variationSelect.value);
+    var chosen = null;
+    cfg.variations.forEach(function (row) {
+      if (Number(row.id) === id) {
+        chosen = row;
+      }
+    });
+    if (!chosen) {
+      return;
+    }
+    cfg.variationId = id;
+    cfg.price = Number(chosen.price) || 0;
+    cfg.maxQty = chosen.stock == null ? 10 : Math.max(1, Math.min(10, Number(chosen.stock)));
+    if (qty) {
+      qty.max = String(cfg.maxQty);
+    }
+    landing.querySelectorAll('.nk-price-now').forEach(function (el) {
+      el.textContent = money(cfg.price);
+    });
+    landing.querySelectorAll('.nk-price-was').forEach(function (el) {
+      var regular = Number(chosen.regularPrice) || 0;
+      if (regular > cfg.price) {
+        el.textContent = money(regular);
+      } else {
+        el.textContent = '';
+      }
+    });
+    var sticky = landing.querySelector('.nk-sticky-cta-price');
+    if (sticky) {
+      sticky.textContent = money(cfg.price);
+    }
+    if (chosen.imageUrl) {
+      landing.querySelectorAll('.nk-hero-media img, .nk-gallery img').forEach(function (img) {
+        img.src = chosen.imageUrl;
+        img.removeAttribute('srcset');
+      });
+    }
+    updateTotals();
+  }
+
+  if (variationSelect) {
+    variationSelect.addEventListener('change', applyVariation);
+  }
+
   function bumpPrice() {
     if (!bumpInput || !bumpInput.checked || !cfg.bump || !cfg.bump.enabled) {
       return 0;
@@ -522,7 +578,7 @@
   }
 
   function updateTotals() {
-    var count = Math.max(1, Math.min(10, Number(qty && qty.value) || 1));
+    var count = Math.max(1, Math.min(maxQty(), Number(qty && qty.value) || 1));
     if (qty) {
       qty.value = String(count);
     }
@@ -754,7 +810,7 @@
     if (!qty) {
       return;
     }
-    var val = Math.max(1, Math.min(10, Number(next) || 1));
+    var val = Math.max(1, Math.min(maxQty(), Number(next) || 1));
     qty.value = String(val);
     updateTotals();
   }
@@ -1202,6 +1258,7 @@
       attribution: attribution,
       variant: cfg.variant || '',
       bump: bumpInput && bumpInput.checked ? 1 : 0,
+      variation_id: variationSelect ? Number(variationSelect.value) || 0 : 0,
       otp_code: data.get('otp_code') || '',
       name: data.get('name') || '',
       phone: data.get('phone') || '',

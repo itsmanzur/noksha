@@ -168,3 +168,7 @@ msgstr ""
 
 msgid "Noksha admin assets are missing. Run npm run build inside the plugin folder."
 msgstr ""
+
+#. translators: %s: Noksha order number.
+msgid "Placed on a Noksha landing page. Order %s."
+msgstr ""

@@ -144,7 +144,12 @@ final class Sanitizer {
         $default_shipping = self::money($offer['shippingDefault'] ?? $outside);
         $zones = self::shipping_zones($offer, $inside, $outside, $default_shipping);
         $bump = is_array($offer['bump'] ?? null) ? $offer['bump'] : [];
+        $product_id = max(0, (int) ($offer['productId'] ?? 0));
+        $source = ($offer['source'] ?? '') === 'woocommerce' && $product_id > 0 ? 'woocommerce' : 'custom';
         return [
+            'source' => $source,
+            'productId' => $source === 'woocommerce' ? $product_id : 0,
+            'variationId' => $source === 'woocommerce' ? max(0, (int) ($offer['variationId'] ?? 0)) : 0,
             'productName' => self::short($offer['productName'] ?? '', 180),
             'price' => self::money($offer['price'] ?? 0),
             'compareAt' => self::money($offer['compareAt'] ?? 0),
@@ -155,6 +160,8 @@ final class Sanitizer {
             'shippingZones' => $zones,
             'imageUrl' => self::url($offer['imageUrl'] ?? ''),
             'bump' => [
+                'source' => $source === 'woocommerce' && ($bump['source'] ?? '') === 'woocommerce' && (int) ($bump['productId'] ?? 0) > 0 ? 'woocommerce' : 'custom',
+                'productId' => $source === 'woocommerce' && ($bump['source'] ?? '') === 'woocommerce' ? max(0, (int) ($bump['productId'] ?? 0)) : 0,
                 'enabled' => !empty($bump['enabled']),
                 'name' => self::short($bump['name'] ?? '', 120),
                 'price' => self::money($bump['price'] ?? 0),

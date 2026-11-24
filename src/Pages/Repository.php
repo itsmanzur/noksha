@@ -7,6 +7,8 @@
 
 namespace Noksha\Pages;
 
+use Noksha\Catalog\WcProduct;
+
 final class Repository {
     public static function create(string $template, string $lang, string $title = ''): int|\WP_Error {
         $doc = Templates::make($template, $lang);
@@ -95,7 +97,7 @@ final class Repository {
         $tokens = get_post_meta($id, '_noksha_tokens', true);
         $seo = get_post_meta($id, '_noksha_seo', true);
         $ab = get_post_meta($id, '_noksha_ab', true);
-        return Sanitizer::document([
+        $doc = Sanitizer::document([
             'language' => is_string($language) ? $language : 'en',
             'sections' => is_array($sections) ? $sections : [],
             'checkout' => is_array($checkout) ? $checkout : [],
@@ -104,9 +106,16 @@ final class Repository {
             'seo' => is_array($seo) ? $seo : [],
             'ab' => is_array($ab) ? $ab : [],
         ], null, true);
+        // WooCommerce offers read name, price, image and stock live.
+        $doc['offer'] = WcProduct::apply($doc['offer']);
+        return $doc;
     }
 
     private static function write_meta(int $id, array $doc): void {
+        // Live WooCommerce data is never stored on the page; only the ids are.
+        unset($doc['offer']['wc']);
+        // A saved page must not be answered from a payload cached before the save.
+        unset(self::$payload_cache[$id]);
         update_post_meta($id, '_noksha_language', $doc['language']);
         update_post_meta($id, '_noksha_sections', $doc['sections']);
         update_post_meta($id, '_noksha_checkout', $doc['checkout']);
