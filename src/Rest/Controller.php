@@ -84,6 +84,9 @@ final class Controller {
         register_rest_route('noksha/v1', '/wc-products', [
             ['methods' => 'GET', 'callback' => [$this, 'wc_products']] + $admin,
         ]);
+        register_rest_route('noksha/v1', '/wc-products/(?P<id>\d+)/suggestions', [
+            ['methods' => 'GET', 'callback' => [$this, 'wc_suggestions']] + $admin,
+        ]);
         register_rest_route('noksha/v1', '/preview', [
             'methods' => 'POST',
             'callback' => [$this, 'preview'],
@@ -325,6 +328,10 @@ final class Controller {
         }
         wp_delete_post($post->ID, true);
         return ['deleted' => true];
+    }
+
+    public function wc_suggestions(\WP_REST_Request $request) {
+        return \Noksha\Catalog\WcSuggest::for_product((int) $request['id']);
     }
 
     public function wc_products(\WP_REST_Request $request): array {

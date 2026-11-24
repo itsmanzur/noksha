@@ -162,6 +162,11 @@ final class WcProduct {
         $offer['variationId'] = $buy->get_id() === $parent->get_id() ? 0 : $buy->get_id();
         $sale_to = $buy->is_on_sale() ? ($buy->get_date_on_sale_to() ?: $parent->get_date_on_sale_to()) : null;
         $offer['wc'] = [
+            'gallery' => self::gallery($parent),
+            'rating' => [
+                'average' => round((float) $parent->get_average_rating(), 1),
+                'count' => (int) $parent->get_review_count(),
+            ],
             'saleEndsAt' => $sale_to ? $sale_to->format('c') : '',
             'available' => $in_stock,
             'reason' => $in_stock ? '' : ($price > 0 ? 'out_of_stock' : 'no_price'),
@@ -213,6 +218,29 @@ final class WcProduct {
         return $qty === null ? null : max(0, (int) $qty);
     }
 
+    /**
+     * The product's main image and gallery, as large and thumbnail URLs.
+     *
+     * @return list<array{full:string,thumb:string,alt:string}>
+     */
+    private static function gallery(\WC_Product $product): array {
+        $ids = array_merge([(int) $product->get_image_id()], array_map('intval', $product->get_gallery_image_ids()));
+        $out = [];
+        foreach (array_unique(array_filter($ids)) as $id) {
+            $full = wp_get_attachment_image_url($id, 'large');
+            if (!is_string($full) || $full === '') {
+                continue;
+            }
+            $thumb = wp_get_attachment_image_url($id, 'thumbnail');
+            $out[] = [
+                'full' => $full,
+                'thumb' => is_string($thumb) && $thumb !== '' ? $thumb : $full,
+                'alt' => (string) get_post_meta($id, '_wp_attachment_image_alt', true),
+            ];
+        }
+        return array_slice($out, 0, 8);
+    }
+
     private static function image_url(\WC_Product $product): string {
         $id = (int) $product->get_image_id();
         if ($id <= 0) {
@@ -227,6 +255,8 @@ final class WcProduct {
      */
     private static function unavailable(string $reason): array {
         return [
+            'gallery' => [],
+            'rating' => ['average' => 0.0, 'count' => 0],
             'saleEndsAt' => '',
             'available' => false,
             'reason' => $reason,

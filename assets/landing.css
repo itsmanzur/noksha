@@ -1215,3 +1215,52 @@
 .nk-summary [hidden] {
   display: none !important;
 }
+
+/* Product gallery, rating line and verified-buyer mark */
+.nk-thumbs {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.nk-thumb {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 2px solid var(--noksha-color-border);
+  border-radius: calc(var(--noksha-radius) / 2);
+  background: var(--noksha-color-card);
+  cursor: pointer;
+  overflow: hidden;
+}
+.nk-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.nk-thumb.is-active,
+.nk-thumb:focus-visible {
+  border-color: var(--noksha-color-brand);
+  outline: none;
+}
+.nk-rating {
+  margin: 6px 0 0;
+  font-size: 0.95em;
+  color: var(--noksha-color-muted);
+}
+.nk-rating .nk-stars {
+  color: var(--noksha-color-accent);
+  letter-spacing: 1px;
+}
+.nk-verified {
+  margin-inline-start: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--noksha-color-success) 14%, transparent);
+  color: var(--noksha-color-success);
+  font-size: 0.8em;
+  font-weight: 600;
+}

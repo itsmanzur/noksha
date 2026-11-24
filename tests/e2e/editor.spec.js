@@ -45,4 +45,44 @@ test.describe('editor: WooCommerce product', () => {
 
     expect(errors, 'no JavaScript errors in the editor').toEqual([]);
   });
+
+  test('suggestions: use one, add a real review, fill the empty fields', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+
+    await page.goto(`${fixture.adminUrl}#/pages/${fixture.pageId}`);
+    const panel = page.locator('.nk-suggest');
+    await expect(panel).toBeVisible({ timeout: 20000 });
+    await expect(panel).toContainText('Suggestions from this product');
+
+    // What the product offers, read from the store.
+    await expect(panel).toContainText('A soft everyday shirt');
+    await expect(panel).toContainText('Soft combed cotton');
+    await expect(panel).toContainText('Material');
+    // Only the two reviews that count; the 3-star and the unapproved one stay out.
+    await expect(panel).toContainText('Nasrin');
+    await expect(panel).toContainText('Verified buyer');
+    await expect(panel).toContainText('Imran');
+    await expect(panel).not.toContainText('Rupa');
+    await expect(panel).not.toContainText('Karim');
+
+    // Nothing changed yet: the preview still shows the template's headline.
+    const preview = page.frameLocator('iframe.nk-editor-iframe');
+    await expect(preview.locator('h1')).not.toContainText('E2E Shirt');
+
+    // "Use" on the headline puts it on the page.
+    await panel.locator('.nk-suggest-row', { hasText: 'Headline' }).getByRole('button', { name: 'Use' }).click();
+    await expect(preview.locator('h1')).toContainText('E2E Shirt', { timeout: 15000 });
+
+    // Add the verified review: the preview shows the mark.
+    await panel.locator('.nk-suggest-row', { hasText: 'Nasrin' }).getByRole('button', { name: 'Add' }).click();
+    await expect(preview.locator('.nk-verified')).toBeVisible({ timeout: 15000 });
+    await expect(panel.locator('.nk-suggest-row', { hasText: 'Nasrin' }).getByRole('button')).toHaveText('Used');
+
+    // Fill the empty fields, never the ones that have text.
+    await panel.getByRole('button', { name: 'Fill all empty fields' }).click();
+    await expect(preview.locator('h1')).toContainText('E2E Shirt');
+
+    expect(errors, 'no JavaScript errors in the editor').toEqual([]);
+  });
 });

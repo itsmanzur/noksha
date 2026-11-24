@@ -72,6 +72,34 @@ test.describe('landing page for a WooCommerce product', () => {
     expect(errors, 'no JavaScript errors on the page').toEqual([]);
   });
 
+  test('gallery and rating', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(fixture.url);
+
+    // Three pictures: the main one and two from the gallery.
+    const thumbs = page.locator('.nk-thumb');
+    await expect(thumbs).toHaveCount(3);
+    const main = page.locator('.nk-hero-media > img');
+    await expect(main).toHaveAttribute('src', /nk-e2e-front/);
+    await expect(thumbs.first()).toHaveAttribute('aria-current', 'true');
+
+    await thumbs.nth(1).click();
+    await expect(main).toHaveAttribute('src', /nk-e2e-back/);
+    await expect(thumbs.nth(1)).toHaveAttribute('aria-current', 'true');
+    await expect(thumbs.first()).not.toHaveAttribute('aria-current', 'true');
+
+    // Choosing size L shows that variation's own picture; the thumbnails stay.
+    await page.locator('[data-variation]').selectOption(String(fixture.variations.L));
+    await expect(main).toHaveAttribute('src', /nk-e2e-variation/);
+    await expect(thumbs).toHaveCount(3);
+
+    // The product's real rating counts every approved review (5, 4 and 3 stars): 4.0 from 3.
+    await expect(page.locator('.nk-rating')).toContainText('4.0');
+    await expect(page.locator('.nk-rating')).toContainText('(3)');
+    expect(errors, 'no JavaScript errors on the page').toEqual([]);
+  });
+
   test('a stale price is caught before the order is placed', async ({ page }) => {
     await page.goto(fixture.url);
     // Pretend the page came from a cache with an old price.

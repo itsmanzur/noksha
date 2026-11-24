@@ -39,6 +39,9 @@ foreach ((array) ($state['productIds'] ?? []) as $id) {
     }
     wp_delete_post((int) $id, true);
 }
+foreach ((array) ($state['attachmentIds'] ?? []) as $attachment_id) {
+    wp_delete_attachment((int) $attachment_id, true);
+}
 if (!empty($state['couponId'])) {
     wp_delete_post((int) $state['couponId'], true);
 }

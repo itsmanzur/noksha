@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 use Noksha\Brand\Tokens;
+use Noksha\Catalog\WcSuggest;
 use Noksha\Front\CachePurge;
 use Noksha\Options;
 use Noksha\Orders\Checkout;
@@ -315,6 +316,58 @@ if (Noksha\Catalog\WcProduct::active()) {
     $simple->set_sale_price('700');
     $simple->save();
     check(in_array($wc_page, $purged, true), 'changing the product clears the page cache');
+
+    // ---- Suggestions, rating and the verified mark come from the product itself ----
+    $material = new WC_Product_Attribute();
+    $material->set_name('Material');
+    $material->set_options(['Cotton']);
+    $material->set_visible(true);
+    $simple->set_attributes([$material]);
+    $simple->set_short_description('A very comfortable shirt for daily wear.');
+    $simple->set_description('<ul><li>Soft cotton</li><li>Machine washable</li></ul>');
+    $simple->save();
+    foreach ([
+        ['Nasrin', 'Fits well and feels great.', 5, 1, true],
+        ['Imran', 'Good shirt, quick delivery.', 4, 1, false],
+        ['Rupa', 'Fine, nothing special.', 3, 1, false],
+        ['Karim', 'Not approved yet.', 5, 0, false],
+    ] as [$who, $said, $stars, $approved, $verified]) {
+        $cid = wp_insert_comment(['comment_post_ID' => $simple_id, 'comment_author' => $who, 'comment_content' => $said, 'comment_type' => 'review', 'comment_approved' => $approved]);
+        update_comment_meta($cid, 'rating', $stars);
+        if ($verified) {
+            update_comment_meta($cid, 'verified', 1);
+        }
+    }
+    WC_Comments::clear_transients($simple_id);
+
+    $suggest = WcSuggest::for_product($simple_id);
+    check(!is_wp_error($suggest) && $suggest['hero']['subtitle'] === 'A very comfortable shirt for daily wear.', 'the short description becomes the subtitle suggestion');
+    check(!is_wp_error($suggest) && in_array('Soft cotton', $suggest['info']['bullets'], true), 'list items become key points');
+    check(!is_wp_error($suggest) && ($suggest['benefits'][0]['title'] ?? '') === 'Material' && ($suggest['benefits'][0]['text'] ?? '') === 'Cotton', 'attributes become benefits');
+    check(!is_wp_error($suggest) && count($suggest['reviews']) === 2, 'only approved reviews of 4 stars or more are suggested');
+    check(!is_wp_error($suggest) && $suggest['reviews'][0]['name'] === 'Nasrin' && $suggest['reviews'][0]['verified'] === true, 'a verified buyer comes first');
+    check(is_wp_error(WcSuggest::for_product(99999999)), 'a missing product gives an error, not a guess');
+
+    Pages::forget_cached($wc_page);
+    $rated = Pages::document($wc_page)['offer']['wc']['rating'];
+    check($rated['count'] === 3 || $rated['count'] === 2, 'the review count comes from the product (' . $rated['count'] . ')');
+    $rated_html = Renderer::article_for_post($wc_page);
+    check(str_contains($rated_html, 'nk-rating'), 'the page shows the rating line');
+    $verified_payload = Pages::payload($wc_page);
+    foreach ($verified_payload['sections'] as $i => $section) {
+        if ($section['type'] === 'reviews') {
+            $verified_payload['sections'][$i]['props']['items'] = [['name' => 'Nasrin', 'text' => 'Fits well.', 'rating' => 5, 'verified' => true]];
+        }
+    }
+    check(str_contains(Renderer::article($verified_payload, false), 'nk-verified'), 'a verified review shows the verified buyer mark');
+    $kept = Noksha\Pages\Sanitizer::document(['sections' => $verified_payload['sections']], Pages::document($wc_page))['sections'];
+    $kept_review = null;
+    foreach ($kept as $section) {
+        if ($section['type'] === 'reviews') {
+            $kept_review = $section['props']['items'][0] ?? null;
+        }
+    }
+    check(is_array($kept_review) && $kept_review['verified'] === true, 'the verified mark survives saving');
 
     $simple->set_date_on_sale_to(gmdate('Y-m-d', time() + 3 * DAY_IN_SECONDS));
     $simple->save();

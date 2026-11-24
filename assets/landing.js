@@ -594,6 +594,26 @@
     return Math.max(1, Math.min(10, Number(cfg.maxQty) || 10));
   }
 
+  /* ---- Gallery: a thumbnail shows its picture in the main image ---- */
+
+  landing.querySelectorAll('.nk-thumb').forEach(function (thumb) {
+    thumb.addEventListener('click', function () {
+      var main = landing.querySelector('.nk-hero-media > img');
+      var url = thumb.getAttribute('data-nk-image');
+      if (!main || !url) {
+        return;
+      }
+      main.src = url;
+      main.removeAttribute('srcset');
+      landing.querySelectorAll('.nk-thumb').forEach(function (other) {
+        other.classList.remove('is-active');
+        other.removeAttribute('aria-current');
+      });
+      thumb.classList.add('is-active');
+      thumb.setAttribute('aria-current', 'true');
+    });
+  });
+
   /* ---- WooCommerce variations: price, image and stock follow the choice ---- */
 
   var variationSelect = landing.querySelector('[data-variation]');
@@ -634,9 +654,14 @@
       sticky.textContent = money(cfg.price);
     }
     if (chosen.imageUrl) {
-      landing.querySelectorAll('.nk-hero-media img, .nk-gallery img').forEach(function (img) {
+      // Only the big picture changes, not the small thumbnails under it.
+      landing.querySelectorAll('.nk-hero-media > img, .nk-gallery > img').forEach(function (img) {
         img.src = chosen.imageUrl;
         img.removeAttribute('srcset');
+      });
+      landing.querySelectorAll('.nk-thumb').forEach(function (thumb) {
+        thumb.classList.remove('is-active');
+        thumb.removeAttribute('aria-current');
       });
     }
     updateTotals();

@@ -755,7 +755,12 @@ function EditorInspector({
       content: (
         <>
           <p className="nk-muted">{t('offer.helpIntro')}</p>
-          <OfferFields t={t} offer={page.offer} onChange={(offer) => onPatch({ offer })} />
+          <OfferFields
+            t={t}
+            offer={page.offer}
+            onChange={(offer) => onPatch({ offer })}
+            afterProduct={<WcSuggestions t={t} page={page} onPatchSection={onPatchSection} />}
+          />
         </>
       ),
     },
@@ -1177,7 +1182,137 @@ function WcProductPicker({ t, offer, onChange }) {
   );
 }
 
-function OfferFields({ t, offer, onChange }) {
+/**
+ * Page content suggested from the store product: headline, description, key
+ * points, benefits and real reviews. Nothing changes until a button is pressed,
+ * and "fill empty" never replaces text that is already there.
+ */
+function WcSuggestions({ t, page, onPatchSection }) {
+  const confirm = useConfirm();
+  const productId = page.offer ? page.offer.productId : 0;
+  const [state, setState] = useState({ status: 'idle', data: null });
+  const [used, setUsed] = useState({});
+
+  useEffect(() => {
+    if (!(productId > 0)) {
+      setState({ status: 'idle', data: null });
+      return undefined;
+    }
+    let cancelled = false;
+    setState({ status: 'loading', data: null });
+    setUsed({});
+    api('wc-products/' + productId + '/suggestions')
+      .then((data) => { if (!cancelled) setState({ status: 'ready', data }); })
+      .catch(() => { if (!cancelled) setState({ status: 'error', data: null }); });
+    return () => { cancelled = true; };
+  }, [productId]);
+
+  if (!(productId > 0) || state.status === 'idle') {
+    return null;
+  }
+  if (state.status === 'loading') {
+    return <p className="nk-muted">{t('common.loading')}</p>;
+  }
+  if (state.status === 'error' || !state.data) {
+    return <p className="nk-banner" role="alert">{t('common.error')}</p>;
+  }
+
+  const d = state.data;
+  const find = (type) => (page.sections || []).find((section) => section.type === type);
+  const hero = find('hero');
+  const info = find('product');
+  const benefits = find('benefits');
+  const reviews = find('reviews');
+  const mark = (key) => setUsed((current) => ({ ...current, [key]: true }));
+
+  function use(key, section, props) {
+    if (!section) return;
+    onPatchSection(section.id, props);
+    mark(key);
+  }
+
+  function fillEmpty() {
+    if (hero && !hero.props.subtitle && d.hero.subtitle) use('subtitle', hero, { subtitle: d.hero.subtitle });
+    if (info && !info.props.text && d.info.text) use('text', info, { text: d.info.text });
+    if (info && !(info.props.bullets || []).length && d.info.bullets.length) use('points', info, { bullets: d.info.bullets });
+    if (benefits && !(benefits.props.items || []).length && d.benefits.length) use('benefits', benefits, { items: d.benefits });
+    if (reviews && !(reviews.props.items || []).length && d.reviews.length) use('reviews', reviews, { items: d.reviews });
+  }
+
+  async function replaceReviews() {
+    if (!reviews) return;
+    const ok = await confirm({
+      title: t('common.confirm'),
+      message: t('suggest.replaceConfirm'),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+      danger: true,
+    });
+    if (ok) use('reviews-all', reviews, { items: d.reviews });
+  }
+
+  function addReview(review) {
+    if (!reviews) return;
+    const current = reviews.props.items || [];
+    if (current.length >= 8) return;
+    use('review-' + review.id, reviews, { items: current.concat(review) });
+  }
+
+  const needs = (type) => t('suggest.noSection').replace('{section}', t('section.' + type));
+  const Row = ({ id, label, value, section, type, props }) => (
+    <li className="nk-suggest-row">
+      <div>
+        <strong>{label}</strong>
+        <p className="nk-muted">{value}</p>
+      </div>
+      <button type="button" className="nk-btn" disabled={!section || used[id]} title={section ? '' : needs(type)} onClick={() => use(id, section, props)}>
+        {used[id] ? t('suggest.used') : t('suggest.use')}
+      </button>
+    </li>
+  );
+
+  const nothing = !d.hero.subtitle && !d.info.text && !d.info.bullets.length && !d.benefits.length && !d.reviews.length;
+  return (
+    <div className="nk-suggest">
+      <h3 className="nk-group-title">{t('suggest.title')}</h3>
+      <p className="nk-help">{t('suggest.help')}</p>
+      {nothing ? <p className="nk-muted">{t('suggest.none')}</p> : (
+        <>
+          <button type="button" className="nk-btn" onClick={fillEmpty}>{t('suggest.fillEmpty')}</button>
+          <p className="nk-help">{t('suggest.fillEmptyHelp')}</p>
+          <ul className="nk-suggest-list">
+            <Row id="title" label={t('suggest.headline')} value={d.hero.title} section={hero} type="hero" props={{ title: d.hero.title }} />
+            {d.hero.subtitle ? <Row id="subtitle" label={t('suggest.subtitle')} value={d.hero.subtitle} section={hero} type="hero" props={{ subtitle: d.hero.subtitle }} /> : null}
+            {d.info.text ? <Row id="text" label={t('suggest.description')} value={d.info.text} section={info} type="product" props={{ text: d.info.text }} /> : null}
+            {d.info.bullets.length ? <Row id="points" label={t('suggest.points')} value={d.info.bullets.join(' · ')} section={info} type="product" props={{ bullets: d.info.bullets }} /> : null}
+            {d.benefits.length ? <Row id="benefits" label={t('suggest.benefits')} value={d.benefits.map((item) => item.title).join(' · ')} section={benefits} type="benefits" props={{ items: d.benefits }} /> : null}
+          </ul>
+          {d.reviews.length ? (
+            <>
+              <h4 className="nk-group-title">{t('suggest.reviews')}</h4>
+              <ul className="nk-suggest-list">
+                {d.reviews.map((review) => (
+                  <li key={review.id} className="nk-suggest-row">
+                    <div>
+                      <strong>{'★'.repeat(review.rating)} {review.name}{review.verified ? ' · ' + t('suggest.verified') : ''}</strong>
+                      <p className="nk-muted">{review.text}</p>
+                    </div>
+                    <button type="button" className="nk-btn" disabled={!reviews || used['review-' + review.id]} title={reviews ? '' : needs('reviews')} onClick={() => addReview(review)}>
+                      {used['review-' + review.id] ? t('suggest.used') : t('suggest.add')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button type="button" className="nk-btn" disabled={!reviews} onClick={replaceReviews}>{t('suggest.replaceReviews')}</button>
+            </>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+function OfferFields({ t, offer, onChange, afterProduct }) {
   const price = Number(offer.price) || 0;
   const compare = Number(offer.compareAt) || 0;
   const inside = Number(offer.shippingInside != null ? offer.shippingInside : offer.shipping) || 0;
@@ -1215,7 +1350,11 @@ function OfferFields({ t, offer, onChange }) {
         </label>
       </fieldset>
       {isWc ? (
-        <WcProductPicker t={t} offer={offer} onChange={onChange} />
+        <>
+          <WcProductPicker t={t} offer={offer} onChange={onChange} />
+          <Switch checked={offer.gallery !== false} label={t('offer.gallery')} onChange={(gallery) => onChange({ ...offer, gallery })} />
+          {afterProduct}
+        </>
       ) : (
         <>
           <TextField label={t('offer.productName')} value={offer.productName} maxLength={180} onChange={(productName) => onChange({ ...offer, productName })} />

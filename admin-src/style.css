@@ -1751,3 +1751,36 @@ a.nk-btn-ghost {
 .nk-tag.is-warn {
   color: var(--noksha-color-warning);
 }
+
+/* Suggestions from a store product (offer tab) */
+.nk-suggest {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed var(--noksha-color-border);
+  border-radius: var(--noksha-radius, 8px);
+}
+.nk-suggest-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nk-suggest-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: 6px;
+  background: var(--noksha-color-card);
+}
+.nk-suggest-row p {
+  margin: 2px 0 0;
+}
+.nk-suggest-row .nk-btn {
+  flex: none;
+}

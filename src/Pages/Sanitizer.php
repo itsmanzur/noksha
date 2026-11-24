@@ -147,6 +147,8 @@ final class Sanitizer {
         $product_id = max(0, (int) ($offer['productId'] ?? 0));
         $source = ($offer['source'] ?? '') === 'woocommerce' && $product_id > 0 ? 'woocommerce' : 'custom';
         return [
+            // Show the product's gallery under the main image (store products with several images).
+            'gallery' => !array_key_exists('gallery', $offer) || !empty($offer['gallery']),
             'source' => $source,
             'productId' => $source === 'woocommerce' ? $product_id : 0,
             'variationId' => $source === 'woocommerce' ? max(0, (int) ($offer['variationId'] ?? 0)) : 0,
@@ -466,6 +468,7 @@ final class Sanitizer {
                 'name' => $name,
                 'text' => $text,
                 'rating' => max(1, min(5, $rating)),
+                'verified' => !empty($item['verified']),
             ];
             if (count($clean) >= 8) {
                 break;

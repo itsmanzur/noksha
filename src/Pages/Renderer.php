@@ -238,7 +238,7 @@ final class Renderer {
             'benefits' => self::benefits($props, $preview),
             'product' => self::product($props, $payload, $preview),
             'countdown' => self::countdown($props, $payload, $preview),
-            'reviews' => self::reviews($props, $preview),
+            'reviews' => self::reviews($props, $preview, (string) ($payload['language'] ?? 'en')),
             'faq' => self::faq($props, $preview),
             'guarantee' => self::guarantee($props, $preview),
             'order_form' => self::order_form($props, $payload, $preview),
@@ -256,7 +256,7 @@ final class Renderer {
     private static function hero(array $props, array $payload = [], bool $preview = false): string {
         $lang = ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
         $offer = is_array($payload['offer'] ?? null) ? $payload['offer'] : [];
-        $media = self::image($props['imageUrl'] ?? ($offer['imageUrl'] ?? ''), $props['title'] ?? '', true);
+        $media = self::image((string) ($props['imageUrl'] ?: ($offer['imageUrl'] ?? '')), $props['title'] ?? '', true);
         $price = (float) ($offer['price'] ?? 0);
         $compare = (float) ($offer['compareAt'] ?? 0);
         $price_block = '';
@@ -276,13 +276,16 @@ final class Renderer {
         $cta = $props['buttonLabel'] !== ''
             ? self::editable('a', 'buttonLabel', $props['buttonLabel'], 'nk-btn', $preview, ['href' => '#nk-order'])
             : '<a class="nk-btn" href="#nk-order">' . esc_html(Catalog::line($lang, 'place_order')) . '</a>';
+        $thumbs = self::thumbs($offer, $lang);
+        $rating = self::rating_line($offer, $lang);
         return '<header class="nk-hero">'
-            . '<div class="nk-hero-media">' . $media . '</div>'
+            . '<div class="nk-hero-media">' . $media . $thumbs . '</div>'
             . '<div class="nk-hero-copy">'
             . ($props['eyebrow'] !== '' ? self::editable('p', 'eyebrow', $props['eyebrow'], 'nk-eyebrow', $preview) : '')
             . self::editable('h1', 'title', $props['title'], '', $preview)
             . ($props['subtitle'] !== '' ? self::editable('p', 'subtitle', $props['subtitle'], 'nk-lead', $preview) : '')
             . $price_block
+            . $rating
             . $cta
             . $trust
             . '</div></header>';
@@ -356,7 +359,7 @@ final class Renderer {
             . '</div>';
     }
 
-    private static function reviews(array $props, bool $preview = false): string {
+    private static function reviews(array $props, bool $preview = false, string $lang = 'en'): string {
         $items = '';
         foreach ($props['items'] as $index => $item) {
             $stars = str_repeat('★', max(0, min(5, (int) $item['rating'])));
@@ -367,6 +370,7 @@ final class Renderer {
                 . self::editable('p', 'items.' . $index . '.text', $item['text'], '', $preview)
                 . '<footer>'
                 . self::editable('span', 'items.' . $index . '.name', $item['name'], '', $preview)
+                . (!empty($item['verified']) ? ' <span class="nk-verified">' . esc_html(Catalog::line($lang, 'verified_buyer')) . '</span>' : '')
                 . '</footer></blockquote>';
         }
         return '<section class="nk-section">' . self::editable('h2', 'title', $props['title'], '', $preview)
@@ -690,6 +694,42 @@ final class Renderer {
         }
         $digits = abs($amount - round($amount)) < 0.001 ? 0 : 2;
         return '৳' . number_format($amount, $digits);
+    }
+
+    /**
+     * Thumbnails under the main image, from the store product's gallery.
+     */
+    private static function thumbs(array $offer, string $lang): string {
+        $images = is_array($offer['wc']['gallery'] ?? null) ? $offer['wc']['gallery'] : [];
+        if (count($images) < 2 || (array_key_exists('gallery', $offer) && empty($offer['gallery']))) {
+            return '';
+        }
+        $html = '';
+        foreach ($images as $index => $image) {
+            $label = sprintf(Catalog::line($lang, 'gallery_image'), $index + 1);
+            $html .= '<button type="button" class="nk-thumb' . ($index === 0 ? ' is-active' : '') . '" data-nk-image="' . esc_url($image['full']) . '"'
+                . ' aria-label="' . esc_attr($label) . '"' . ($index === 0 ? ' aria-current="true"' : '') . '>'
+                . '<img src="' . esc_url($image['thumb']) . '" alt="' . esc_attr((string) $image['alt']) . '" width="64" height="64" loading="lazy" decoding="async">'
+                . '</button>';
+        }
+        return '<div class="nk-thumbs">' . $html . '</div>';
+    }
+
+    /**
+     * The product's average rating and review count, when it has reviews.
+     */
+    private static function rating_line(array $offer, string $lang): string {
+        $rating = is_array($offer['wc']['rating'] ?? null) ? $offer['wc']['rating'] : [];
+        $count = (int) ($rating['count'] ?? 0);
+        $average = (float) ($rating['average'] ?? 0);
+        if ($count < 1 || $average <= 0) {
+            return '';
+        }
+        $filled = (int) round($average);
+        $label = sprintf(Catalog::line($lang, 'rating_summary'), (string) $average, $count);
+        return '<p class="nk-rating" aria-label="' . esc_attr($label) . '">'
+            . '<span class="nk-stars" aria-hidden="true">' . esc_html(str_repeat('★', $filled) . str_repeat('☆', 5 - $filled)) . '</span> '
+            . '<span aria-hidden="true">' . esc_html(number_format($average, 1)) . ' (' . $count . ')</span></p>';
     }
 
     private static function image(string $url, string $alt, bool $priority = false): string {

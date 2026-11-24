@@ -21,16 +21,47 @@ if (!$out) {
     exit(1);
 }
 
-// A shirt in two sizes, both for sale.
+/**
+ * A small coloured picture in the media library, so the gallery has real images.
+ */
+function nk_e2e_image(string $name, array $rgb): int {
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+    $upload = wp_upload_dir();
+    $path = trailingslashit($upload['path']) . $name . '.png';
+    $image = imagecreatetruecolor(400, 400);
+    imagefill($image, 0, 0, imagecolorallocate($image, $rgb[0], $rgb[1], $rgb[2]));
+    imagepng($image, $path);
+    $id = wp_insert_attachment(['post_mime_type' => 'image/png', 'post_title' => $name, 'post_status' => 'inherit'], $path);
+    wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $path));
+    return (int) $id;
+}
+
+$images = [
+    nk_e2e_image('nk-e2e-front', [200, 60, 60]),
+    nk_e2e_image('nk-e2e-back', [60, 160, 80]),
+    nk_e2e_image('nk-e2e-detail', [60, 90, 200]),
+    nk_e2e_image('nk-e2e-variation', [230, 190, 40]),
+];
+
+// A shirt in two sizes, both for sale, with a description, a material, three pictures and reviews.
 $shirt = new WC_Product_Variable();
 $shirt->set_name('E2E Shirt');
 $shirt->set_status('publish');
+$shirt->set_short_description('A soft everyday shirt that keeps its shape wash after wash.');
+$shirt->set_description('<p>Made from combed cotton.</p><ul><li>Soft combed cotton</li><li>Machine washable</li><li>Does not shrink</li></ul>');
+$shirt->set_image_id($images[0]);
+$shirt->set_gallery_image_ids([$images[1], $images[2]]);
 $size = new WC_Product_Attribute();
 $size->set_name('Size');
 $size->set_options(['S', 'L']);
 $size->set_visible(true);
 $size->set_variation(true);
-$shirt->set_attributes([$size]);
+$material = new WC_Product_Attribute();
+$material->set_name('Material');
+$material->set_options(['Combed cotton']);
+$material->set_visible(true);
+$material->set_variation(false);
+$shirt->set_attributes([$size, $material]);
 $shirt_id = $shirt->save();
 $variations = [];
 foreach (['S' => ['500', 5], 'L' => ['650', 3]] as $label => [$price, $stock]) {
@@ -41,9 +72,34 @@ foreach (['S' => ['500', 5], 'L' => ['650', 3]] as $label => [$price, $stock]) {
     $variation->set_manage_stock(true);
     $variation->set_stock_quantity($stock);
     $variation->set_status('publish');
+    if ($label === 'L') {
+        $variation->set_image_id($images[3]);
+    }
     $variations[$label] = $variation->save();
 }
 WC_Product_Variable::sync($shirt_id);
+
+// Reviews: two that count (one from a verified buyer), a 3-star one and one still waiting.
+foreach ([
+    ['Nasrin', 'Fits well and the cotton feels great.', 5, 1, true],
+    ['Imran', 'Good shirt, delivery took two days.', 4, 1, false],
+    ['Rupa', 'It is fine, nothing special.', 3, 1, false],
+    ['Karim', 'Waiting for approval, should not show.', 5, 0, false],
+] as [$author, $text, $stars, $approved, $verified]) {
+    $comment_id = wp_insert_comment([
+        'comment_post_ID' => $shirt_id,
+        'comment_author' => $author,
+        'comment_author_email' => strtolower($author) . '@example.invalid',
+        'comment_content' => $text,
+        'comment_type' => 'review',
+        'comment_approved' => $approved,
+    ]);
+    update_comment_meta($comment_id, 'rating', $stars);
+    if ($verified) {
+        update_comment_meta($comment_id, 'verified', 1);
+    }
+}
+WC_Comments::clear_transients($shirt_id);
 
 $addon = new WC_Product_Simple();
 $addon->set_name('E2E Addon');
@@ -94,6 +150,7 @@ update_option('noksha_e2e_state', [
     'productIds' => [$shirt_id, $addon_id],
     'couponId' => $coupon_id,
     'userId' => (int) $user_id,
+    'attachmentIds' => $images,
 ], false);
 
 file_put_contents($out, wp_json_encode([

@@ -33,6 +33,9 @@ Build a one-page offer, take cash on delivery, bKash, Nagad, or SSLCommerz on th
 * Coupon field for WooCommerce products (Order form tab). WooCommerce checks the coupon; the discount shows live and is recorded on both orders.
 * Fixed: the add-on checkbox did not change the total or reach the order. Fixed: the editor crashed on opening a page.
 * Browser tests in tests/e2e (Playwright).
+* Editor: suggestions from the store product (headline, subtitle, description, key points, benefits and its real reviews). Nothing changes until you press a button; "Fill all empty fields" never replaces your own text. Reviews are the product's own approved reviews of 4 stars and up, verified buyers first.
+* Product gallery under the main image (switch in the Offer tab), the chosen option's own picture, and the product's average rating and review count on the page. Verified buyers are marked on reviews.
+* Fixed: the product's picture did not show in the top banner when the banner had no picture of its own.
 * Database version 10: `discount` and `coupon` on orders.
 * Database version 9: `wc_order_id` on orders, product and variation ids on order items.
 
