@@ -238,7 +238,8 @@ if (Noksha\Catalog\WcProduct::active()) {
         $addon->set_stock_quantity(0);
         $addon->set_stock_status('outofstock');
         $addon->save();
-        check(Pages::payload($wc_page)['offer']['bump']['enabled'] === false, 'a sold-out wc bump is hidden');
+        // document() reads fresh; payload() is cached for the request.
+        check(Pages::document($wc_page)['offer']['bump']['enabled'] === false, 'a sold-out wc bump is hidden');
         wp_delete_post($addon_id, true);
 
         // WooCommerce → Noksha.
