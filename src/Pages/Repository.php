@@ -57,6 +57,38 @@ final class Repository {
         return self::payload($id);
     }
 
+    /**
+     * A full copy as a draft: sections, offer, order form, colors, SEO and A/B test.
+     *
+     * @return int|\WP_Error New page id.
+     */
+    public static function duplicate(int $id, string $title = '') {
+        $post = get_post($id);
+        if (!$post || $post->post_type !== PostType::TYPE) {
+            return new \WP_Error('noksha_not_found', 'Page not found.', ['status' => 404]);
+        }
+        $doc = self::document($id);
+        $title = $title !== '' ? $title : $post->post_title . ' (2)';
+        $new_id = self::create('blank', $doc['language'], $title);
+        if (is_wp_error($new_id)) {
+            return $new_id;
+        }
+        $saved = self::update($new_id, [
+            'status' => 'draft',
+            'sections' => $doc['sections'],
+            'offer' => $doc['offer'],
+            'checkout' => $doc['checkout'],
+            'tokens' => $doc['tokens'],
+            'seo' => $doc['seo'],
+            'ab' => $doc['ab'],
+        ]);
+        if (is_wp_error($saved)) {
+            wp_delete_post($new_id, true);
+            return $saved;
+        }
+        return (int) $new_id;
+    }
+
     /** @var array<int, array|\WP_Error> */
     private static array $payload_cache = [];
 

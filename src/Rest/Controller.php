@@ -85,6 +85,16 @@ final class Controller {
             ['methods' => 'PUT', 'callback' => [$this, 'put_page']] + $admin,
             ['methods' => 'DELETE', 'callback' => [$this, 'delete_page']] + $admin,
         ]);
+        register_rest_route('noksha/v1', '/pages/(?P<id>\d+)/duplicate', [
+            ['methods' => 'POST', 'callback' => [$this, 'duplicate_page']] + $admin,
+        ]);
+        register_rest_route('noksha/v1', '/library', [
+            ['methods' => 'GET', 'callback' => [$this, 'get_library']] + $admin,
+            ['methods' => 'POST', 'callback' => [$this, 'save_to_library']] + $admin,
+        ]);
+        register_rest_route('noksha/v1', '/library/(?P<id>[a-z0-9_]+)', [
+            ['methods' => 'DELETE', 'callback' => [$this, 'delete_from_library']] + $admin,
+        ]);
         register_rest_route('noksha/v1', '/pages/from-products', [
             ['methods' => 'POST', 'callback' => [$this, 'pages_from_products']] + $admin,
         ]);
@@ -326,11 +336,44 @@ final class Controller {
         $template = sanitize_key((string) $request->get_param('template'));
         $lang = $request->get_param('language') === 'bn' ? 'bn' : 'en';
         $title = sanitize_text_field((string) $request->get_param('title'));
-        $id = Pages::create($template, $lang, $title);
+        // From "My templates" when a library id is given.
+        $library = sanitize_key((string) $request->get_param('library'));
+        $id = $library !== ''
+            ? \Noksha\Pages\Library::create_page($library, $title)
+            : Pages::create($template, $lang, $title);
         if (is_wp_error($id)) {
             return $id;
         }
         return Pages::payload($id);
+    }
+
+    public function duplicate_page(\WP_REST_Request $request) {
+        $id = Pages::duplicate((int) $request['id'], sanitize_text_field((string) $request->get_param('title')));
+        return is_wp_error($id) ? $id : Pages::payload($id);
+    }
+
+    public function get_library(): array {
+        return ['items' => \Noksha\Pages\Library::all()];
+    }
+
+    public function save_to_library(\WP_REST_Request $request) {
+        $params = $request->get_json_params();
+        $params = is_array($params) ? $params : [];
+        $name = (string) ($params['name'] ?? '');
+        $item = ($params['kind'] ?? '') === 'page'
+            ? \Noksha\Pages\Library::save_page((int) ($params['pageId'] ?? 0), $name, is_array($params['page'] ?? null) ? $params['page'] : null)
+            : \Noksha\Pages\Library::save_section(is_array($params['section'] ?? null) ? $params['section'] : [], $name);
+        if (is_wp_error($item)) {
+            return $item;
+        }
+        return ['id' => $item['id'], 'items' => \Noksha\Pages\Library::all()];
+    }
+
+    public function delete_from_library(\WP_REST_Request $request) {
+        if (!\Noksha\Pages\Library::delete((string) $request['id'])) {
+            return new \WP_Error('noksha_not_found', 'Not in the library.', ['status' => 404]);
+        }
+        return ['items' => \Noksha\Pages\Library::all()];
     }
 
     public function get_page(\WP_REST_Request $request) {

@@ -21,7 +21,7 @@ function previewScale(device, fit) {
 const TYPE_GROUPS = [
   { key: 'attention', types: ['hero', 'countdown', 'whatsapp'] },
   { key: 'trust', types: ['benefits', 'reviews', 'guarantee', 'faq', 'compare'] },
-  { key: 'product', types: ['product', 'gallery', 'video', 'steps', 'order_form'] },
+  { key: 'product', types: ['product', 'bundles', 'gallery', 'video', 'steps', 'order_form'] },
   { key: 'advanced', types: ['html'] },
 ];
 
@@ -51,7 +51,6 @@ function insertIndex(sections, type, selectedId) {
 }
 const HTML_LIMIT = 20000;
 const METHODS = ['cod', 'manual_bkash', 'manual_nagad', 'sslcommerz'];
-const FIELD_KEYS = ['name', 'phone', 'email', 'division', 'district', 'upazila', 'address', 'note'];
 const ITEM_LIMITS = { benefits: 6, reviews: 8, faq: 12, steps: 6 };
 const SINGLE_TYPES = ['order_form', 'whatsapp'];
 const BULLET_LIMIT = 8;
@@ -109,6 +108,7 @@ function blankSection(type, t) {
       rows: [{ label: '', us: '✓', them: '✗' }],
     },
     whatsapp: { number: '', label: '', message: '' },
+    bundles: { title: t('section.bundles'), popular: 0, showSingle: true },
   };
   return {
     id: 's_' + Math.random().toString(36).slice(2, 10),
@@ -217,6 +217,12 @@ export function Editor({ t, id, go }) {
   }
 
   useEffect(load, [id]);
+
+  // "My sections" and "My templates".
+  const [library, setLibrary] = useState([]);
+  useEffect(() => {
+    api('library').then((data) => setLibrary(data.items || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     api('settings').then(setSettings).catch(() => {});
@@ -593,6 +599,31 @@ export function Editor({ t, id, go }) {
     setAddOpen(false);
   }
 
+  function insertSaved(item) {
+    const created = { ...item.section, id: 's_' + Math.random().toString(36).slice(2, 10), hidden: false };
+    const anchorId = selectedRef.current;
+    setSections((sections) => {
+      const next = sections.slice();
+      next.splice(insertIndex(sections, created.type, anchorId), 0, created);
+      return next;
+    });
+    setView({ kind: 'section', id: created.id });
+    setAddOpen(false);
+  }
+
+  async function deleteSaved(item) {
+    const ok = await confirm({
+      title: t('common.confirm'),
+      message: t('library.deleteConfirm').replace('{name}', item.name),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+      danger: true,
+    });
+    if (ok) {
+      api('library/' + item.id, { method: 'DELETE' }).then((data) => setLibrary(data.items || [])).catch(() => {});
+    }
+  }
+
   function save(nextStatus) {
     const current = pageRef.current;
     if (!current || saving) {
@@ -728,6 +759,7 @@ export function Editor({ t, id, go }) {
                   onOpenSettings={openSettings}
                   onToggleHidden={toggleHidden}
                   onRemoveSection={removeSection}
+                  onLibraryChange={setLibrary}
                   onRemovePage={removePage}
                   onLeave={leave}
                 />
@@ -790,6 +822,26 @@ export function Editor({ t, id, go }) {
                 ? `${t('editor.addAfter')} ${t('section.' + section.type)}`
                 : t('editor.addHelp')}
             </p>
+            {library.some((item) => item.kind === 'section') ? (
+              <div className="nk-type-group">
+                <h3 className="nk-type-group-title">{t('library.mySections')}</h3>
+                <ul className="nk-library-list">
+                  {library.filter((item) => item.kind === 'section').map((item) => {
+                    const taken = SINGLE_TYPES.includes(item.type) && page.sections.some((row) => row.type === item.type);
+                    return (
+                      <li key={item.id}>
+                        <button type="button" className="nk-library-item" disabled={taken} onClick={() => insertSaved(item)}>
+                          <span className="nk-type-icon"><Icon name={SECTION_ICONS[item.type] || 'layout'} size={16} /></span>
+                          <strong>{item.name}</strong>
+                          <small>{taken ? t('editor.alreadyAdded') : t('section.' + item.type)}</small>
+                        </button>
+                        <IconButton icon="trash" label={t('library.delete')} danger onClick={() => deleteSaved(item)} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
             {TYPE_GROUPS.map((group) => (
               <div key={group.key} className="nk-type-group">
                 <h3 className="nk-type-group-title">{t('editor.group.' + group.key)}</h3>
@@ -834,6 +886,7 @@ function EditorInspector({
   onRemoveSection,
   onRemovePage,
   onLeave,
+  onLibraryChange,
 }) {
   if (view.kind === 'section' && section) {
     return (
@@ -858,8 +911,17 @@ function EditorInspector({
             section={section}
             onChange={(props) => onPatchSection(section.id, props)}
             onOpen={onOpenSettings}
+            offer={page.offer}
           />
           <StyleFields t={t} section={section} onChange={(style) => onPatchStyle(section.id, style)} />
+          <SaveToLibrary
+            key={'save-' + section.id}
+            t={t}
+            label={t('library.saveSection')}
+            help={t('library.saveSectionHelp')}
+            defaultName={t('section.' + section.type)}
+            onSave={(name) => api('library', { method: 'POST', body: { kind: 'section', name, section } }).then((data) => onLibraryChange && onLibraryChange(data.items || []))}
+          />
           <div className="nk-panel-foot">
             <button type="button" className="nk-btn-ghost nk-btn-icon" onClick={() => onToggleHidden(section.id)}>
               <Icon name={section.hidden ? 'eye' : 'eyeOff'} size={16} /> {section.hidden ? t('editor.showSection') : t('editor.hideSection')}
@@ -925,7 +987,18 @@ function EditorInspector({
     {
       value: 'page',
       label: t('editor.pageTitle'),
-      content: <PageMetaFields t={t} page={page} onChange={onPatch} onDelete={onRemovePage} />,
+      content: (
+        <>
+          <PageMetaFields t={t} page={page} onChange={onPatch} onDelete={onRemovePage} />
+          <SaveToLibrary
+            t={t}
+            label={t('library.savePage')}
+            help={t('library.savePageHelp')}
+            defaultName={page.title}
+            onSave={(name) => api('library', { method: 'POST', body: { kind: 'page', name, pageId: page.id, page: { language: page.language, sections: page.sections, checkout: page.checkout, offer: page.offer, tokens: page.tokens } } }).then((data) => onLibraryChange && onLibraryChange(data.items || []))}
+          />
+        </>
+      ),
     },
   ];
 
@@ -1042,6 +1115,7 @@ const STYLE_LAYOUTS = {
 };
 const STYLE_BACKGROUNDS = ['none', 'soft', 'warm', 'dark', 'brand', 'gradient'];
 const STYLE_SPACINGS = ['compact', 'normal', 'roomy'];
+const STYLE_SHOWS = ['all', 'mobile', 'desktop'];
 const STYLE_SIZES = ['sm', 'md', 'lg', 'xl'];
 const STYLE_SIZE_SCALE = { sm: 0.88, md: 1, lg: 1.15, xl: 1.3 };
 const STYLE_RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
@@ -1057,6 +1131,44 @@ function headingRange(type, size) {
 }
 
 /** Look & feel: layout variant, background band and spacing for one section. */
+/**
+ * "Save to my sections" / "Save as my template": a name, then save.
+ */
+function SaveToLibrary({ t, label, help, defaultName, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(defaultName || '');
+  const [state, setState] = useState('idle');
+  const [message, setMessage] = useState('');
+  function submit() {
+    setState('saving');
+    Promise.resolve(onSave(name.trim()))
+      .then(() => { setState('saved'); setOpen(false); setMessage(t('library.saved')); })
+      .catch((err) => { setState('idle'); setMessage(err.message || t('common.error')); });
+  }
+  return (
+    <div className="nk-library-save">
+      {open ? (
+        <>
+          <label className="nk-field">
+            <span>{t('library.name')}</span>
+            <input type="text" value={name} maxLength={80} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <div className="nk-library-actions">
+            <button type="button" className="nk-btn" disabled={!name.trim() || state === 'saving'} onClick={submit}>{t('library.save')}</button>
+            <button type="button" className="nk-btn-ghost" onClick={() => setOpen(false)}>{t('common.cancel')}</button>
+          </div>
+        </>
+      ) : (
+        <button type="button" className="nk-btn-ghost nk-btn-icon" onClick={() => { setOpen(true); setMessage(''); setName(defaultName || ''); }}>
+          <Icon name="plus" size={16} /> {label}
+        </button>
+      )}
+      {help ? <p className="nk-help">{help}</p> : null}
+      {message ? <p className="nk-muted" role="status">{message}</p> : null}
+    </div>
+  );
+}
+
 function StyleFields({ t, section, onChange }) {
   if (SINGLE_TYPES.includes(section.type)) {
     return null;
@@ -1070,6 +1182,7 @@ function StyleFields({ t, section, onChange }) {
   const ratio = STYLE_RATIOS.includes(style.ratio) ? style.ratio : 'auto';
   const fit = STYLE_FITS.includes(style.fit) ? style.fit : 'cover';
   const round = STYLE_ROUNDS.includes(style.round) ? style.round : 'md';
+  const show = STYLE_SHOWS.includes(style.show) ? style.show : 'all';
   const hasImage = STYLE_IMAGE_TYPES.includes(section.type);
   return (
     <div className="nk-style-box">
@@ -1096,6 +1209,9 @@ function StyleFields({ t, section, onChange }) {
           ))}
         </div>
       </Field>
+      <Field label={t('look.show')} help={t('look.showHelp')}>
+        <Choice label={t('look.show')} value={show} options={STYLE_SHOWS.map((key) => [key, t('look.show.' + key)])} onChange={(value) => onChange({ show: value })} />
+      </Field>
       <Field label={t('look.spacing')}>
         <Choice label={t('look.spacing')} value={space} options={STYLE_SPACINGS.map((key) => [key, t('look.space.' + key)])} onChange={(value) => onChange({ space: value })} />
       </Field>
@@ -1120,11 +1236,29 @@ function StyleFields({ t, section, onChange }) {
   );
 }
 
-function SectionFields({ t, section, onChange, onOpen }) {
+function SectionFields({ t, section, onChange, onOpen, offer }) {
   const props = section.props;
   const type = section.type;
   return (
     <div className="nk-form-stack">
+      {type === 'bundles' ? (
+        <>
+          <TextField label={t('prop.title')} value={props.title} onChange={(title) => onChange({ title })} />
+          <Switch checked={props.showSingle !== false} label={t('bundles.showSingle')} onChange={(showSingle) => onChange({ showSingle })} />
+          <label className="nk-field">
+            <span>{t('bundles.popular')}</span>
+            <select value={props.popular || 0} onChange={(event) => onChange({ popular: Number(event.target.value) })}>
+              <option value={0}>{t('bundles.popularNone')}</option>
+              {[1].concat(((offer && offer.tiers) || []).map((tier) => Number(tier.qty))).map((qty) => (
+                <option key={qty} value={qty}>{t('bundles.pieces').replace('{n}', String(qty))}</option>
+              ))}
+            </select>
+          </label>
+          <p className="nk-help">{t('bundles.help')}</p>
+          <button type="button" className="nk-jump" onClick={() => onOpen('offer')}>{t('bundles.editSteps')}</button>
+        </>
+      ) : null}
+      {type !== 'html' && type !== 'whatsapp' ? <p className="nk-help nk-token-help">{t('tokens.help')}</p> : null}
       {type === 'hero' ? (
         <>
           <TextField label={t('prop.eyebrow')} help={t('help.eyebrow')} value={props.eyebrow} onChange={(eyebrow) => onChange({ eyebrow })} />
@@ -1837,6 +1971,32 @@ function OfferFields({ t, offer, onChange, afterProduct }) {
 }
 
 function CheckoutFields({ t, checkout, settings, onChange, onSetup }) {
+  const customs = Array.isArray(checkout.customFields) ? checkout.customFields : [];
+  const order = Array.isArray(checkout.fieldOrder) && checkout.fieldOrder.length
+    ? checkout.fieldOrder
+    : ['name', 'phone', 'email', 'area', 'address', 'note'].concat(customs.map((item) => item.id));
+  function move(key, direction) {
+    const from = order.indexOf(key);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    const next = order.slice();
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    onChange({ ...checkout, fieldOrder: next });
+  }
+  function setCustom(id, partial) {
+    onChange({ ...checkout, customFields: customs.map((item) => (item.id === id ? { ...item, ...partial } : item)) });
+  }
+  function addCustom() {
+    const id = 'c_' + Math.random().toString(36).slice(2, 8);
+    onChange({
+      ...checkout,
+      customFields: customs.concat({ id, label: t('checkout.customNew'), type: 'text', options: [], required: false }),
+      fieldOrder: order.concat(id),
+    });
+  }
+  function removeCustom(id) {
+    onChange({ ...checkout, customFields: customs.filter((item) => item.id !== id), fieldOrder: order.filter((key) => key !== id) });
+  }
   function setField(key, partial) {
     const field = checkout.fields[key];
     const next = { ...field, ...partial };
@@ -1872,21 +2032,64 @@ function CheckoutFields({ t, checkout, settings, onChange, onSetup }) {
             <span>{t('checkout.show')}</span>
             <span>{t('checkout.required')}</span>
           </div>
-          {FIELD_KEYS.map((key) => {
-            const field = checkout.fields[key];
-            const locked = key === 'name' || key === 'phone';
+          {order.map((key, index) => {
+            const arrows = (
+              <span className="nk-move">
+                <IconButton icon="up" label={t('checkout.moveUp')} disabled={index === 0} onClick={() => move(key, -1)} />
+                <IconButton icon="down" label={t('checkout.moveDown')} disabled={index === order.length - 1} onClick={() => move(key, 1)} />
+              </span>
+            );
+            const custom = customs.find((item) => item.id === key);
+            if (custom) {
+              return (
+                <div key={key} className="nk-row nk-row-custom">
+                  <span className="nk-row-name">
+                    <input type="text" aria-label={t('checkout.customLabel')} value={custom.label} maxLength={60} onChange={(event) => setCustom(key, { label: event.target.value })} />
+                    <select aria-label={t('checkout.customType')} value={custom.type} onChange={(event) => setCustom(key, { type: event.target.value })}>
+                      {['text', 'textarea', 'select', 'date'].map((type) => <option key={type} value={type}>{t('checkout.type.' + type)}</option>)}
+                    </select>
+                    {custom.type === 'select' ? (
+                      <textarea aria-label={t('checkout.customOptions')} placeholder={t('checkout.customOptions')} rows={3} value={(custom.options || []).join('\n')} onChange={(event) => setCustom(key, { options: event.target.value.split('\n') })} />
+                    ) : null}
+                    <span className="nk-row-tools">
+                      {arrows}
+                      <IconButton icon="trash" label={t('checkout.customRemove')} danger onClick={() => removeCustom(key)} />
+                    </span>
+                  </span>
+                  <span className="nk-muted">{t('checkout.always')}</span>
+                  <Switch checked={Boolean(custom.required)} onChange={(required) => setCustom(key, { required })} label={<span className="nk-sr">{t('checkout.required')} {custom.label}</span>} />
+                </div>
+              );
+            }
+            const parts = key === 'area' ? ['division', 'district', 'upazila'] : [key];
             return (
-              <div key={key} className="nk-row">
-                <span className="nk-row-name">
-                  {t('field.' + key)}
-                  {locked ? <small>{t('checkout.always')}</small> : null}
-                </span>
-                <Switch checked={field.enabled} disabled={locked} onChange={(enabled) => setField(key, { enabled })} label={<span className="nk-sr">{t('checkout.show')} {t('field.' + key)}</span>} />
-                <Switch checked={field.required} disabled={locked || !field.enabled} onChange={(required) => setField(key, { required })} label={<span className="nk-sr">{t('checkout.required')} {t('field.' + key)}</span>} />
+              <div key={key} className={key === 'area' ? 'nk-row-group' : ''}>
+                {key === 'area' ? <div className="nk-row-group-head"><strong>{t('checkout.area')}</strong>{arrows}</div> : null}
+                {parts.map((part) => {
+                  const field = checkout.fields[part];
+                  const locked = part === 'name' || part === 'phone';
+                  return (
+                    <div key={part} className="nk-row">
+                      <span className="nk-row-name">
+                        {t('field.' + part)}
+                        {locked ? <small>{t('checkout.always')}</small> : null}
+                        <input type="text" aria-label={t('checkout.labelFor').replace('{field}', t('field.' + part))} placeholder={t('checkout.labelPlaceholder')} value={field.label || ''} maxLength={60} onChange={(event) => setField(part, { label: event.target.value })} />
+                        {key !== 'area' ? <span className="nk-row-tools">{arrows}</span> : null}
+                      </span>
+                      <Switch checked={field.enabled} disabled={locked} onChange={(enabled) => setField(part, { enabled })} label={<span className="nk-sr">{t('checkout.show')} {t('field.' + part)}</span>} />
+                      <Switch checked={field.required} disabled={locked || !field.enabled} onChange={(required) => setField(part, { required })} label={<span className="nk-sr">{t('checkout.required')} {t('field.' + part)}</span>} />
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
         </div>
+        {customs.length < 5 ? (
+          <button type="button" className="nk-add-row" onClick={addCustom}>
+            <Icon name="plus" size={16} /> {t('checkout.customAdd')}
+          </button>
+        ) : null}
       </div>
 
       <div className="nk-group">

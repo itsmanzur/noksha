@@ -48,6 +48,7 @@ export const SECTION_ICONS = {
   steps: 'list',
   compare: 'columns',
   whatsapp: 'chat',
+  bundles: 'tag',
 };
 
 export function Icon({ name, size = 18 }) {

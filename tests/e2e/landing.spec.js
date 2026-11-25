@@ -66,7 +66,9 @@ test.describe('landing page for a WooCommerce product', () => {
     await qty.dispatchEvent('change');
     await expect(page.locator('[data-discount]')).toContainText('85');
 
-    // Order: name and phone only on this page.
+    // Order: name, phone and the page's own "Delivery time" field.
+    await expect(page.locator('[data-field="name"]')).toContainText('Your name');
+    await page.locator('select[name="custom[c_when01]"]').selectOption('Evening');
     await page.locator('input[name="name"]').fill('E2E Buyer');
     await page.locator('input[name="phone"]').fill('01999000111');
     await page.locator('.nk-submit').click();
@@ -141,6 +143,50 @@ test.describe('landing page for a WooCommerce product', () => {
     const start = (await events()).find((e) => e.name === 'InitiateCheckout');
     expect(start.ids).toEqual([String(fixture.variations.L)]);
     expect(start.contents[0].id).toBe(String(fixture.variations.L));
+  });
+
+  test('sections for phones only and larger screens only', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(fixture.url);
+    await expect(page.locator('.nk-faq').first()).toBeVisible();
+    await expect(page.locator('.nk-guarantee')).toBeHidden();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('.nk-guarantee')).toBeVisible();
+    await expect(page.locator('.nk-faq').first()).toBeHidden();
+    // The order form shows on both.
+    // One id per element: the section is #nk-order (scroll target), the form #nk-order-form,
+    // and the quantity box outside the form belongs to it.
+    await expect(page.locator('[id="nk-order"]')).toHaveCount(1);
+    expect(await page.evaluate(() => document.querySelector('[name="qty"]').form && document.querySelector('[name="qty"]').form.id)).toBe('nk-order-form');
+    await expect(page.locator('.nk-submit')).toBeVisible();
+  });
+
+  test('live words follow the chosen option', async ({ page }) => {
+    await page.goto(fixture.url);
+    const heading = page.locator('.nk-product h2');
+    await expect(heading).toContainText('Now ৳500');
+    await page.locator('[data-variation]').selectOption(String(fixture.variations.L));
+    await expect(heading).toContainText('Now ৳650');
+    await expect(heading.locator('[data-nk-token="stock"]')).toHaveText(/^\d+$/);
+  });
+
+  test('bundle cards', async ({ page }) => {
+    await page.goto(fixture.url);
+    const cards = page.locator('[data-bundle-qty]');
+    await expect(cards).toHaveCount(3);
+    await expect(page.locator('.nk-bundle.is-popular')).toHaveAttribute('data-bundle-qty', '2');
+    await expect(cards.nth(1).locator('[data-bundle-pay]')).toHaveText('৳950');
+
+    // A card sets the quantity, and the totals follow (3 pieces: 100 off).
+    await cards.nth(2).click();
+    await expect(page.locator('[name="qty"]')).toHaveValue('3');
+    await expect(cards.nth(2)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-tier]')).toContainText('100');
+
+    // Size L: the cards follow the price (3 x 650 - 100).
+    await page.locator('[data-variation]').selectOption(String(fixture.variations.L));
+    await expect(cards.nth(2).locator('[data-bundle-pay]')).toHaveText('৳1,850');
   });
 
   test('several add-ons', async ({ page }) => {

@@ -371,6 +371,7 @@ final class Repository {
         $summary['codSettled'] = (int) ($row['cod_settled'] ?? 0) === 1;
         $summary['codSettledAt'] = (string) ($row['cod_settled_at'] ?? '');
         $summary['codShort'] = (float) ($row['cod_short'] ?? 0);
+        $summary['extra'] = self::decode_attribution($row['extra'] ?? '');
         $summary['discount'] = (float) ($row['discount'] ?? 0);
         $summary['coupon'] = (string) ($row['coupon'] ?? '');
         $summary['wcOrderId'] = (int) ($row['wc_order_id'] ?? 0);

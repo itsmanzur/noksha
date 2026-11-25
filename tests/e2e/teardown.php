@@ -57,5 +57,14 @@ if (!empty($state['userId'])) {
     require_once ABSPATH . 'wp-admin/includes/user.php';
     wp_delete_user((int) $state['userId']);
 }
+// "My sections" / "My templates" the tests saved, and pages made from them.
+foreach (Noksha\Pages\Library::all() as $item) {
+    if (str_starts_with((string) $item['name'], 'E2E ')) {
+        Noksha\Pages\Library::delete((string) $item['id']);
+    }
+}
+foreach (get_posts(['post_type' => Noksha\Pages\PostType::TYPE, 'post_status' => 'any', 'numberposts' => 50, 's' => 'E2E from template']) as $made) {
+    wp_delete_post($made->ID, true);
+}
 delete_option('noksha_e2e_state');
 echo 'removed ' . count((array) $rows) . " test orders and the fixture\n";

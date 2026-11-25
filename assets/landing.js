@@ -706,6 +706,7 @@
       qty.max = String(cfg.maxQty);
     }
     renderStockHint(chosen.stock);
+    setTokens(cfg.price, Number(chosen.regularPrice) || 0, chosen.stock);
     landing.querySelectorAll('.nk-price-now').forEach(function (el) {
       el.textContent = money(cfg.price);
     });
@@ -750,6 +751,25 @@
     var show = left > 0 && left <= Number(cfg.stockHint.max || 10);
     hint.hidden = !show;
     hint.textContent = show ? String(strings.stockLeft || '%d left').replace('%d', String(left)) : '';
+  }
+
+  // {price}, {old_price}, {save}, {save_percent} and {stock} written in the page's text.
+  function setTokens(price, regular, stock) {
+    var onSale = regular > price && price > 0;
+    var values = {
+      price: price > 0 ? money(price) : '',
+      old_price: onSale ? money(regular) : '',
+      save: onSale ? money(regular - price) : '',
+      save_percent: onSale ? Math.round((1 - price / regular) * 100) + '%' : ''
+    };
+    if (stock !== undefined) {
+      values.stock = stock == null ? '' : String(stock);
+    }
+    Object.keys(values).forEach(function (key) {
+      landing.querySelectorAll('[data-nk-token="' + key + '"]').forEach(function (el) {
+        el.textContent = values[key];
+      });
+    });
   }
 
   function setPriceText(price, regular) {
@@ -814,6 +834,7 @@
             qty.max = String(cfg.maxQty);
           }
           setPriceText(cfg.price, Number(live.compareAt) || 0);
+          setTokens(cfg.price, Number(live.compareAt) || 0, live.backorders ? null : live.stock);
           renderStockHint(live.backorders ? null : live.stock);
           updateTotals();
         }
@@ -856,6 +877,41 @@
     });
   }
 
+  // Bundle cards: highlight the one matching the quantity; prices follow the price shown.
+  function markBundles(count) {
+    var price = Number(cfg.price || 0);
+    landing.querySelectorAll('[data-bundle-qty]').forEach(function (card) {
+      var n = Number(card.getAttribute('data-bundle-qty'));
+      var off = n > 1 ? tierDiscount(n) : 0;
+      card.setAttribute('aria-pressed', n === count ? 'true' : 'false');
+      card.classList.toggle('is-active', n === count);
+      card.disabled = n > maxQty();
+      var pay = card.querySelector('[data-bundle-pay]');
+      var full = card.querySelector('[data-bundle-full]');
+      var save = card.querySelector('[data-bundle-save]');
+      if (pay) {
+        pay.textContent = money(Math.max(0, price * n - off));
+      }
+      if (full) {
+        full.textContent = money(price * n);
+      }
+      if (save) {
+        save.textContent = String(strings.bundleSave || '%s').replace('%s', money(off));
+      }
+    });
+  }
+
+  landing.querySelectorAll('[data-bundle-qty]').forEach(function (card) {
+    card.addEventListener('click', function () {
+      if (!qty) {
+        return;
+      }
+      qty.value = card.getAttribute('data-bundle-qty');
+      // The same as typing a quantity: totals, coupon and delivery follow.
+      qty.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  });
+
   function renderTiers() {
     var box = landing.querySelector('[data-tiers]');
     var row = landing.querySelector('[data-tiers-row]');
@@ -892,6 +948,15 @@
     });
   }
 
+  // Fields the page owner added: custom[id] -> value.
+  function collectCustom() {
+    var out = {};
+    form.querySelectorAll('[name^="custom["]').forEach(function (el) {
+      out[el.name.slice(7, -1)] = el.value;
+    });
+    return out;
+  }
+
   function bumpPrice() {
     var list = cfg.bumps || [];
     return chosenBumps().reduce(function (sum, index) {
@@ -917,6 +982,7 @@
       tierEl.textContent = '−' + money(tier);
     }
     markTiers(count);
+    markBundles(count);
     var subEl = landing.querySelector('[data-subtotal]');
     var shipEl = landing.querySelector('[data-shipping]');
     var totalEl = landing.querySelector('[data-total]');
@@ -1608,6 +1674,7 @@
       bumps: chosenBumps(),
       variation_id: variationSelect ? Number(variationSelect.value) || 0 : 0,
       coupon: couponInput ? couponInput.value.trim() : '',
+      custom: collectCustom(),
       expected_price: Number(cfg.price) || 0,
       expected_shipping: currentShipping(),
       expected_tier_discount: tierDiscount(Number(data.get('qty') || 1)),
@@ -1677,7 +1744,7 @@
         }
         updateTotals();
       }
-      var field = errorCodeToField(code);
+      var field = errorCodeToField(code) || (payload.data && payload.data.field) || '';
       showFormError(error.message || 'Error', field);
       if (button) {
         button.disabled = false;

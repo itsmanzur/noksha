@@ -35,6 +35,16 @@ export function Pages({ t, go, locale }) {
   const [createTitle, setCreateTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [myTemplates, setMyTemplates] = useState([]);
+  const [fromLibrary, setFromLibrary] = useState('');
+
+  useEffect(() => {
+    if (!modalOpen) {
+      setFromLibrary('');
+      return;
+    }
+    api('library').then((data) => setMyTemplates((data.items || []).filter((item) => item.kind === 'page'))).catch(() => setMyTemplates([]));
+  }, [modalOpen]);
 
   function load(pageNum = 1) {
     setStatus('loading');
@@ -98,12 +108,10 @@ export function Pages({ t, go, locale }) {
   async function duplicatePage(page) {
     setBusy(true);
     try {
-      const payload = await api('pages/' + page.id).catch(() => ({}));
-      const template = payload.template || 'single';
-      const language = payload.language || 'en';
-      const created = await api('pages', {
+      // A full copy: sections, offer, order form, colors, SEO and A/B test.
+      const created = await api('pages/' + page.id + '/duplicate', {
         method: 'POST',
-        body: { template, language, title: (page.title || t('editor.untitled')) + ' (2)' },
+        body: { title: (page.title || t('editor.untitled')) + ' (2)' },
       });
       success(t('pages.duplicated'));
       go('pages/' + created.id);
@@ -123,6 +131,7 @@ export function Pages({ t, go, locale }) {
         template: createTemplate,
         language: createLang,
         title: createTitle.trim(),
+        library: fromLibrary,
       },
     })
       .then((page) => {
@@ -354,6 +363,15 @@ export function Pages({ t, go, locale }) {
         }
       >
         <div className="nk-detail-stack">
+          {myTemplates.length ? (
+            <Select label={t('library.startFrom')} value={fromLibrary} onChange={(e) => setFromLibrary(e.target.value)}>
+              <option value="">{t('library.builtIn')}</option>
+              {myTemplates.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </Select>
+          ) : null}
+          {fromLibrary ? null : (
           <RadioCards
             legend={t('pages.templatePick')}
             className="nk-template-picker"
@@ -361,10 +379,13 @@ export function Pages({ t, go, locale }) {
             onChange={setCreateTemplate}
             options={templateOptions}
           />
+          )}
+          {fromLibrary ? null : (
           <Select label={t('pages.language')} value={createLang} onChange={(e) => setCreateLang(e.target.value)}>
             <option value="en">{t('settings.english')}</option>
             <option value="bn">{t('settings.bangla')}</option>
           </Select>
+          )}
           <Input
             label={t('pages.pageTitle')}
             value={createTitle}

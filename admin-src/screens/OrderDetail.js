@@ -565,6 +565,16 @@ export function OrderDetail({ t, locale, go, orderId, variant = 'page', onClose,
 						{t('orders.addNote')}
 					</Button>
 				</form>
+				{(detail.extra || []).length ? (
+					<div className="nk-order-extra">
+						<strong>{t('orders.extra')}</strong>
+						<ul>
+							{detail.extra.map((item, index) => (
+								<li key={index}><span className="nk-muted">{item.label}:</span> {item.value}</li>
+							))}
+						</ul>
+					</div>
+				) : null}
 				{detail.note ? (
 					<p className="nk-muted" style={{ marginTop: 12 }}>
 						{t('orders.note')}: {detail.note}

@@ -21,6 +21,13 @@ Build a one-page offer, take cash on delivery, bKash, Nagad, or SSLCommerz on th
 == Changelog ==
 
 = Unreleased =
+* My sections and My templates: keep a section (with its look) or a whole page (sections, order form, colors, offer settings, without the store product) and reuse it. A new page can start from My template.
+* Fixed: Duplicate made a new page from the bare template instead of copying the page. It now copies everything as a draft.
+* A section can show on all screens, phones only (under 768 px) or larger screens only. The order form always shows.
+* Live words in any text: {price}, {old_price}, {save}, {save_percent}, {product}, {stock}, {sale_ends}. They update when the option or price changes, and work in the SEO title.
+* Order form: rename fields, change their order (the area fields move together), and add up to five fields (short or long text, a choice, a date). Answers are kept on the Noksha and WooCommerce orders. Database version 11 (extra on orders).
+* Bundle cards section: the quantity discounts as cards (1 pc, 2 pcs, 3 pcs with the saving and a "Most popular" mark); a card sets the quantity.
+* Fixed: the order section and the order form had the same id, so the quantity, add-on and coupon boxes outside the form did not belong to it.
 * Sell a WooCommerce product from a landing page. Pick it in the editor (Offer tab); name, price, image and stock are read live, so the page and the order always agree. Variable products show an option picker.
 * A WooCommerce product order creates a real WooCommerce order (items, totals, address, stock) and links it to the Noksha order. Statuses stay in step both ways. Cancelling gives the stock back.
 * Out-of-stock products and quantities above stock are refused at checkout.

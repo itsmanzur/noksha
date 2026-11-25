@@ -51,6 +51,16 @@ test.describe('editor: WooCommerce product', () => {
     // Order form tab: the coupon switch is on.
     await page.getByRole('tab', { name: 'Order form & payment' }).click();
     await expect(page.getByRole('switch', { name: 'Coupon field' })).toBeChecked();
+    // Order form: the page's own field name, the added field, and adding/removing one.
+    await expect(page.getByLabel('Name shown for Name')).toHaveValue('Your name');
+    await expect(page.locator('.nk-row-custom input[value="Delivery time"]')).toBeVisible();
+    const customRows = page.locator('.nk-row-custom');
+    const rowsBefore = await customRows.count();
+    await page.getByRole('button', { name: 'Add a field' }).click();
+    await expect(customRows).toHaveCount(rowsBefore + 1);
+    await expect(customRows.last().locator('input[type="text"]')).toHaveValue('New field');
+    await customRows.last().getByRole('button', { name: 'Remove this field' }).click();
+    await expect(customRows).toHaveCount(rowsBefore);
 
     // Settings: the WooCommerce emails switch.
     await page.goto(`${fixture.adminUrl}#/settings`);
@@ -144,5 +154,70 @@ test.describe('editor: WooCommerce product', () => {
     await expect(preview.locator('body')).not.toContainText('mustard');
     await expect(preview.locator('body')).toContainText('Verified buyer');
     expect(errors, 'no JavaScript errors').toEqual([]);
+  });
+
+  test('my sections and my templates', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    // The delivery page, so the other tests' page keeps one top banner (the editor saves as you go).
+    await page.goto(`${fixture.adminUrl}#/pages/${fixture.shipPageId}`);
+
+    // Keep the top banner in "My sections".
+    await page.getByRole('button', { name: /Top banner/ }).first().click();
+    await page.getByRole('button', { name: 'Save to my sections' }).click();
+    await page.getByLabel('Name').fill('E2E banner');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+
+    // Add it back from "My sections": the page now has two top banners.
+    await page.getByRole('button', { name: /Sections/ }).first().click();
+    const banners = page.getByRole('button', { name: /Top banner/ });
+    const before = await banners.count();
+    await page.getByRole('button', { name: 'Add section' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('My sections');
+    await dialog.getByRole('button', { name: /E2E banner/ }).click();
+    await page.getByRole('button', { name: /Sections/ }).first().click();
+    await expect(banners).toHaveCount(before + 1);
+
+    // Delete it from the library (pages keep their copy).
+    await page.getByRole('button', { name: 'Add section' }).click();
+    await dialog.getByRole('button', { name: 'Delete from my sections' }).first().click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    await expect(dialog.getByRole('button', { name: /E2E banner/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    // Keep the page as "My template", then start a new page from it.
+    await page.getByRole('button', { name: /Page settings/ }).first().click();
+    await page.getByRole('tab', { name: 'Link & language' }).click();
+    await page.getByRole('button', { name: 'Save as my template' }).click();
+    await page.getByLabel('Name').fill('E2E template');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+
+    await page.goto(`${fixture.adminUrl}#/pages`);
+    await page.getByRole('button', { name: 'New page' }).first().click();
+    const create = page.getByRole('dialog');
+    await create.getByLabel('Start from').selectOption({ label: 'E2E template' });
+    await create.getByLabel('Page title').fill('E2E from template');
+    await create.getByRole('button', { name: 'New page' }).click();
+    // The editor opens on the new page, with the template's product name and sections.
+    const preview = page.frameLocator('iframe.nk-editor-iframe');
+    await expect(preview.locator('.nk-order')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('button', { name: /Top banner/ })).toHaveCount(before + 1);
+    expect(errors, 'no JavaScript errors').toEqual([]);
+  });
+
+  test('bundle cards in the editor', async ({ page }) => {
+    await page.goto(`${fixture.adminUrl}#/pages/${fixture.shipPageId}`);
+    await page.getByRole('button', { name: 'Add section' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /Bundle cards/ }).click();
+    await expect(page.getByLabel('Mark as most popular')).toBeVisible();
+    const preview = page.frameLocator('iframe.nk-editor-iframe');
+    await expect(preview.locator('.nk-bundles')).toContainText('Bundle cards show the quantity discounts', { timeout: 20000 });
+    // Leave the page as it was.
+    await page.getByRole('button', { name: 'Delete section' }).click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    await expect(preview.locator('.nk-bundles')).toHaveCount(0, { timeout: 20000 });
   });
 });

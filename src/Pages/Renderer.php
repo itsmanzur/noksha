@@ -115,6 +115,9 @@ final class Renderer {
         if ($image === '') {
             $image = (string) ($payload['offer']['imageUrl'] ?? '');
         }
+        $values = self::token_values($payload, ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en');
+        $title = self::plain_text($title, $values);
+        $description = self::plain_text($description, $values);
         $url = !empty($payload['link']) ? (string) $payload['link'] : '';
         $html = '';
         if ($description !== '') {
@@ -148,6 +151,7 @@ final class Renderer {
 
     public static function article(array $payload, bool $preview): string {
         $lang = ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
+        self::$token_values = self::token_values($payload, $lang);
         $tokens = Tokens::merge(is_array($payload['tokens'] ?? null) ? $payload['tokens'] : null);
         $style = esc_attr(Tokens::declarations($tokens));
         $motion = ($payload['motion'] ?? 'simple') === 'lively' ? ' nk-motion-lively' : '';
@@ -239,6 +243,7 @@ final class Renderer {
                 'stockLeft' => Catalog::line($lang, 'stock_left'),
                 'noDelivery' => Catalog::line($lang, 'no_delivery'),
                 'tierLabel' => Catalog::line($lang, 'tier_label'),
+                'bundleSave' => Catalog::line($lang, 'bundle_save'),
                 'outOfStock' => Catalog::line($lang, 'out_of_stock'),
                 'couponInvalid' => Catalog::line($lang, 'coupon_invalid'),
                 'invalidPhone' => Catalog::line($lang, 'invalid_phone'),
@@ -268,6 +273,7 @@ final class Renderer {
             'steps' => self::steps($props, $preview),
             'compare' => self::compare($props, $preview),
             'whatsapp' => self::whatsapp($props, $payload),
+            'bundles' => self::bundles($props, $payload, $preview),
             'html' => ($props['html'] ?? '') !== ''
                 ? '<section class="nk-section nk-html"><div class="nk-html-inner">' . Sanitizer::clean_html((string) $props['html']) . '</div></section>'
                 : '',
@@ -298,6 +304,10 @@ final class Renderer {
         $space = sanitize_key((string) ($style['space'] ?? 'normal'));
         if ($space !== '' && $space !== 'normal') {
             $classes[] = 'nk-space-' . $space;
+        }
+        $show = sanitize_key((string) ($style['show'] ?? 'all'));
+        if ($show === 'mobile' || $show === 'desktop') {
+            $classes[] = 'nk-only-' . $show;
         }
         foreach (['size' => 'md', 'ratio' => 'auto', 'fit' => 'cover', 'round' => 'md'] as $key => $default) {
             $value = sanitize_key((string) ($style[$key] ?? $default));
@@ -446,7 +456,7 @@ final class Renderer {
             $id = 'nk-faq-' . $index;
             $items .= '<div class="nk-faq-item">'
                 . '<button type="button" id="' . esc_attr($id) . '-btn" aria-expanded="false" aria-controls="' . esc_attr($id) . '" data-nk-prop="items.' . esc_attr((string) $index) . '.q">'
-                . esc_html($item['q'])
+                . self::text($item['q'])
                 . '</button><div id="' . esc_attr($id) . '" role="region" aria-labelledby="' . esc_attr($id) . '-btn" hidden>'
                 . self::editable('p', 'items.' . $index . '.a', $item['a'], '', $preview)
                 . '</div></div>';
@@ -587,10 +597,69 @@ final class Renderer {
         if ($class !== '') {
             $attr .= ' class="' . esc_attr($class) . '"';
         }
-        if ($preview) {
+        $has_token = self::has_token($value);
+        if ($preview && !$has_token) {
             $attr .= ' data-nk-prop="' . esc_attr($prop) . '"';
         }
-        return '<' . $tag . $attr . '>' . esc_html($value) . '</' . $tag . '>';
+        return '<' . $tag . $attr . '>' . self::text($value) . '</' . $tag . '>';
+    }
+
+    /** @var array<string, string> Live values for {price}, {product} and the rest, for the page being drawn. */
+    private static array $token_values = [];
+
+    public const TOKENS = ['product', 'price', 'old_price', 'save', 'save_percent', 'stock', 'sale_ends'];
+
+    /**
+     * @return array<string, string>
+     */
+    public static function token_values(array $payload, string $lang): array {
+        $offer = is_array($payload['offer'] ?? null) ? $payload['offer'] : [];
+        $price = (float) ($offer['price'] ?? 0);
+        $compare = (float) ($offer['compareAt'] ?? 0);
+        $on_sale = $compare > $price && $price > 0;
+        $wc = is_array($offer['wc'] ?? null) ? $offer['wc'] : [];
+        $stock = $wc['stock'] ?? null;
+        $sale_end = (string) ($wc['saleEndsAt'] ?? '');
+        return [
+            'product' => (string) ($offer['productName'] ?? ''),
+            'price' => $price > 0 ? self::money($price, $lang) : '',
+            'old_price' => $on_sale ? self::money($compare, $lang) : '',
+            'save' => $on_sale ? self::money($compare - $price, $lang) : '',
+            'save_percent' => $on_sale ? (string) round((1 - $price / $compare) * 100) . '%' : '',
+            'stock' => $stock === null ? '' : (string) (int) $stock,
+            'sale_ends' => $sale_end !== '' && strtotime($sale_end) ? (string) date_i18n('j F', (int) strtotime($sale_end)) : '',
+        ];
+    }
+
+    private static function has_token(string $value): bool {
+        return (bool) preg_match('/\{(' . implode('|', self::TOKENS) . ')\}/', $value);
+    }
+
+    /**
+     * Escaped text with {price} and the others as live spans the browser can update.
+     * Unknown {words} stay as written.
+     */
+    public static function text(string $value): string {
+        if (!self::has_token($value)) {
+            return esc_html($value);
+        }
+        $parts = preg_split('/(\{(?:' . implode('|', self::TOKENS) . ')\})/', $value, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$value];
+        $out = '';
+        foreach ($parts as $part) {
+            if (preg_match('/^\{(' . implode('|', self::TOKENS) . ')\}$/', $part, $m)) {
+                $out .= '<span data-nk-token="' . esc_attr($m[1]) . '">' . esc_html(self::$token_values[$m[1]] ?? '') . '</span>';
+            } else {
+                $out .= esc_html($part);
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * The same, as plain text (titles, descriptions).
+     */
+    public static function plain_text(string $value, array $values): string {
+        return (string) preg_replace_callback('/\{(' . implode('|', self::TOKENS) . ')\}/', static fn($m) => $values[$m[1]] ?? '', $value);
     }
 
     private static function order_form(array $props, array $payload, bool $preview): string {
@@ -605,11 +674,20 @@ final class Renderer {
         $notice = self::payment_notice($lang);
 
         $fields = '';
-        foreach ($checkout['fields'] as $key => $field) {
-            if (empty($field['enabled'])) {
+        $custom_by_id = array_column(is_array($checkout['customFields'] ?? null) ? $checkout['customFields'] : [], null, 'id');
+        $order_keys = is_array($checkout['fieldOrder'] ?? null) ? $checkout['fieldOrder'] : Sanitizer::STANDARD_ORDER;
+        foreach ($order_keys as $key) {
+            if (isset($custom_by_id[$key])) {
+                $fields .= self::custom_field($custom_by_id[$key]);
                 continue;
             }
-            $fields .= self::field($key, $field, $lang);
+            // "area" is division, district and upazila, in that order.
+            foreach ($key === 'area' ? ['division', 'district', 'upazila'] : [$key] as $part) {
+                $field = $checkout['fields'][$part] ?? null;
+                if (is_array($field) && !empty($field['enabled'])) {
+                    $fields .= self::field($part, $field, $lang);
+                }
+            }
         }
 
         $methods = self::payment_methods($checkout, $lang);
@@ -631,7 +709,7 @@ final class Renderer {
                 continue;
             }
             $checked = !empty($bump['checkedDefault']) ? ' checked' : '';
-            $bump_html .= '<label class="nk-bump"><input type="checkbox" name="bump" form="nk-order" value="1" data-bump-index="' . esc_attr((string) $bump_index) . '"' . $checked . '>'
+            $bump_html .= '<label class="nk-bump"><input type="checkbox" name="bump" form="nk-order-form" value="1" data-bump-index="' . esc_attr((string) $bump_index) . '"' . $checked . '>'
                 . '<span><strong>' . esc_html((string) ($bump['name'] ?: Catalog::line($lang, 'bump_add'))) . '</strong>'
                 . '<em>+' . esc_html(self::money((float) $bump['price'], $lang)) . '</em></span></label>';
         }
@@ -647,8 +725,8 @@ final class Renderer {
             . '<button type="button" class="nk-btn-ghost" data-otp-send>' . esc_html(Catalog::line($lang, 'otp_send')) . '</button>'
             . '</div>';
 
-        $form = '<form class="nk-form" id="nk-order" data-preview="' . ($preview ? '1' : '0') . '" novalidate>'
-            . '<h2>' . esc_html($props['title']) . '</h2>'
+        $form = '<form class="nk-form" id="nk-order-form" data-preview="' . ($preview ? '1' : '0') . '" novalidate>'
+            . '<h2>' . self::text($props['title']) . '</h2>'
             . $notice
             . $thanks
             . '<div class="nk-form-error" hidden tabindex="-1"></div>'
@@ -681,7 +759,7 @@ final class Renderer {
             }
             $variation_html = '<label class="nk-variation">'
                 . '<span>' . esc_html(Catalog::line($lang, 'choose_option')) . '</span>'
-                . '<select name="variation_id" form="nk-order" data-variation>' . $options . '</select></label>';
+                . '<select name="variation_id" form="nk-order-form" data-variation>' . $options . '</select></label>';
         }
         $unavailable_key = ($wc['reason'] ?? '') === 'out_of_stock' ? 'out_of_stock' : 'product_unavailable';
         $sold_out_html = $sold_out
@@ -693,7 +771,7 @@ final class Renderer {
             $coupon_html = '<div class="nk-coupon">'
                 . '<label for="nk-coupon-code">' . esc_html(Catalog::line($lang, 'coupon_label')) . '</label>'
                 . '<div class="nk-coupon-row">'
-                . '<input id="nk-coupon-code" name="coupon_code" form="nk-order" autocomplete="off" maxlength="64">'
+                . '<input id="nk-coupon-code" name="coupon_code" form="nk-order-form" autocomplete="off" maxlength="64">'
                 . '<button type="button" class="nk-btn-ghost" data-coupon-apply>' . esc_html(Catalog::line($lang, 'coupon_apply')) . '</button>'
                 . '</div>'
                 . '<p class="nk-coupon-msg" data-coupon-msg role="status" hidden></p>'
@@ -709,7 +787,7 @@ final class Renderer {
             . '<span>' . esc_html(Catalog::line($lang, 'qty')) . '</span>'
             . '<div class="nk-qty-stepper">'
             . '<button type="button" class="nk-qty-btn" data-qty-dec aria-label="-">−</button>'
-            . '<input name="qty" form="nk-order" type="number" min="1" max="' . esc_attr((string) $qty_max) . '" value="1" inputmode="numeric">'
+            . '<input name="qty" form="nk-order-form" type="number" min="1" max="' . esc_attr((string) $qty_max) . '" value="1" inputmode="numeric">'
             . '<button type="button" class="nk-qty-btn" data-qty-inc aria-label="+">+</button>'
             . '</div></div>'
             . self::tiers_html($offer, $lang, $qty_max)
@@ -730,8 +808,27 @@ final class Renderer {
             . '<div class="nk-order-layout">' . $form . $summary . '</div></section>';
     }
 
+    /**
+     * A field the page owner added. Its value is sent as custom[id].
+     */
+    private static function custom_field(array $field): string {
+        $required = !empty($field['required']);
+        $mark = $required ? ' <span aria-hidden="true">*</span>' : '';
+        $req = $required ? ' required' : '';
+        $name = 'custom[' . esc_attr((string) $field['id']) . ']';
+        $input = match ($field['type']) {
+            'textarea' => '<textarea name="' . $name . '" rows="3" maxlength="500"' . $req . '></textarea>',
+            'date' => '<input type="date" name="' . $name . '"' . $req . '>',
+            'select' => '<select name="' . $name . '"' . $req . '><option value=""></option>'
+                . implode('', array_map(static fn($option) => '<option value="' . esc_attr($option) . '">' . esc_html($option) . '</option>', (array) $field['options']))
+                . '</select>',
+            default => '<input type="text" name="' . $name . '" maxlength="200"' . $req . '>',
+        };
+        return '<label class="nk-field" data-field="' . esc_attr((string) $field['id']) . '"><span class="nk-field-label">' . esc_html((string) $field['label']) . $mark . '</span>' . $input . '</label>';
+    }
+
     private static function field(string $key, array $field, string $lang): string {
-        $label = Catalog::line($lang, $key);
+        $label = ($field['label'] ?? '') !== '' ? (string) $field['label'] : Catalog::line($lang, $key);
         $required = !empty($field['required']);
         $mark = $required ? ' <span aria-hidden="true">*</span>' : '';
         $req = $required ? ' required' : '';
@@ -881,6 +978,49 @@ final class Renderer {
         }
         $digits = abs($amount - round($amount)) < 0.001 ? 0 : 2;
         return '৳' . number_format($amount, $digits);
+    }
+
+    /**
+     * Bundle cards from the page's quantity steps: one card per step (and one for
+     * a single piece), each with its total after the step's discount. A card sets
+     * the quantity. Without steps the section shows nothing on the live page.
+     */
+    private static function bundles(array $props, array $payload, bool $preview): string {
+        $lang = ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
+        $offer = is_array($payload['offer'] ?? null) ? $payload['offer'] : [];
+        $tiers = is_array($offer['tiers'] ?? null) ? $offer['tiers'] : [];
+        $price = (float) ($offer['price'] ?? 0);
+        if ($tiers === [] || $price <= 0) {
+            return $preview
+                ? '<section class="nk-section nk-bundles"><p class="nk-note">' . esc_html(Catalog::line($lang, 'bundles_empty')) . '</p></section>'
+                : '';
+        }
+        $max = WcProduct::max_qty($offer);
+        $steps = !empty($props['showSingle']) ? [['qty' => 1, 'discount' => 0.0]] : [];
+        foreach ($tiers as $tier) {
+            $steps[] = ['qty' => (int) $tier['qty'], 'discount' => (float) $tier['discount']];
+        }
+        $cards = '';
+        foreach ($steps as $step) {
+            $qty = $step['qty'];
+            $full = $price * $qty;
+            $pay = max(0.0, $full - $step['discount']);
+            $popular = (int) ($props['popular'] ?? 0) === $qty;
+            $disabled = $max !== null && $qty > $max;
+            $cards .= '<button type="button" class="nk-bundle' . ($popular ? ' is-popular' : '') . '" data-bundle-qty="' . esc_attr((string) $qty) . '" aria-pressed="' . ($qty === 1 ? 'true' : 'false') . '"' . ($disabled ? ' disabled' : '') . '>'
+                . ($popular ? '<span class="nk-bundle-badge">' . esc_html(Catalog::line($lang, 'bundle_popular')) . '</span>' : '')
+                . '<span class="nk-bundle-qty">' . esc_html($qty === 1 ? Catalog::line($lang, 'bundle_one') : sprintf(Catalog::line($lang, 'bundle_pieces'), $qty)) . '</span>'
+                . '<strong class="nk-bundle-pay" data-bundle-pay>' . esc_html(self::money($pay, $lang)) . '</strong>'
+                . ($step['discount'] > 0
+                    ? '<s class="nk-bundle-full" data-bundle-full>' . esc_html(self::money($full, $lang)) . '</s>'
+                        . '<span class="nk-bundle-save" data-bundle-save>' . esc_html(sprintf(Catalog::line($lang, 'bundle_save'), self::money($step['discount'], $lang))) . '</span>'
+                    : '')
+                . '</button>';
+        }
+        return '<section class="nk-section nk-bundles">'
+            . ($props['title'] !== '' ? self::editable('h2', 'title', $props['title'], '', $preview) : '')
+            . '<div class="nk-bundle-row" role="group" aria-label="' . esc_attr($props['title'] !== '' ? $props['title'] : Catalog::line($lang, 'tiers_title')) . '">' . $cards . '</div>'
+            . '</section>';
     }
 
     /**

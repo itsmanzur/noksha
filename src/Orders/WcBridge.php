@@ -190,6 +190,12 @@ final class WcBridge {
             $order->update_meta_data('_noksha_otp_verified', (int) $row['otp_verified']);
             $order->update_meta_data('_noksha_variant', (string) $row['variant']);
             $order->update_meta_data('_noksha_attribution', (string) ($row['attribution'] ?? ''));
+            // The page's own order-form fields, with their labels.
+            $extra = json_decode((string) ($row['extra'] ?? ''), true);
+            if (is_array($extra) && $extra !== []) {
+                $order->update_meta_data('_noksha_extra', $extra);
+                $order->add_order_note(implode("\n", array_map(static fn($item) => $item['label'] . ': ' . $item['value'], $extra)));
+            }
 
             $order->calculate_totals(false);
             if ($coupon !== '') {

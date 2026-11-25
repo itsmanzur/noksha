@@ -66,6 +66,9 @@ export function EditorSectionList({
                   <strong>
                     {t('section.' + item.type)}
                     {item.hidden ? <em className="nk-tag">{t('editor.hiddenTag')}</em> : null}
+                    {!item.hidden && item.style && (item.style.show === 'mobile' || item.style.show === 'desktop')
+                      ? <em className="nk-tag">{t('look.show.' + item.style.show)}</em>
+                      : null}
                   </strong>
                   <small>{summaryOf(item, t)}</small>
                 </span>

@@ -134,7 +134,31 @@ $offer['stockHint'] = true;
 $offer['stockHintMax'] = 10;
 $checkout['payments'] = ['cod'];
 $checkout['coupon'] = true;
-Pages::update($page_id, ['status' => 'publish', 'slug' => 'e2e-noksha', 'offer' => $offer, 'checkout' => $checkout]);
+// The page's own name for a field, and an added (optional) choice.
+$checkout['fields']['name']['label'] = 'Your name';
+$checkout['customFields'] = [['id' => 'c_when01', 'label' => 'Delivery time', 'type' => 'select', 'options' => ['Morning', 'Evening'], 'required' => false]];
+// FAQ on larger screens only, the guarantee on phones only; live words in the product heading.
+$sections = $doc['sections'];
+foreach ($sections as $i => $section) {
+    if ($section['type'] === 'product') {
+        $sections[$i]['props']['title'] = 'Now {price}, {stock} left';
+    }
+    if ($section['type'] === 'faq') {
+        $sections[$i]['style']['show'] = 'desktop';
+    }
+    if ($section['type'] === 'guarantee') {
+        $sections[$i]['style']['show'] = 'mobile';
+    }
+}
+// Bundle cards just above the order form.
+$form_at = count($sections);
+foreach ($sections as $i => $section) {
+    if ($section['type'] === 'order_form') {
+        $form_at = $i;
+    }
+}
+array_splice($sections, $form_at, 0, [['type' => 'bundles', 'props' => ['title' => 'Pick a pack', 'popular' => 2, 'showSingle' => true]]]);
+Pages::update($page_id, ['status' => 'publish', 'slug' => 'e2e-noksha', 'offer' => $offer, 'checkout' => $checkout, 'sections' => $sections]);
 
 // A second page that asks for the district and takes delivery from WooCommerce zones (Auto).
 $ship_page_id = Pages::create('single', 'en', 'E2E delivery');

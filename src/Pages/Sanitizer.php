@@ -98,6 +98,7 @@ final class Sanitizer {
     public const BACKGROUNDS = ['none', 'soft', 'warm', 'dark', 'brand', 'gradient'];
 
     public const SPACINGS = ['compact', 'normal', 'roomy'];
+    public const SHOWS = ['all', 'mobile', 'desktop'];
     public const SIZES = ['sm', 'md', 'lg', 'xl'];
     public const RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
     public const FITS = ['cover', 'contain'];
@@ -114,7 +115,8 @@ final class Sanitizer {
     public static function style(string $type, $raw): array {
         $raw = is_array($raw) ? $raw : [];
         if (in_array($type, self::SINGLE_TYPES, true)) {
-            return ['layout' => '', 'bg' => 'none', 'space' => 'normal', 'size' => 'md', 'ratio' => 'auto', 'fit' => 'cover', 'round' => 'md'];
+            // The order form and WhatsApp button show everywhere.
+            return ['layout' => '', 'bg' => 'none', 'space' => 'normal', 'size' => 'md', 'ratio' => 'auto', 'fit' => 'cover', 'round' => 'md', 'show' => 'all'];
         }
         $layouts = self::LAYOUTS[$type] ?? [];
         $layout = sanitize_key((string) ($raw['layout'] ?? ''));
@@ -142,6 +144,8 @@ final class Sanitizer {
             'ratio' => $image ? $pick('ratio', self::RATIOS, 'auto') : 'auto',
             'fit' => $image ? $pick('fit', self::FITS, 'cover') : 'cover',
             'round' => $image ? $pick('round', self::ROUNDS, 'md') : 'md',
+            // Where the section shows: every screen, phones only (under 768px), or larger screens only.
+            'show' => $pick('show', self::SHOWS, 'all'),
         ];
     }
 
@@ -204,6 +208,12 @@ final class Sanitizer {
                 'usLabel' => self::short($props['usLabel'] ?? '', 40),
                 'themLabel' => self::short($props['themLabel'] ?? '', 40),
                 'rows' => self::compare_rows($props['rows'] ?? []),
+            ],
+            // Bundle cards: the page's quantity steps as cards (1 piece, 2 pieces ...).
+            'bundles' => [
+                'title' => self::short($props['title'] ?? ''),
+                'popular' => max(0, min(10, (int) ($props['popular'] ?? 0))),
+                'showSingle' => !array_key_exists('showSingle', $props) || !empty($props['showSingle']),
             ],
             'whatsapp' => [
                 'number' => substr(preg_replace('/[^0-9]/', '', (string) ($props['number'] ?? '')) ?? '', 0, 15),
@@ -423,6 +433,8 @@ final class Sanitizer {
             $base['fields'][$key] = [
                 'enabled' => $enabled,
                 'required' => $required,
+                // The page owner's own name for the field ('' = the standard one).
+                'label' => self::short($incoming['label'] ?? '', 60),
             ];
         }
         $base['fields']['name']['enabled'] = true;
@@ -454,7 +466,76 @@ final class Sanitizer {
         $base['deliveryNote'] = self::long($checkout['deliveryNote'] ?? '', 300);
         // A coupon field, offered only for a WooCommerce product.
         $base['coupon'] = !empty($checkout['coupon']);
+        $base['customFields'] = self::custom_fields($checkout['customFields'] ?? []);
+        $base['fieldOrder'] = self::field_order($checkout['fieldOrder'] ?? [], $base['customFields']);
         return $base;
+    }
+
+    public const CUSTOM_TYPES = ['text', 'textarea', 'select', 'date'];
+    public const STANDARD_ORDER = ['name', 'phone', 'email', 'area', 'address', 'note'];
+
+    /**
+     * Fields the page owner adds to the order form (up to 5): a label, a kind
+     * (text, long text, a choice from a list, a date) and whether it is required.
+     *
+     * @param mixed $raw
+     * @return list<array{id:string,label:string,type:string,options:list<string>,required:bool}>
+     */
+    public static function custom_fields($raw): array {
+        $out = [];
+        $seen = [];
+        foreach (array_slice((array) $raw, 0, 20) as $field) {
+            if (!is_array($field) || count($out) >= 5) {
+                continue;
+            }
+            $label = self::short($field['label'] ?? '', 60);
+            if ($label === '') {
+                continue;
+            }
+            $id = sanitize_key((string) ($field['id'] ?? ''));
+            if (!preg_match('/^c_[a-z0-9]{4,12}$/', $id) || isset($seen[$id])) {
+                $id = 'c_' . strtolower(wp_generate_password(6, false, false));
+            }
+            $seen[$id] = true;
+            $type = in_array($field['type'] ?? '', self::CUSTOM_TYPES, true) ? (string) $field['type'] : 'text';
+            $options = [];
+            if ($type === 'select') {
+                foreach (array_slice((array) ($field['options'] ?? []), 0, 20) as $option) {
+                    $option = self::short($option, 60);
+                    if ($option !== '' && !in_array($option, $options, true)) {
+                        $options[] = $option;
+                    }
+                }
+                if ($options === []) {
+                    $type = 'text';
+                }
+            }
+            $out[] = ['id' => $id, 'label' => $label, 'type' => $type, 'options' => $options, 'required' => !empty($field['required'])];
+        }
+        return $out;
+    }
+
+    /**
+     * The order of the form's fields. Division, district and upazila move together as "area".
+     *
+     * @param mixed $raw
+     * @return list<string>
+     */
+    public static function field_order($raw, array $custom): array {
+        $all = array_merge(self::STANDARD_ORDER, array_column($custom, 'id'));
+        $order = [];
+        foreach ((array) $raw as $key) {
+            $key = sanitize_key((string) $key);
+            if (in_array($key, $all, true) && !in_array($key, $order, true)) {
+                $order[] = $key;
+            }
+        }
+        foreach ($all as $key) {
+            if (!in_array($key, $order, true)) {
+                $order[] = $key;
+            }
+        }
+        return $order;
     }
 
     private static function short($value, int $limit = 120): string {

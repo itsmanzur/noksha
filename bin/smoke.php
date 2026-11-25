@@ -788,6 +788,142 @@ if (Noksha\Catalog\WcProduct::active()) {
     }
     wp_set_current_user($previous_user);
 
+    // ---- My sections, my templates, and a real duplicate ----
+    Pages::forget_cached($wc_page);
+    $lib_source = Pages::payload($wc_page);
+    $hero_section = null;
+    foreach ($lib_source['sections'] as $section) {
+        if ($section['type'] === 'hero') {
+            $hero_section = $section;
+        }
+    }
+    $hero_section['style']['bg'] = 'warm';
+    $saved_section = Noksha\Pages\Library::save_section($hero_section, 'Smoke hero');
+    check(is_array($saved_section) && !isset($saved_section['data']['id']) && $saved_section['data']['style']['bg'] === 'warm', 'a section is kept with its look, without its page id');
+    $listed = array_column(Noksha\Pages\Library::all(), null, 'id');
+    check(($listed[$saved_section['id']]['type'] ?? '') === 'hero' && isset($listed[$saved_section['id']]['section']['props']['title']), 'my sections list the section, ready to insert');
+    check(is_wp_error(Noksha\Pages\Library::save_section($hero_section, '  ')), 'a name is required');
+
+    Pages::update($wc_page, ['seo' => ['title' => 'Smoke SEO title', 'description' => '', 'imageUrl' => '']]);
+    $saved_page = Noksha\Pages\Library::save_page($wc_page, 'Smoke template');
+    check(is_array($saved_page) && $saved_page['data']['offer']['source'] === 'custom' && (int) $saved_page['data']['offer']['productId'] === 0 && !isset($saved_page['data']['offer']['wc']), 'a page template leaves the store product out');
+    $from_template = Noksha\Pages\Library::create_page($saved_page['id'], 'From smoke template');
+    check(is_int($from_template), 'a new page is made from my template');
+    if (is_int($from_template)) {
+        $made_doc = Pages::payload($from_template);
+        check(get_post_status($from_template) === 'draft' && count($made_doc['sections']) === count($lib_source['sections']), 'the new page is a draft with all the sections');
+        check(array_intersect(array_column($made_doc['sections'], 'id'), array_column($lib_source['sections'], 'id')) === [], 'its sections get new ids');
+        check($made_doc['checkout'] == Pages::payload($wc_page)['checkout'], 'its order form settings match the template');
+        wp_delete_post($from_template, true);
+    }
+
+    $copy_id = Pages::duplicate($wc_page);
+    check(is_int($copy_id), 'duplicate makes a page');
+    if (is_int($copy_id)) {
+        $copy = Pages::payload($copy_id);
+        $original = Pages::payload($wc_page);
+        check(get_post_status($copy_id) === 'draft' && $copy['title'] === $original['title'] . ' (2)', 'the copy is a draft named "... (2)"');
+        check((int) $copy['offer']['productId'] === (int) $original['offer']['productId'] && array_column($copy['sections'], 'type') === array_column($original['sections'], 'type'), 'the copy keeps the product and every section (it used to start from the bare template)');
+        check(($copy['seo']['title'] ?? '') === 'Smoke SEO title', 'the copy keeps the SEO title');
+        wp_delete_post($copy_id, true);
+    }
+
+    check(Noksha\Pages\Library::delete($saved_section['id']) && Noksha\Pages\Library::delete($saved_page['id']), 'items can be deleted from the library');
+    check(!Noksha\Pages\Library::delete('l_nothere'), 'deleting a missing item says so');
+
+    // ---- Sections for phones only / larger screens only ----
+    $styled = Noksha\Pages\Sanitizer::section(['type' => 'faq', 'props' => ['title' => 'Q', 'items' => []], 'style' => ['show' => 'mobile']]);
+    check(($styled['style']['show'] ?? '') === 'mobile', 'a section can be set to phones only');
+    $bad_show = Noksha\Pages\Sanitizer::section(['type' => 'faq', 'props' => [], 'style' => ['show' => 'tv']]);
+    check(($bad_show['style']['show'] ?? '') === 'all', 'an unknown screen choice falls back to all screens');
+    $form_show = Noksha\Pages\Sanitizer::section(['type' => 'order_form', 'props' => [], 'style' => ['show' => 'desktop']]);
+    check(($form_show['style']['show'] ?? '') === 'all', 'the order form always shows on every screen');
+    $show_payload = Pages::payload($wc_page);
+    foreach ($show_payload['sections'] as $i => $section) {
+        if ($section['type'] === 'faq') {
+            $show_payload['sections'][$i]['style']['show'] = 'desktop';
+        }
+    }
+    $show_html = Renderer::article($show_payload, false);
+    check((bool) preg_match('/<section class="[^"]*nk-only-desktop[^"]*"/', $show_html), 'the page marks the section for larger screens only');
+
+    // ---- Live words in text: {price}, {product} ... ----
+    Pages::forget_cached($wc_page);
+    $tok_payload = Pages::payload($wc_page);
+    foreach ($tok_payload['sections'] as $i => $section) {
+        if ($section['type'] === 'hero') {
+            $tok_payload['sections'][$i]['props']['title'] = 'Only {price} for {product} <b>now</b> {unknown}';
+        }
+    }
+    $tok_price = Renderer::token_values($tok_payload, 'en')['price'];
+    $tok_html = Renderer::article($tok_payload, false);
+    check(str_contains($tok_html, '<span data-nk-token="price">' . esc_html($tok_price) . '</span>'), 'a {price} in a title shows the live price');
+    check(str_contains($tok_html, '<span data-nk-token="product">Smoke WC simple</span>'), '{product} shows the product name');
+    check(str_contains($tok_html, '&lt;b&gt;now&lt;/b&gt;') && str_contains($tok_html, '{unknown}'), 'the rest of the text is still escaped, and unknown words stay as written');
+    $tok_preview = Renderer::article($tok_payload, true);
+    check((bool) preg_match('/<h1(?![^>]*data-nk-prop)[^>]*>Only <span data-nk-token/', $tok_preview), 'in the editor, text with live words is not edited inline (it would lose them)');
+    $tok_payload['seo'] = ['title' => '{product} at {price}', 'description' => '', 'imageUrl' => ''];
+    check(Renderer::seo_tags($tok_payload)['title'] === 'Smoke WC simple at ' . $tok_price, 'live words work in the SEO title too');
+
+    // ---- Order form: names, order and added fields ----
+    $clean_custom = Noksha\Pages\Sanitizer::custom_fields([
+        ['id' => 'c_size01', 'label' => 'Size note', 'type' => 'textarea', 'required' => true],
+        ['label' => '', 'type' => 'text'],
+        ['id' => 'c_when01', 'label' => 'Delivery time', 'type' => 'select', 'options' => ['Morning', 'Evening', '', 'Morning']],
+        ['id' => 'bad id!', 'label' => 'Empty list', 'type' => 'select', 'options' => []],
+        ['label' => 'A'], ['label' => 'B'], ['label' => 'C'],
+    ]);
+    check(count($clean_custom) === 5 && $clean_custom[0]['id'] === 'c_size01', 'added fields: at most five, empty names dropped');
+    check($clean_custom[1]['options'] === ['Morning', 'Evening'] && $clean_custom[2]['type'] === 'text' && str_starts_with($clean_custom[2]['id'], 'c_'), 'choices are cleaned; a list without choices becomes text; a bad id gets a new one');
+    check(Noksha\Pages\Sanitizer::field_order(['phone', 'area', 'nope', 'phone'], []) === ['phone', 'area', 'name', 'email', 'address', 'note'], 'field order: unknown keys dropped, missing ones added at the end');
+
+    $form_payload = Pages::payload($wc_page);
+    $form_checkout = $form_payload['checkout'];
+    $form_checkout['fields']['name']['label'] = 'Your full name';
+    $form_checkout['customFields'] = [
+        ['id' => 'c_size01', 'label' => 'Size note', 'type' => 'textarea', 'required' => true],
+        ['id' => 'c_when01', 'label' => 'Delivery time', 'type' => 'select', 'options' => ['Morning', 'Evening'], 'required' => false],
+    ];
+    $form_checkout['fieldOrder'] = ['phone', 'c_size01', 'name', 'area', 'address', 'email', 'note', 'c_when01'];
+    Pages::update($wc_page, ['checkout' => $form_checkout]);
+    Pages::forget_cached($wc_page);
+    $form_html = Renderer::article_for_post($wc_page);
+    check(str_contains($form_html, 'Your full name'), 'a field shows the page\'s own name for it');
+    $pos_phone = strpos($form_html, 'data-field="phone"');
+    $pos_size = strpos($form_html, 'data-field="c_size01"');
+    $pos_name = strpos($form_html, 'data-field="name"');
+    check($pos_phone !== false && $pos_size !== false && $pos_name !== false && $pos_phone < $pos_size && $pos_size < $pos_name, 'fields follow the chosen order');
+    check(str_contains($form_html, 'name="custom[c_size01]"') && str_contains($form_html, '<option value="Evening">Evening</option>'), 'added fields are on the form');
+
+    $missing = $checkout->place(['phone' => '01712340016'] + $base + ['qty' => 1]);
+    check(is_wp_error($missing) && $missing->get_error_code() === 'noksha_required_field' && ($missing->get_error_data()['field'] ?? '') === 'custom[c_size01]', 'a required added field must be filled, and the form is told which one');
+    $with_extra = $checkout->place(['phone' => '01712340017', 'custom' => ['c_size01' => 'Chest 40', 'c_when01' => 'Midnight']] + $base + ['qty' => 1]);
+    check(is_array($with_extra), 'order with added fields placed ' . (is_wp_error($with_extra) ? $with_extra->get_error_code() : ''));
+    if (is_array($with_extra)) {
+        $ex_row = Orders::find_by_number($with_extra['orderNumber']);
+        $ex_detail = Orders::detail($ex_row);
+        check($ex_detail['extra'] === [['label' => 'Size note', 'value' => 'Chest 40']], 'the order keeps the answers with their names (a choice not on the list is dropped)');
+        $ex_wc = wc_get_order((int) $ex_row['wc_order_id']);
+        check($ex_wc instanceof WC_Order && ($ex_wc->get_meta('_noksha_extra')[0]['value'] ?? '') === 'Chest 40', 'the WooCommerce order has them too');
+    }
+    $form_checkout['customFields'] = [];
+    $form_checkout['fieldOrder'] = [];
+    $form_checkout['fields']['name']['label'] = '';
+    Pages::update($wc_page, ['checkout' => $form_checkout]);
+    Pages::forget_cached($wc_page);
+
+    // ---- Bundle cards ----
+    $bundle_payload = Pages::payload($wc_page);
+    $bundle_price = (float) $bundle_payload['offer']['price'];
+    $bundle_payload['offer']['tiers'] = [['qty' => 2, 'discount' => 50.0], ['qty' => 3, 'discount' => 100.0]];
+    $bundle_payload['sections'][] = Noksha\Pages\Sanitizer::section(['type' => 'bundles', 'props' => ['title' => 'Pick a pack', 'popular' => 2]]);
+    $bundle_html = Renderer::article($bundle_payload, false);
+    check(substr_count($bundle_html, 'data-bundle-qty=') === 3, 'bundle cards: one for 1 piece and one per step');
+    check(str_contains($bundle_html, Renderer::money($bundle_price * 2 - 50, 'en')) && str_contains($bundle_html, Renderer::money($bundle_price * 3 - 100, 'en')), 'each card shows the total after its discount');
+    check((bool) preg_match('/class="nk-bundle is-popular" data-bundle-qty="2"/', $bundle_html), 'the chosen card is marked most popular');
+    $bundle_payload['offer']['tiers'] = [];
+    check(!str_contains(Renderer::article($bundle_payload, false), 'nk-bundles') && str_contains(Renderer::article($bundle_payload, true), 'Bundle cards show the quantity discounts'), 'without steps: nothing on the live page, a reminder in the editor');
+
     // ---- Sales by product ----
     $by_product = Noksha\Analytics\Tracker::by_product(wp_date('Y-m-d 00:00:00', current_time('timestamp') - DAY_IN_SECONDS), 1000);
     $rows_by_key = array_column($by_product, null, 'key');

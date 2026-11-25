@@ -8,7 +8,7 @@
 namespace Noksha;
 
 final class Activator {
-    public const DB_VERSION = '10';
+    public const DB_VERSION = '11';
 
     /** @var array<string, int> Table suffix → minimum DB version that created it. */
     private const TABLE_SINCE = [
@@ -166,7 +166,7 @@ final class Activator {
         if ($found !== $orders) {
             return false;
         }
-        foreach (['otp_verified', 'variant', 'cod_settled', 'call_attempts', 'cod_short', 'wc_order_id', 'discount', 'coupon'] as $column) {
+        foreach (['otp_verified', 'variant', 'cod_settled', 'call_attempts', 'cod_short', 'wc_order_id', 'discount', 'coupon', 'extra'] as $column) {
             if (!$wpdb->get_var("SHOW COLUMNS FROM {$orders} LIKE '{$column}'")) {
                 return false;
             }
@@ -210,6 +210,7 @@ final class Activator {
             'last_call_at' => 'datetime NULL',
             'wc_order_id' => 'bigint(20) unsigned NOT NULL DEFAULT 0',
             'discount' => 'decimal(12,2) NOT NULL DEFAULT 0.00',
+            'extra' => 'longtext NULL',
             'coupon' => 'varchar(64) NOT NULL DEFAULT \'\'',
         ];
         foreach ($columns as $name => $definition) {
@@ -318,6 +319,7 @@ final class Activator {
             wc_order_id bigint(20) unsigned NOT NULL DEFAULT 0,
             discount decimal(12,2) NOT NULL DEFAULT 0.00,
             coupon varchar(64) NOT NULL DEFAULT '',
+            extra longtext NULL,
             customer_note text NULL,
             session_id varchar(64) NOT NULL DEFAULT '',
             language varchar(8) NOT NULL DEFAULT 'en',

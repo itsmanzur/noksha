@@ -102,6 +102,29 @@ final class Checkout {
             ? sanitize_textarea_field((string) ($input['note'] ?? ''))
             : '';
 
+        // Fields the page owner added: checked against the page's settings, kept with their labels.
+        $extra = [];
+        $custom_input = is_array($input['custom'] ?? null) ? $input['custom'] : [];
+        foreach ((array) ($doc['checkout']['customFields'] ?? []) as $custom) {
+            $raw = (string) ($custom_input[$custom['id']] ?? '');
+            $value = $custom['type'] === 'textarea' ? sanitize_textarea_field($raw) : sanitize_text_field($raw);
+            if ($custom['type'] === 'select' && $value !== '' && !in_array($value, (array) $custom['options'], true)) {
+                $value = '';
+            }
+            if ($custom['type'] === 'date' && $value !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                $value = '';
+            }
+            if (!empty($custom['required']) && $value === '') {
+                return new \WP_Error('noksha_required_field', sprintf(Catalog::line($lang, 'field_required'), $custom['label']), [
+                    'status' => 400,
+                    'field' => 'custom[' . $custom['id'] . ']',
+                ]);
+            }
+            if ($value !== '') {
+                $extra[] = ['label' => (string) $custom['label'], 'value' => noksha_clip($value, 500)];
+            }
+        }
+
         $method = sanitize_key((string) ($input['payment_method'] ?? ''));
         $available = (new Manager())->available($doc['checkout']['payments']);
         if (!in_array($method, $available, true)) {
@@ -289,6 +312,7 @@ final class Checkout {
             'attribution' => wp_json_encode($attribution),
             'event_id' => $event_id,
             'customer_note' => $note,
+            'extra' => $extra !== [] ? (string) wp_json_encode($extra) : '',
             'session_id' => $session,
             'language' => $lang,
         ], $items);

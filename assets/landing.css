@@ -1888,3 +1888,72 @@
   .nk-wa-float { padding: 12px; }
   .nk-wa-float span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+
+/* A section shown on phones only, or on larger screens only (same 768px line as the layout). */
+@media (min-width: 768px) {
+  .nk-only-mobile {
+    display: none !important;
+  }
+}
+@media (max-width: 767.98px) {
+  .nk-only-desktop {
+    display: none !important;
+  }
+}
+
+/* Bundle cards */
+.nk-bundle-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 10px;
+}
+.nk-bundle {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 18px 12px 14px;
+  border: 2px solid var(--noksha-color-border);
+  border-radius: var(--noksha-radius);
+  background: var(--noksha-color-card);
+  color: var(--noksha-color-text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.nk-bundle.is-active,
+.nk-bundle:focus-visible {
+  border-color: var(--noksha-color-brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--noksha-color-brand) 20%, transparent);
+  outline: none;
+}
+.nk-bundle[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.nk-bundle-badge {
+  position: absolute;
+  top: -11px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--noksha-color-brand);
+  color: var(--noksha-color-brand-foreground, #fff);
+  font-size: 0.75em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.nk-bundle-qty {
+  font-weight: 600;
+}
+.nk-bundle-pay {
+  font-size: 1.35em;
+}
+.nk-bundle-full {
+  color: var(--noksha-color-muted);
+  font-size: 0.9em;
+}
+.nk-bundle-save {
+  color: var(--noksha-color-success);
+  font-size: 0.85em;
+  font-weight: 600;
+}
