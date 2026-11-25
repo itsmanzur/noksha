@@ -35,6 +35,12 @@ test.describe('editor: WooCommerce product', () => {
     await expect(page.locator('.nk-wc-result', { hasText: 'E2E Addon' })).toBeVisible();
     await expect(page.locator('.nk-wc-result', { hasText: 'E2E Shirt' })).toHaveCount(1); // only in the main search
 
+    // A second, custom add-on, and room for a third.
+    await expect(page.locator('.nk-bump-edit')).toHaveCount(2);
+    await expect(page.getByText('Add-on 2')).toBeVisible();
+    await expect(page.locator('.nk-bump-edit').nth(1).locator('input[value="Gift wrap"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add another add-on' })).toBeVisible();
+
     // Order form tab: the coupon switch is on.
     await page.getByRole('tab', { name: 'Order form & payment' }).click();
     await expect(page.getByRole('switch', { name: 'Coupon field' })).toBeChecked();

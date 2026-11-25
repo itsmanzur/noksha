@@ -188,8 +188,13 @@ final class Renderer {
             'productName' => (string) ($offer['productName'] ?? ''),
             'variationId' => (int) ($offer['variationId'] ?? 0),
             'variations' => is_array($offer['wc']['variations'] ?? null) ? $offer['wc']['variations'] : [],
+            'stockHint' => [
+                'enabled' => !empty($offer['stockHint']) && WcProduct::is_wc_offer($offer),
+                'max' => (int) ($offer['stockHintMax'] ?? 10),
+            ],
+            'tiers' => is_array($offer['tiers'] ?? null) ? $offer['tiers'] : [],
             'maxQty' => WcProduct::max_qty($offer) !== null ? max(1, min(10, (int) WcProduct::max_qty($offer))) : 10,
-            'bump' => is_array($offer['bump'] ?? null) ? $offer['bump'] : ['enabled' => false],
+            'bumps' => is_array($offer['bumps'] ?? null) ? $offer['bumps'] : [],
             'variant' => (string) ($payload['variant'] ?? 'a'),
             'otpMode' => (string) (Options::settings()['sms']['otp_mode'] ?? 'risk'),
             'otpReady' => \Noksha\Notify\Otp::ready(),
@@ -219,6 +224,9 @@ final class Renderer {
                 'otpResend' => Catalog::line($lang, 'otp_resend'),
                 'bumpAdd' => Catalog::line($lang, 'bump_add'),
                 'couponApplied' => Catalog::line($lang, 'coupon_applied'),
+                'stockLeft' => Catalog::line($lang, 'stock_left'),
+                'tierLabel' => Catalog::line($lang, 'tier_label'),
+                'outOfStock' => Catalog::line($lang, 'out_of_stock'),
                 'couponInvalid' => Catalog::line($lang, 'coupon_invalid'),
                 'invalidPhone' => Catalog::line($lang, 'invalid_phone'),
                 'copy' => Catalog::line($lang, 'copy'),
@@ -445,11 +453,14 @@ final class Renderer {
         $sold_out = $wc !== null && empty($wc['available']);
         $button = $props['buttonLabel'] !== '' ? $props['buttonLabel'] : Catalog::line($lang, 'place_order');
 
-        $bump = is_array($offer['bump'] ?? null) ? $offer['bump'] : [];
         $bump_html = '';
-        if (!empty($bump['enabled']) && (float) ($bump['price'] ?? 0) > 0) {
+        $bumps = is_array($offer['bumps'] ?? null) ? $offer['bumps'] : [];
+        foreach ($bumps as $bump_index => $bump) {
+            if (empty($bump['enabled']) || (float) ($bump['price'] ?? 0) <= 0) {
+                continue;
+            }
             $checked = !empty($bump['checkedDefault']) ? ' checked' : '';
-            $bump_html = '<label class="nk-bump"><input type="checkbox" name="bump" form="nk-order" value="1"' . $checked . '>'
+            $bump_html .= '<label class="nk-bump"><input type="checkbox" name="bump" form="nk-order" value="1" data-bump-index="' . esc_attr((string) $bump_index) . '"' . $checked . '>'
                 . '<span><strong>' . esc_html((string) ($bump['name'] ?: Catalog::line($lang, 'bump_add'))) . '</strong>'
                 . '<em>+' . esc_html(self::money((float) $bump['price'], $lang)) . '</em></span></label>';
         }
@@ -520,6 +531,7 @@ final class Renderer {
 
         $summary = '<aside class="nk-summary"><h3>' . esc_html(Catalog::line($lang, 'summary')) . '</h3>'
             . '<p class="nk-summary-name">' . esc_html($offer['productName']) . '</p>'
+            . self::stock_hint($offer, $lang)
             . $variation_html
             . $sold_out_html
             . '<div class="nk-qty">'
@@ -529,11 +541,13 @@ final class Renderer {
             . '<input name="qty" form="nk-order" type="number" min="1" max="' . esc_attr((string) $qty_max) . '" value="1" inputmode="numeric">'
             . '<button type="button" class="nk-qty-btn" data-qty-inc aria-label="+">+</button>'
             . '</div></div>'
+            . self::tiers_html($offer, $lang, $qty_max)
             . $bump_html
             . $coupon_html
             . '<dl>'
             . '<div><dt>' . esc_html(Catalog::line($lang, 'subtotal')) . '</dt><dd data-subtotal>' . esc_html(self::money($price, $lang)) . '</dd></div>'
             . '<div><dt>' . esc_html(Catalog::line($lang, 'shipping')) . '</dt><dd data-shipping>' . esc_html(self::money($shipping, $lang)) . '</dd></div>'
+            . '<div class="nk-tier-row" data-tier-row hidden><dt>' . esc_html(Catalog::line($lang, 'tier_discount')) . '</dt><dd data-tier></dd></div>'
             . '<div class="nk-discount-row" data-discount-row hidden><dt>' . esc_html(Catalog::line($lang, 'discount')) . '</dt><dd data-discount></dd></div>'
             . '<div class="nk-total-row"><dt>' . esc_html(Catalog::line($lang, 'total')) . '</dt><dd data-total>' . esc_html(self::money($price + $shipping, $lang)) . '</dd></div>'
             . '</dl>'
@@ -694,6 +708,37 @@ final class Renderer {
         }
         $digits = abs($amount - round($amount)) < 0.001 ? 0 : 2;
         return '৳' . number_format($amount, $digits);
+    }
+
+    /**
+     * Quantity steps as buttons. landing.js rebuilds them from the live steps.
+     */
+    private static function tiers_html(array $offer, string $lang, int $qty_max): string {
+        $tiers = is_array($offer['tiers'] ?? null) ? $offer['tiers'] : [];
+        $buttons = '';
+        foreach ($tiers as $tier) {
+            $label = sprintf(Catalog::line($lang, 'tier_label'), (int) $tier['qty'], self::money((float) $tier['discount'], $lang));
+            $buttons .= '<button type="button" class="nk-tier" data-tier-qty="' . esc_attr((string) $tier['qty']) . '" aria-pressed="false"'
+                . ((int) $tier['qty'] > $qty_max ? ' disabled' : '') . '>' . esc_html($label) . '</button>';
+        }
+        return '<div class="nk-tiers" data-tiers role="group" aria-label="' . esc_attr(Catalog::line($lang, 'tiers_title')) . '"' . ($buttons === '' ? ' hidden' : '') . '>'
+            . '<p class="nk-tiers-title">' . esc_html(Catalog::line($lang, 'tiers_title')) . '</p>'
+            . '<div class="nk-tiers-row" data-tiers-row>' . $buttons . '</div></div>';
+    }
+
+    /**
+     * "Only 3 left in stock", from the product's real stock, when the page asks for it.
+     * The element is always there (hidden) so the browser can show it for another option.
+     */
+    private static function stock_hint(array $offer, string $lang): string {
+        if (empty($offer['stockHint']) || !WcProduct::is_wc_offer($offer)) {
+            return '';
+        }
+        $wc = is_array($offer['wc'] ?? null) ? $offer['wc'] : [];
+        $stock = $wc['stock'] ?? null;
+        $show = $stock !== null && empty($wc['backorders']) && (int) $stock > 0 && (int) $stock <= (int) ($offer['stockHintMax'] ?? 10);
+        $text = $show ? sprintf(Catalog::line($lang, 'stock_left'), (int) $stock) : '';
+        return '<p class="nk-stock-hint" data-stock-hint role="status"' . ($show ? '' : ' hidden') . '>' . esc_html($text) . '</p>';
     }
 
     /**

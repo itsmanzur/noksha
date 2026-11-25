@@ -32,7 +32,7 @@ final class WcCoupon {
      * @param array<string, mixed> $offer Resolved offer (WcProduct::apply).
      * @return array{discount:float,code:string}|\WP_Error
      */
-    public static function preview(array $offer, int $qty, bool $with_bump, string $code) {
+    public static function preview(array $offer, int $qty, $bumps, string $code) {
         $code = self::clean($code);
         if ($code === '' || !WcProduct::active()) {
             return new \WP_Error('noksha_coupon_invalid', '');
@@ -50,11 +50,12 @@ final class WcCoupon {
         $order = new \WC_Order();
         $line = (float) $offer['price'] * max(1, $qty);
         $order->add_product($product, max(1, $qty), ['subtotal' => $line, 'total' => $line]);
-        $bump = is_array($offer['bump'] ?? null) ? $offer['bump'] : [];
-        if ($with_bump && !empty($bump['enabled']) && (int) ($bump['productId'] ?? 0) > 0) {
-            $bump_product = wc_get_product((int) $bump['productId']);
+        // $bumps: chosen add-on indexes (older callers pass true for the first one).
+        $indexes = is_array($bumps) ? $bumps : ($bumps ? [0] : []);
+        foreach (\Noksha\Orders\Pricing::chosen_bumps($offer, ['bumps' => $indexes]) as $bump) {
+            $bump_product = $bump['productId'] > 0 ? wc_get_product($bump['productId']) : null;
             if ($bump_product) {
-                $order->add_product($bump_product, 1, ['subtotal' => (float) $bump['price'], 'total' => (float) $bump['price']]);
+                $order->add_product($bump_product, 1, ['subtotal' => $bump['price'], 'total' => $bump['price']]);
             }
         }
 

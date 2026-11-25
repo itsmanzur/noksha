@@ -389,9 +389,9 @@ export function OrderDetail({ t, locale, go, orderId, variant = 'page', onClose,
 						</Button>
 					</div>
 				) : null}
-				{detail.coupon ? (
+				{detail.discount > 0 ? (
 					<p className="nk-muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-						<strong>{t('orders.coupon')}:</strong> {detail.coupon} (−{money(detail.discount)})
+						<strong>{t('orders.discount')}:</strong> −{money(detail.discount)}{detail.coupon ? ' · ' + t('orders.coupon') + ' ' + detail.coupon : ''}
 					</p>
 				) : null}
 				{detail.wcOrderId > 0 ? (

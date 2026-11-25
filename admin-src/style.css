@@ -1784,3 +1784,31 @@ a.nk-btn-ghost {
 .nk-suggest-row .nk-btn {
   flex: none;
 }
+
+/* Quantity steps editor */
+.nk-tier-edit {
+  display: grid;
+  grid-template-columns: 90px 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+.nk-tier-edit .nk-help {
+  grid-column: 1 / -1;
+  margin-top: -4px;
+}
+
+/* Several add-ons */
+.nk-bump-edit {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--noksha-color-border);
+}
+.nk-bump-edit:first-of-type {
+  border-top: 0;
+}
+.nk-bump-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

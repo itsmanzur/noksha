@@ -1312,6 +1312,75 @@ function WcSuggestions({ t, page, onPatchSection }) {
   );
 }
 
+/**
+ * One paid add-on beside the order summary. A page can have up to three.
+ */
+function BumpFields({ t, index, bump, isWc, onChange, onRemove }) {
+  const bumpIsWc = isWc && bump.source === 'woocommerce';
+  return (
+    <div className="nk-bump-edit">
+      {index > 0 || onRemove ? (
+        <div className="nk-bump-edit-head">
+          <strong>{t('offer.bumpNumber').replace('{n}', String(index + 1))}</strong>
+          {onRemove ? <IconButton icon="trash" label={t('offer.bumpRemove')} onClick={onRemove} /> : null}
+        </div>
+      ) : null}
+      <Switch
+        checked={Boolean(bump.enabled)}
+        label={t('offer.bumpEnable')}
+        onChange={(enabled) => onChange({ ...bump, enabled })}
+      />
+      {bump.enabled ? (
+        <>
+          {isWc ? (
+            <fieldset className="nk-source">
+              <legend>{t('offer.source')}</legend>
+              <label>
+                <input type="radio" name={'nk-bump-source-' + index} checked={!bumpIsWc} onChange={() => onChange({ ...bump, source: 'custom', productId: 0 })} />
+                {' '}{t('offer.sourceCustom')}
+              </label>
+              <label>
+                <input type="radio" name={'nk-bump-source-' + index} checked={bumpIsWc} onChange={() => onChange({ ...bump, source: 'woocommerce' })} />
+                {' '}{t('offer.sourceWc')}
+              </label>
+            </fieldset>
+          ) : null}
+          {bumpIsWc ? (
+            <div className="nk-wc-picker">
+              {bump.productId > 0 ? (
+                <div className="nk-wc-selected">
+                  {bump.imageUrl ? <img src={bump.imageUrl} alt="" width="56" height="56" /> : null}
+                  <div>
+                    <strong>{bump.name || '#' + bump.productId}</strong>
+                    <div className="nk-muted">{money(bump.price || 0)}</div>
+                  </div>
+                </div>
+              ) : <p className="nk-muted">{t('offer.wcPick')}</p>}
+              <p className="nk-help">{t('offer.bumpWcHelp')}</p>
+              <WcSearchList
+                t={t}
+                simpleOnly
+                selectedId={bump.productId}
+                onPick={(product) => onChange({ ...bump, source: 'woocommerce', productId: product.id, name: product.name, price: product.price, imageUrl: product.imageUrl || '' })}
+              />
+            </div>
+          ) : (
+            <>
+              <TextField label={t('offer.bumpName')} value={bump.name || ''} maxLength={120} onChange={(name) => onChange({ ...bump, name })} />
+              <MoneyField label={t('offer.bumpPrice')} value={bump.price || 0} onChange={(value) => onChange({ ...bump, price: value })} />
+            </>
+          )}
+          <Switch
+            checked={Boolean(bump.checkedDefault)}
+            label={t('offer.bumpDefault')}
+            onChange={(checkedDefault) => onChange({ ...bump, checkedDefault })}
+          />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function OfferFields({ t, offer, onChange, afterProduct }) {
   const price = Number(offer.price) || 0;
   const compare = Number(offer.compareAt) || 0;
@@ -1335,7 +1404,15 @@ function OfferFields({ t, offer, onChange, afterProduct }) {
     });
   }
   const isWc = offer.source === 'woocommerce';
-  const bumpIsWc = isWc && offer.bump?.source === 'woocommerce';
+  const tiers = Array.isArray(offer.tiers) ? offer.tiers : [];
+  function setTier(index, partial) {
+    onChange({ ...offer, tiers: tiers.map((tier, i) => (i === index ? { ...tier, ...partial } : tier)) });
+  }
+  // Add-ons: a list (up to 3). Older pages have one in offer.bump.
+  const bumps = Array.isArray(offer.bumps) && offer.bumps.length ? offer.bumps : [offer.bump || { enabled: false }];
+  function setBumps(list) {
+    onChange({ ...offer, bumps: list, bump: list[0] });
+  }
   return (
     <div className="nk-form-stack">
       <fieldset className="nk-source">
@@ -1353,6 +1430,14 @@ function OfferFields({ t, offer, onChange, afterProduct }) {
         <>
           <WcProductPicker t={t} offer={offer} onChange={onChange} />
           <Switch checked={offer.gallery !== false} label={t('offer.gallery')} onChange={(gallery) => onChange({ ...offer, gallery })} />
+          <Switch checked={Boolean(offer.stockHint)} label={t('offer.stockHint')} onChange={(stockHint) => onChange({ ...offer, stockHint })} />
+          {offer.stockHint ? (
+            <label className="nk-field">
+              <span>{t('offer.stockHintMax')}</span>
+              <input type="number" min="1" max="50" value={offer.stockHintMax || 10} onChange={(event) => onChange({ ...offer, stockHintMax: Math.max(1, Math.min(50, Number(event.target.value) || 10)) })} />
+            </label>
+          ) : null}
+          <p className="nk-help">{t('offer.stockHintHelp')}</p>
           {afterProduct}
         </>
       ) : (
@@ -1364,6 +1449,26 @@ function OfferFields({ t, offer, onChange, afterProduct }) {
           </div>
         </>
       )}
+      <div className="nk-ed-group">
+        <h3 className="nk-group-title">{t('offer.tiersTitle')}</h3>
+        <p className="nk-muted">{t('offer.tiersHelp')}</p>
+        {tiers.map((tier, index) => (
+          <div className="nk-tier-edit" key={index}>
+            <label className="nk-field">
+              <span>{t('offer.tierQty')}</span>
+              <input type="number" min="2" max="10" value={tier.qty} onChange={(event) => setTier(index, { qty: Math.max(2, Math.min(10, Number(event.target.value) || 2)) })} />
+            </label>
+            <MoneyField label={t('offer.tierDiscount')} value={tier.discount} onChange={(value) => setTier(index, { discount: value })} />
+            <IconButton icon="trash" label={t('offer.tierRemove')} onClick={() => onChange({ ...offer, tiers: tiers.filter((_, i) => i !== index) })} />
+            <small className="nk-help">{t('offer.tierPays').replace('{n}', String(tier.qty)).replace('{total}', money(Math.max(0, price * tier.qty - (Number(tier.discount) || 0))))}</small>
+          </div>
+        ))}
+        {tiers.length < 4 ? (
+          <button type="button" className="nk-add-row" onClick={() => onChange({ ...offer, tiers: tiers.concat({ qty: Math.min(10, (tiers.length ? Number(tiers[tiers.length - 1].qty) : 1) + 1), discount: 0 }) })}>
+            <Icon name="plus" size={16} /> {t('offer.tierAdd')}
+          </button>
+        ) : null}
+      </div>
       <div className="nk-two">
         <MoneyField label={t('offer.shippingInside')} help={t('offer.shippingInsideHelp')} value={inside} onChange={(value) => setShipping({ shippingInside: value })} />
         <MoneyField label={t('offer.shippingOutside')} help={t('offer.shippingOutsideHelp')} value={outside} onChange={(value) => setShipping({ shippingOutside: value })} />
@@ -1384,57 +1489,21 @@ function OfferFields({ t, offer, onChange, afterProduct }) {
       <div className="nk-ed-group">
         <h3 className="nk-group-title">{t('offer.bumpTitle')}</h3>
         <p className="nk-muted">{t('offer.bumpHelp')}</p>
-        <Switch
-          checked={Boolean(offer.bump?.enabled)}
-          label={t('offer.bumpEnable')}
-          onChange={(enabled) => onChange({ ...offer, bump: { ...(offer.bump || {}), enabled } })}
-        />
-        {offer.bump?.enabled ? (
-          <>
-            {isWc ? (
-              <fieldset className="nk-source">
-                <legend>{t('offer.source')}</legend>
-                <label>
-                  <input type="radio" name="nk-bump-source" checked={!bumpIsWc} onChange={() => onChange({ ...offer, bump: { ...(offer.bump || {}), source: 'custom', productId: 0 } })} />
-                  {' '}{t('offer.sourceCustom')}
-                </label>
-                <label>
-                  <input type="radio" name="nk-bump-source" checked={bumpIsWc} onChange={() => onChange({ ...offer, bump: { ...(offer.bump || {}), source: 'woocommerce' } })} />
-                  {' '}{t('offer.sourceWc')}
-                </label>
-              </fieldset>
-            ) : null}
-            {bumpIsWc ? (
-              <div className="nk-wc-picker">
-                {offer.bump?.productId > 0 ? (
-                  <div className="nk-wc-selected">
-                    {offer.bump?.imageUrl ? <img src={offer.bump.imageUrl} alt="" width="56" height="56" /> : null}
-                    <div>
-                      <strong>{offer.bump?.name || '#' + offer.bump.productId}</strong>
-                      <div className="nk-muted">{money(offer.bump?.price || 0)}</div>
-                    </div>
-                  </div>
-                ) : <p className="nk-muted">{t('offer.wcPick')}</p>}
-                <p className="nk-help">{t('offer.bumpWcHelp')}</p>
-                <WcSearchList
-                  t={t}
-                  simpleOnly
-                  selectedId={offer.bump?.productId}
-                  onPick={(product) => onChange({ ...offer, bump: { ...(offer.bump || {}), source: 'woocommerce', productId: product.id, name: product.name, price: product.price, imageUrl: product.imageUrl || '' } })}
-                />
-              </div>
-            ) : (
-              <>
-                <TextField label={t('offer.bumpName')} value={offer.bump?.name || ''} maxLength={120} onChange={(name) => onChange({ ...offer, bump: { ...(offer.bump || {}), name } })} />
-                <MoneyField label={t('offer.bumpPrice')} value={offer.bump?.price || 0} onChange={(value) => onChange({ ...offer, bump: { ...(offer.bump || {}), price: value } })} />
-              </>
-            )}
-            <Switch
-              checked={Boolean(offer.bump?.checkedDefault)}
-              label={t('offer.bumpDefault')}
-              onChange={(checkedDefault) => onChange({ ...offer, bump: { ...(offer.bump || {}), checkedDefault } })}
-            />
-          </>
+        {bumps.map((bump, index) => (
+          <BumpFields
+            key={index}
+            t={t}
+            index={index}
+            bump={bump}
+            isWc={isWc}
+            onChange={(next) => setBumps(bumps.map((item, i) => (i === index ? next : item)))}
+            onRemove={bumps.length > 1 ? () => setBumps(bumps.filter((_, i) => i !== index)) : null}
+          />
+        ))}
+        {bumps.length < 3 && bumps.every((item) => item.enabled) ? (
+          <button type="button" className="nk-add-row" onClick={() => setBumps(bumps.concat({ enabled: true, source: 'custom', productId: 0, name: '', price: 0, imageUrl: '', checkedDefault: false }))}>
+            <Icon name="plus" size={16} /> {t('offer.bumpAdd')}
+          </button>
         ) : null}
       </div>
     </div>

@@ -401,8 +401,15 @@
   var phoneInput = form.querySelector('[name="phone"]');
   var nameInput = form.querySelector('[name="name"]');
   var qty = landing.querySelector('[name="qty"]');
-  // The add-on box is in the order summary, beside the form, not inside it.
-  var bumpInput = landing.querySelector('[name="bump"]');
+  // The add-on boxes are in the order summary, beside the form, not inside it.
+  var bumpInputs = Array.prototype.slice.call(landing.querySelectorAll('[name="bump"]'));
+  var bumpInput = bumpInputs[0] || null;
+
+  function chosenBumps() {
+    return bumpInputs.filter(function (input) { return input.checked; }).map(function (input) {
+      return Number(input.getAttribute('data-bump-index')) || 0;
+    });
+  }
 
   var division = form.querySelector('[data-geo="division"]');
   var district = form.querySelector('[data-geo="district"]');
@@ -551,7 +558,7 @@
       code: code,
       qty: Number(qty && qty.value) || 1,
       variation_id: variationSelect ? Number(variationSelect.value) || 0 : 0,
-      bump: bumpInput && bumpInput.checked ? 1 : 0
+      bumps: chosenBumps()
     }).then(function (result) {
       couponDiscount = Number(result.discount) || 0;
       couponApplied = result.code || code;
@@ -638,6 +645,7 @@
     if (qty) {
       qty.max = String(cfg.maxQty);
     }
+    renderStockHint(chosen.stock);
     landing.querySelectorAll('.nk-price-now').forEach(function (el) {
       el.textContent = money(cfg.price);
     });
@@ -672,11 +680,163 @@
     variationSelect.addEventListener('change', refreshCoupon);
   }
 
-  function bumpPrice() {
-    if (!bumpInput || !bumpInput.checked || !cfg.bump || !cfg.bump.enabled) {
-      return 0;
+  function renderStockHint(stock) {
+    var hint = landing.querySelector('[data-stock-hint]');
+    if (!hint || !cfg.stockHint || !cfg.stockHint.enabled) {
+      return;
     }
-    return Number(cfg.bump.price || 0) || 0;
+    var left = stock == null ? 0 : Number(stock);
+    var show = left > 0 && left <= Number(cfg.stockHint.max || 10);
+    hint.hidden = !show;
+    hint.textContent = show ? String(strings.stockLeft || '%d left').replace('%d', String(left)) : '';
+  }
+
+  function setPriceText(price, regular) {
+    landing.querySelectorAll('.nk-price-now').forEach(function (el) {
+      el.textContent = money(price);
+    });
+    landing.querySelectorAll('.nk-price-was').forEach(function (el) {
+      el.textContent = regular > price ? money(regular) : '';
+    });
+    var sticky = landing.querySelector('.nk-sticky-cta-price');
+    if (sticky) {
+      sticky.textContent = money(price);
+    }
+  }
+
+  // A page cache may have served old HTML. Ask once for the live price and stock.
+  function refreshLive() {
+    if (cfg.preview || !cfg.pageId || !window.fetch) {
+      return;
+    }
+    window.fetch(cfg.root + 'live?page_id=' + encodeURIComponent(cfg.pageId) + '&_=' + Date.now(), { credentials: 'same-origin' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (live) {
+        if (live && Array.isArray(live.tiers)) {
+          cfg.tiers = live.tiers;
+          renderTiers();
+          updateTotals();
+        }
+        if (!live || live.source !== 'woocommerce') {
+          return;
+        }
+        if (Array.isArray(live.bumps) && Array.isArray(cfg.bumps)) {
+          live.bumps.forEach(function (row, index) {
+            if (cfg.bumps[index]) {
+              cfg.bumps[index].enabled = Boolean(row.enabled);
+              cfg.bumps[index].price = Number(row.price) || 0;
+            }
+          });
+        }
+        if (variationSelect && Array.isArray(live.variations) && live.variations.length) {
+          cfg.variations = live.variations.map(function (row) {
+            var old = null;
+            (cfg.variations || []).forEach(function (item) {
+              if (Number(item.id) === Number(row.id)) {
+                old = item;
+              }
+            });
+            return Object.assign({}, old || {}, row);
+          });
+          Array.prototype.forEach.call(variationSelect.options, function (option) {
+            cfg.variations.forEach(function (row) {
+              if (Number(row.id) === Number(option.value)) {
+                option.disabled = !row.inStock;
+              }
+            });
+          });
+          applyVariation();
+        } else {
+          cfg.price = Number(live.price) || cfg.price;
+          cfg.maxQty = live.stock == null || live.backorders ? 10 : Math.max(1, Math.min(10, Number(live.stock)));
+          if (qty) {
+            qty.max = String(cfg.maxQty);
+          }
+          setPriceText(cfg.price, Number(live.compareAt) || 0);
+          renderStockHint(live.backorders ? null : live.stock);
+          updateTotals();
+        }
+        if (!live.available) {
+          var submit = form.querySelector('[type="submit"]');
+          if (submit) {
+            submit.disabled = true;
+          }
+          showFormError(strings.outOfStock || 'Out of stock', '');
+        }
+      })
+      .catch(function () {});
+  }
+
+  /* ---- Quantity steps: "buy 2 or more, save 50" ---- */
+
+  // The largest step the quantity reaches (steps come smallest first).
+  function tierDiscount(count) {
+    var best = 0;
+    (cfg.tiers || []).forEach(function (tier) {
+      if (count >= Number(tier.qty)) {
+        best = Number(tier.discount) || 0;
+      }
+    });
+    return best;
+  }
+
+  function markTiers(count) {
+    var applied = 0;
+    (cfg.tiers || []).forEach(function (tier) {
+      if (count >= Number(tier.qty)) {
+        applied = Number(tier.qty);
+      }
+    });
+    landing.querySelectorAll('[data-tier-qty]').forEach(function (button) {
+      var on = Number(button.getAttribute('data-tier-qty')) === applied;
+      button.classList.toggle('is-active', on);
+      button.setAttribute('aria-pressed', on ? 'true' : 'false');
+      button.disabled = Number(button.getAttribute('data-tier-qty')) > maxQty();
+    });
+  }
+
+  function renderTiers() {
+    var box = landing.querySelector('[data-tiers]');
+    var row = landing.querySelector('[data-tiers-row]');
+    if (!box || !row) {
+      return;
+    }
+    while (row.firstChild) {
+      row.removeChild(row.firstChild);
+    }
+    (cfg.tiers || []).forEach(function (tier) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'nk-tier';
+      button.setAttribute('data-tier-qty', String(tier.qty));
+      button.textContent = String(strings.tierLabel || '%1$d · %2$s')
+        .replace('%1$d', String(tier.qty))
+        .replace('%2$s', money(Number(tier.discount) || 0));
+      row.appendChild(button);
+    });
+    box.hidden = !(cfg.tiers || []).length;
+    bindTiers();
+  }
+
+  function bindTiers() {
+    landing.querySelectorAll('[data-tier-qty]').forEach(function (button) {
+      if (button.getAttribute('data-bound')) {
+        return;
+      }
+      button.setAttribute('data-bound', '1');
+      button.addEventListener('click', function () {
+        setQty(Number(button.getAttribute('data-tier-qty')));
+        refreshCoupon();
+      });
+    });
+  }
+
+  function bumpPrice() {
+    var list = cfg.bumps || [];
+    return chosenBumps().reduce(function (sum, index) {
+      var bump = list[index];
+      return sum + (bump && bump.enabled ? Number(bump.price) || 0 : 0);
+    }, 0);
   }
 
   function updateTotals() {
@@ -684,9 +844,18 @@
     if (qty) {
       qty.value = String(count);
     }
-    var sub = (Number(cfg.price || 0) * count) + bumpPrice();
+    var lines = Number(cfg.price || 0) * count;
+    var sub = lines + bumpPrice();
     var shipping = currentShipping();
-    var discount = Math.min(couponDiscount, sub);
+    var tier = Math.min(tierDiscount(count), lines);
+    var discount = Math.min(couponDiscount, sub - tier);
+    var tierRow = landing.querySelector('[data-tier-row]');
+    var tierEl = landing.querySelector('[data-tier]');
+    if (tierRow && tierEl) {
+      tierRow.hidden = tier <= 0;
+      tierEl.textContent = '−' + money(tier);
+    }
+    markTiers(count);
     var subEl = landing.querySelector('[data-subtotal]');
     var shipEl = landing.querySelector('[data-shipping]');
     var totalEl = landing.querySelector('[data-total]');
@@ -703,7 +872,7 @@
       discountEl.textContent = '−' + money(discount);
     }
     if (totalEl) {
-      totalEl.textContent = money(sub - discount + shipping);
+      totalEl.textContent = money(sub - tier - discount + shipping);
       totalEl.classList.add('nk-total-pop');
       window.setTimeout(function () { totalEl.classList.remove('nk-total-pop'); }, 320);
     }
@@ -940,11 +1109,13 @@
     qty.addEventListener('input', refreshCoupon);
     qty.addEventListener('change', refreshCoupon);
   }
-  if (bumpInput) {
-    bumpInput.addEventListener('change', updateTotals);
-    bumpInput.addEventListener('change', refreshCoupon);
-  }
+  bumpInputs.forEach(function (input) {
+    input.addEventListener('change', updateTotals);
+    input.addEventListener('change', refreshCoupon);
+  });
+  bindTiers();
   updateTotals();
+  refreshLive();
 
   /* ---- Phone validation ---- */
 
@@ -1369,11 +1540,12 @@
       event_id: purchaseEventId,
       attribution: attribution,
       variant: cfg.variant || '',
-      bump: bumpInput && bumpInput.checked ? 1 : 0,
+      bumps: chosenBumps(),
       variation_id: variationSelect ? Number(variationSelect.value) || 0 : 0,
       coupon: couponInput ? couponInput.value.trim() : '',
       expected_price: Number(cfg.price) || 0,
-      expected_bump_price: bumpInput && bumpInput.checked && cfg.bump ? Number(cfg.bump.price) || 0 : 0,
+      expected_tier_discount: tierDiscount(Number(data.get('qty') || 1)),
+      expected_bumps_total: bumpPrice(),
       otp_code: data.get('otp_code') || '',
       name: data.get('name') || '',
       phone: data.get('phone') || '',
@@ -1420,12 +1592,20 @@
       if (code === 'noksha_price_changed' && payload.data) {
         // The page was out of date. Show the new total so the buyer can confirm it.
         cfg.price = Number(payload.data.price) || cfg.price;
-        if (cfg.bump && payload.data.bump_price) {
-          cfg.bump.price = Number(payload.data.bump_price);
+        if (Array.isArray(payload.data.bump_prices) && Array.isArray(cfg.bumps)) {
+          payload.data.bump_prices.forEach(function (price, index) {
+            if (cfg.bumps[index]) {
+              cfg.bumps[index].price = Number(price) || 0;
+            }
+          });
         }
         landing.querySelectorAll('.nk-price-now').forEach(function (el) {
           el.textContent = money(cfg.price);
         });
+        if (Array.isArray(payload.data.tiers)) {
+          cfg.tiers = payload.data.tiers;
+          renderTiers();
+        }
         updateTotals();
       }
       var field = errorCodeToField(code);

@@ -41,7 +41,7 @@ final class Sanitizer {
         }
 
         $offer = array_key_exists('offer', $input)
-            ? self::offer(is_array($input['offer']) ? $input['offer'] : [])
+            ? self::offer(is_array($input['offer']) ? $input['offer'] : [], is_array($fallback['offer'] ?? null) ? $fallback['offer'] : null)
             : (is_array($fallback['offer'] ?? null) ? $fallback['offer'] : self::offer([]));
         $checkout = array_key_exists('checkout', $input)
             ? self::checkout(is_array($input['checkout']) ? $input['checkout'] : [])
@@ -136,40 +136,104 @@ final class Sanitizer {
         ];
     }
 
-    public static function offer(array $offer): array {
+    /**
+     * Whether two add-ons are the same choice. A store product's name and price are
+     * read live, so only what the page owner picks is compared.
+     */
+    private static function same_bump(array $a, array $b): bool {
+        $key = static function (array $bump): array {
+            $custom = $bump['source'] !== 'woocommerce';
+            return [
+                (bool) $bump['enabled'],
+                $bump['source'],
+                (int) $bump['productId'],
+                (bool) $bump['checkedDefault'],
+                $custom ? $bump['name'] : '',
+                $custom ? (float) $bump['price'] : 0.0,
+            ];
+        };
+        return $key($a) === $key($b);
+    }
+
+    /**
+     * One add-on. A store product only when the main product is one too.
+     *
+     * @return array<string, mixed>
+     */
+    private static function bump(array $bump, string $source): array {
+        $is_wc = $source === 'woocommerce' && ($bump['source'] ?? '') === 'woocommerce' && (int) ($bump['productId'] ?? 0) > 0;
+        return [
+            'source' => $is_wc ? 'woocommerce' : 'custom',
+            'productId' => $is_wc ? max(0, (int) $bump['productId']) : 0,
+            'enabled' => !empty($bump['enabled']),
+            'name' => self::short($bump['name'] ?? '', 120),
+            'price' => self::money($bump['price'] ?? 0),
+            'imageUrl' => self::url($bump['imageUrl'] ?? ''),
+            'checkedDefault' => !empty($bump['checkedDefault']),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $stored The page's saved offer, to tell which add-on field a client changed.
+     */
+    public static function offer(array $offer, ?array $stored = null): array {
         $outside = self::money($offer['shippingOutside'] ?? $offer['shipping'] ?? 0);
         $inside = array_key_exists('shippingInside', $offer)
             ? self::money($offer['shippingInside'])
             : $outside;
         $default_shipping = self::money($offer['shippingDefault'] ?? $outside);
         $zones = self::shipping_zones($offer, $inside, $outside, $default_shipping);
-        $bump = is_array($offer['bump'] ?? null) ? $offer['bump'] : [];
+        $raw_bumps = is_array($offer['bumps'] ?? null) && $offer['bumps'] !== []
+            ? $offer['bumps']
+            : (is_array($offer['bump'] ?? null) ? [$offer['bump']] : []);
         $product_id = max(0, (int) ($offer['productId'] ?? 0));
         $source = ($offer['source'] ?? '') === 'woocommerce' && $product_id > 0 ? 'woocommerce' : 'custom';
+        $bumps = [];
+        foreach (array_slice($raw_bumps, 0, 3) as $raw) {
+            if (is_array($raw)) {
+                $bumps[] = self::bump($raw, $source);
+            }
+        }
+        // An older client edits only 'bump' and sends back the 'bumps' it read; a newer one
+        // edits 'bumps' and may send back the old 'bump'. Compared with the saved page, the
+        // field that changed is the one the client meant.
+        if (is_array($offer['bump'] ?? null) && is_array($offer['bumps'] ?? null)) {
+            $legacy = self::bump($offer['bump'], $source);
+            if ($bumps === []) {
+                $bumps = [$legacy];
+            } elseif ($stored !== null) {
+                $saved_list = is_array($stored['bumps'] ?? null) && $stored['bumps'] !== []
+                    ? $stored['bumps']
+                    : (is_array($stored['bump'] ?? null) ? [$stored['bump']] : []);
+                $saved_first = isset($saved_list[0]) && is_array($saved_list[0]) ? self::bump($saved_list[0], $source) : self::bump([], $source);
+                if (self::same_bump($legacy, $saved_first) === false && self::same_bump($bumps[0], $saved_first)) {
+                    $bumps[0] = $legacy;
+                }
+            }
+        }
         return [
             // Show the product's gallery under the main image (store products with several images).
             'gallery' => !array_key_exists('gallery', $offer) || !empty($offer['gallery']),
+            // "Only 3 left", from the real stock, when it is at or below this number.
+            'stockHint' => !empty($offer['stockHint']),
+            'stockHintMax' => max(1, min(50, (int) ($offer['stockHintMax'] ?? 10))),
             'source' => $source,
             'productId' => $source === 'woocommerce' ? $product_id : 0,
             'variationId' => $source === 'woocommerce' ? max(0, (int) ($offer['variationId'] ?? 0)) : 0,
             'productName' => self::short($offer['productName'] ?? '', 180),
             'price' => self::money($offer['price'] ?? 0),
             'compareAt' => self::money($offer['compareAt'] ?? 0),
+            // Quantity discounts: "buy 2 or more, save 50".
+            'tiers' => \Noksha\Orders\Pricing::clean_tiers($offer['tiers'] ?? []),
             'shipping' => $default_shipping,
             'shippingDefault' => $default_shipping,
             'shippingInside' => $inside,
             'shippingOutside' => $outside,
             'shippingZones' => $zones,
             'imageUrl' => self::url($offer['imageUrl'] ?? ''),
-            'bump' => [
-                'source' => $source === 'woocommerce' && ($bump['source'] ?? '') === 'woocommerce' && (int) ($bump['productId'] ?? 0) > 0 ? 'woocommerce' : 'custom',
-                'productId' => $source === 'woocommerce' && ($bump['source'] ?? '') === 'woocommerce' ? max(0, (int) ($bump['productId'] ?? 0)) : 0,
-                'enabled' => !empty($bump['enabled']),
-                'name' => self::short($bump['name'] ?? '', 120),
-                'price' => self::money($bump['price'] ?? 0),
-                'imageUrl' => self::url($bump['imageUrl'] ?? ''),
-                'checkedDefault' => !empty($bump['checkedDefault']),
-            ],
+            // Add-ons beside the order summary (up to 3); 'bump' stays as the first, for older readers.
+            'bumps' => $bumps,
+            'bump' => $bumps[0] ?? self::bump([], 'custom'),
         ];
     }
 

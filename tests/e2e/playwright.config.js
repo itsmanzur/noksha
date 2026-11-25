@@ -14,6 +14,8 @@ module.exports = defineConfig({
   testDir: '.',
   testMatch: '*.spec.js',
   timeout: 60000,
+  // A local site with many plugins can take several seconds per request.
+  expect: { timeout: 15000 },
   workers: 1,
   retries: 0,
   reporter: [['list']],

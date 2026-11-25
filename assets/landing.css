@@ -1264,3 +1264,46 @@
   font-size: 0.8em;
   font-weight: 600;
 }
+
+/* Low-stock line (real stock only) */
+.nk-stock-hint {
+  margin: 4px 0 8px;
+  color: var(--noksha-color-danger);
+  font-weight: 600;
+}
+
+/* Quantity steps */
+.nk-tiers {
+  margin: 10px 0;
+}
+.nk-tiers-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.nk-tiers-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.nk-tier {
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: 999px;
+  background: var(--noksha-color-card);
+  color: var(--noksha-color-text);
+  font: inherit;
+  cursor: pointer;
+}
+.nk-tier.is-active {
+  border-color: var(--noksha-color-brand);
+  background: color-mix(in srgb, var(--noksha-color-brand) 12%, var(--noksha-color-card));
+  font-weight: 600;
+}
+.nk-tier[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.nk-tier-row dd {
+  color: var(--noksha-color-success);
+}

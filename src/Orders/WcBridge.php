@@ -108,11 +108,11 @@ final class WcBridge {
      *
      * @param array<string, mixed>      $row   Noksha order row (already inserted).
      * @param array<string, mixed>      $offer Resolved offer (WcProduct::apply).
-     * @param array{name:string,price:float}|null $bump Paid add-on, if chosen.
+     * @param list<array{name:string,price:float,productId:int}> $bumps Paid add-ons chosen.
      * @param string                    $coupon WooCommerce coupon code, or ''.
      * @return array{id:int,discount:float,total:float}|\WP_Error
      */
-    public static function create(array $row, array $offer, int $qty, ?array $bump, string $method, string $coupon = '') {
+    public static function create(array $row, array $offer, int $qty, array $bumps, string $method, string $coupon = '', float $tier = 0.0) {
         if (!WcProduct::active()) {
             return new \WP_Error('noksha_wc_inactive', 'WooCommerce is not active.');
         }
@@ -137,16 +137,18 @@ final class WcBridge {
             $line = (float) $offer['price'] * $qty;
             $order->add_product($product, $qty, ['subtotal' => $line, 'total' => $line]);
 
-            $bump_product = $bump !== null && (int) ($bump['productId'] ?? 0) > 0 ? wc_get_product((int) $bump['productId']) : null;
-            if ($bump !== null && $bump_product) {
+            foreach ($bumps as $bump) {
+            $bump_product = (int) ($bump['productId'] ?? 0) > 0 ? wc_get_product((int) $bump['productId']) : null;
+            if ($bump_product) {
                 $order->add_product($bump_product, 1, ['subtotal' => (float) $bump['price'], 'total' => (float) $bump['price']]);
-            } elseif ($bump !== null && (float) $bump['price'] > 0) {
+            } elseif ((float) $bump['price'] > 0) {
                 $fee = new \WC_Order_Item_Fee();
                 $fee->set_name((string) $bump['name']);
                 $fee->set_amount((float) $bump['price']);
                 $fee->set_total((float) $bump['price']);
                 $fee->set_tax_status('none');
                 $order->add_item($fee);
+            }
             }
 
             $shipping = (float) ($row['shipping'] ?? 0);
@@ -155,6 +157,15 @@ final class WcBridge {
             $ship_item->set_method_id('noksha_delivery');
             $ship_item->set_total($shipping);
             $order->add_item($ship_item);
+
+            if ($tier > 0) {
+                $saving = new \WC_Order_Item_Fee();
+                $saving->set_name(__('Quantity discount', 'noksha'));
+                $saving->set_amount(-$tier);
+                $saving->set_total(-$tier);
+                $saving->set_tax_status('none');
+                $order->add_item($saving);
+            }
 
             $address = self::address($row);
             $order->set_address($address, 'billing');

@@ -42,9 +42,20 @@ final class WcProduct {
      * Name, price and image are read live; a bump that cannot be bought is hidden.
      */
     private static function apply_bump(array $offer): array {
-        $bump = is_array($offer['bump'] ?? null) ? $offer['bump'] : null;
-        if ($bump === null || ($bump['source'] ?? self::SOURCE_CUSTOM) !== self::SOURCE_WC) {
-            return $offer;
+        $list = is_array($offer['bumps'] ?? null) ? $offer['bumps'] : (is_array($offer['bump'] ?? null) ? [$offer['bump']] : []);
+        foreach ($list as $i => $one) {
+            $list[$i] = is_array($one) ? self::apply_one_bump($offer, $one) : $one;
+        }
+        $offer['bumps'] = $list;
+        if ($list !== []) {
+            $offer['bump'] = $list[0];
+        }
+        return $offer;
+    }
+
+    private static function apply_one_bump(array $offer, array $bump): array {
+        if (($bump['source'] ?? self::SOURCE_CUSTOM) !== self::SOURCE_WC) {
+            return $bump;
         }
         $available = false;
         $product_id = (int) ($bump['productId'] ?? 0);
@@ -64,8 +75,7 @@ final class WcProduct {
         if (!$available) {
             $bump['enabled'] = false;
         }
-        $offer['bump'] = $bump;
-        return $offer;
+        return $bump;
     }
 
     private static function apply_main(array $offer, int $variation_id = 0): array {

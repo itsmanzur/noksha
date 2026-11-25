@@ -121,11 +121,17 @@ $doc = Pages::payload($page_id);
 $offer = $doc['offer'];
 $offer['source'] = 'woocommerce';
 $offer['productId'] = $shirt_id;
-$offer['bump'] = ['enabled' => true, 'source' => 'woocommerce', 'productId' => $addon_id, 'checkedDefault' => false];
+$offer['bumps'] = [
+    ['enabled' => true, 'source' => 'woocommerce', 'productId' => $addon_id, 'checkedDefault' => false],
+    ['enabled' => true, 'source' => 'custom', 'name' => 'Gift wrap', 'price' => 30, 'checkedDefault' => false],
+];
 $checkout = $doc['checkout'];
 foreach (['division', 'district', 'upazila', 'address'] as $field) {
     $checkout['fields'][$field] = ['enabled' => false, 'required' => false];
 }
+$offer['tiers'] = [['qty' => 2, 'discount' => 50], ['qty' => 3, 'discount' => 100]];
+$offer['stockHint'] = true;
+$offer['stockHintMax'] = 10;
 $checkout['payments'] = ['cod'];
 $checkout['coupon'] = true;
 Pages::update($page_id, ['status' => 'publish', 'slug' => 'e2e-noksha', 'offer' => $offer, 'checkout' => $checkout]);

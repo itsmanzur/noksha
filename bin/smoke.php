@@ -13,6 +13,7 @@ use Noksha\Catalog\WcSuggest;
 use Noksha\Front\CachePurge;
 use Noksha\Options;
 use Noksha\Orders\Checkout;
+use Noksha\Orders\Pricing;
 use Noksha\Orders\Repository as Orders;
 use Noksha\Pages\Renderer;
 use Noksha\Pages\Repository as Pages;
@@ -238,6 +239,48 @@ if (Noksha\Catalog\WcProduct::active()) {
             check((float) $row3['subtotal'] === 950.0, 'bump uses the live price, not the browser price');
             check((int) wc_get_product($addon_id)->get_stock_quantity() === 4, 'bump stock is reduced');
         }
+        // ---- Several add-ons: a store product and a custom one ----
+        $legacy = Pages::payload($wc_page)['offer'];
+        check(count($legacy['bumps']) === 1 && $legacy['bumps'][0]['productId'] === $addon_id, 'an older page with one add-on reads as a list of one');
+        $many = Noksha\Pages\Sanitizer::offer(['source' => 'woocommerce', 'productId' => $simple_id, 'bumps' => [
+            ['enabled' => true, 'name' => 'A', 'price' => 1], ['enabled' => true, 'name' => 'B', 'price' => 2],
+            ['enabled' => true, 'name' => 'C', 'price' => 3], ['enabled' => true, 'name' => 'D', 'price' => 4],
+        ]]);
+        check(count($many['bumps']) === 3 && $many['bump']['name'] === 'A', 'at most three add-ons; "bump" is the first');
+        $two = $legacy;
+        $two['bumps'] = [
+            ['enabled' => true, 'source' => 'woocommerce', 'productId' => $addon_id],
+            ['enabled' => true, 'source' => 'custom', 'name' => 'Gift wrap', 'price' => 30],
+        ];
+        Pages::update($wc_page, ['offer' => $two]);
+        Pages::forget_cached($wc_page);
+        $two_html = Renderer::article_for_post($wc_page);
+        check(substr_count($two_html, 'data-bump-index=') === 2 && str_contains($two_html, 'Gift wrap'), 'the page shows both add-ons');
+        $simple->set_stock_quantity(10);
+        $simple->save();
+        $both_bumps = $checkout->place(['phone' => '01712340008'] + $base + ['qty' => 1, 'bumps' => [0, 1], 'expected_bumps_total' => 230]);
+        check(is_array($both_bumps), 'order with two add-ons placed ' . (is_wp_error($both_bumps) ? $both_bumps->get_error_code() : ''));
+        if (is_array($both_bumps)) {
+            $bb_row = Orders::find_by_number($both_bumps['orderNumber']);
+            $bb_wc = wc_get_order((int) $bb_row['wc_order_id']);
+            $unit_now = (float) Pages::document($wc_page)['offer']['price'];
+            check((float) $bb_row['subtotal'] === round($unit_now + 200 + 30, 2), 'subtotal = product + both add-ons');
+            check(count(Orders::items((int) $bb_row['id'])) === 3, 'the Noksha order has three lines');
+            check($bb_wc instanceof WC_Order && count($bb_wc->get_items()) === 2 && count($bb_wc->get_fees()) === 1, 'WooCommerce: the store add-on is a product line, the custom one a fee');
+            check($bb_wc instanceof WC_Order && (float) $bb_wc->get_total() === (float) $bb_row['total'], 'the WooCommerce total matches');
+        }
+        $one_only = $checkout->place(['phone' => '01712340009'] + $base + ['qty' => 1, 'bumps' => [1]]);
+        if (is_array($one_only)) {
+            $oo_row = Orders::find_by_number($one_only['orderNumber']);
+            check(count(Orders::items((int) $oo_row['id'])) === 2 && Orders::items((int) $oo_row['id'])[1]['name'] === 'Gift wrap', 'choosing only the second add-on adds only that one');
+        } else {
+            check(false, 'order with the second add-on placed');
+        }
+        $old_flag = $checkout->place(['phone' => '01712340010'] + $base + ['qty' => 1, 'bump' => 1]);
+        check(is_array($old_flag) && count(Orders::items((int) Orders::find_by_number($old_flag['orderNumber'])['id'])) === 2, 'the older single "bump" flag still adds the first add-on');
+        $stale_bumps = $checkout->place(['phone' => '01712340011'] + $base + ['qty' => 1, 'bumps' => [0, 1], 'expected_bumps_total' => 999]);
+        check(is_wp_error($stale_bumps) && $stale_bumps->get_error_code() === 'noksha_price_changed' && count((array) ($stale_bumps->get_error_data()['bump_prices'] ?? [])) === 2, 'old add-on prices on the page are caught, with each current price');
+
         $addon->set_stock_quantity(0);
         $addon->set_stock_status('outofstock');
         $addon->save();
@@ -389,6 +432,32 @@ if (Noksha\Catalog\WcProduct::active()) {
     check(str_contains($fest_html, 'data-ends="' . substr($sale_end, 0, 10)), 'the countdown follows the sale end date');
     wp_delete_post($fest, true);
 
+    // ---- Live price and stock for a cached page; the low-stock line ----
+    $live_res = rest_do_request(new WP_REST_Request('GET', '/noksha/v1/live'));
+    check($live_res->get_status() === 404, 'live answers only for a published page');
+    $live_req = new WP_REST_Request('GET', '/noksha/v1/live');
+    $live_req->set_param('page_id', $wc_page);
+    $live_res = rest_do_request($live_req);
+    $live_data = $live_res->get_data();
+    Pages::forget_cached($wc_page);
+    $live_offer_now = Pages::document($wc_page)['offer'];
+    check(($live_data['source'] ?? '') === 'woocommerce' && (float) $live_data['price'] === (float) $live_offer_now['price'], 'live gives the current price');
+    check(($live_res->get_headers()['Cache-Control'] ?? '') === 'no-store, max-age=0', 'live is never cached');
+    $live_stock = (int) wc_get_product($simple_id)->get_stock_quantity();
+    check((int) $live_data['stock'] === $live_stock, 'live gives the current stock');
+
+    $hint_offer = Pages::payload($wc_page)['offer'];
+    $hint_offer['stockHint'] = true;
+    $hint_offer['stockHintMax'] = 10;
+    Pages::update($wc_page, ['offer' => $hint_offer]);
+    Pages::forget_cached($wc_page);
+    $hint_html = Renderer::article_for_post($wc_page);
+    check(str_contains($hint_html, 'Only ' . $live_stock . ' left in stock'), 'the low-stock line shows the real stock (' . $live_stock . ')');
+    $hint_offer['stockHintMax'] = max(1, $live_stock - 1);
+    Pages::update($wc_page, ['offer' => $hint_offer]);
+    Pages::forget_cached($wc_page);
+    check(!str_contains(Renderer::article_for_post($wc_page), 'left in stock</p>'), 'the line stays hidden above the chosen number');
+
     // ---- Coupons: WooCommerce decides, Noksha follows ----
     $coupon = new WC_Coupon();
     $coupon->set_code('smoke10');
@@ -436,6 +505,71 @@ if (Noksha\Catalog\WcProduct::active()) {
         check((int) $used->get_usage_count() === 1, 'WooCommerce counts the coupon use');
         check((float) $with['value'] === (float) $co_row['total'], 'the page is told the discounted total');
     }
+    // ---- Quantity steps: "buy 2 or more, save 50" ----
+    $clean = Pricing::clean_tiers([
+        ['qty' => 3, 'discount' => 120], ['qty' => 2, 'discount' => 50], ['qty' => 2, 'discount' => 60],
+        ['qty' => 1, 'discount' => 5], ['qty' => 11, 'discount' => 5], ['qty' => 4, 'discount' => 0],
+        ['qty' => 5, 'discount' => 1], ['qty' => 6, 'discount' => 1], ['qty' => 7, 'discount' => 1],
+    ]);
+    check(array_column($clean, 'qty') === [2, 3, 5, 6] && $clean[0]['discount'] === 60.0, 'steps are cleaned: 2-10 pieces, one per quantity, at most 4, smallest first');
+    $tier_offer = ['tiers' => [['qty' => 2, 'discount' => 50], ['qty' => 3, 'discount' => 100]]];
+    check(Pricing::tier_discount($tier_offer, 1, 700) === 0.0 && Pricing::tier_discount($tier_offer, 2, 1400) === 50.0 && Pricing::tier_discount($tier_offer, 5, 3500) === 100.0, 'the largest step reached is used');
+    check(Pricing::tier_discount($tier_offer, 3, 80) === 80.0, 'a step never takes more than the product lines');
+
+    // On a custom product page.
+    $custom_doc = Pages::payload($id);
+    $custom_offer = $custom_doc['offer'];
+    $custom_offer['tiers'] = [['qty' => 2, 'discount' => 50]];
+    Pages::update($id, ['offer' => $custom_offer]);
+    $tiered = $checkout->place([
+        'nonce' => wp_create_nonce('noksha_public'), 'page_id' => $id, 'name' => 'Tier Buyer', 'phone' => '01712340005',
+        'division_id' => '6', 'district_id' => '47', 'upazila_id' => 'thana-dhanmondi', 'address' => 'Road 7',
+        'payment_method' => 'cod', 'qty' => 2, 'session_id' => 'smoketier1', 'expected_tier_discount' => 50,
+    ]);
+    check(is_array($tiered), 'custom order with a step placed');
+    if (is_array($tiered)) {
+        $t_row = Orders::find_by_number($tiered['orderNumber']);
+        check((float) $t_row['discount'] === 50.0 && (float) $t_row['total'] === round((float) $t_row['subtotal'] - 50 + (float) $t_row['shipping'], 2), 'custom order: total = lines - step + delivery');
+        check((float) $t_row['collect_amount'] === (float) $t_row['total'], 'the courier collects the total after the step');
+    }
+    $stale_tier = $checkout->place([
+        'nonce' => wp_create_nonce('noksha_public'), 'page_id' => $id, 'name' => 'Tier Buyer', 'phone' => '01712340006',
+        'division_id' => '6', 'district_id' => '47', 'upazila_id' => 'thana-dhanmondi', 'address' => 'Road 7',
+        'payment_method' => 'cod', 'qty' => 2, 'session_id' => 'smoketier2', 'expected_tier_discount' => 30,
+    ]);
+    $stale_tier_data = is_wp_error($stale_tier) ? (array) $stale_tier->get_error_data() : [];
+    check(is_wp_error($stale_tier) && $stale_tier->get_error_code() === 'noksha_price_changed' && ($stale_tier_data['tiers'][0]['discount'] ?? 0) === 50.0, 'a page showing an old step is told the current steps');
+
+    // On a WooCommerce product page, with a coupon too.
+    $wc_tier_offer = Pages::payload($wc_page)['offer'];
+    $wc_tier_offer['tiers'] = [['qty' => 2, 'discount' => 50], ['qty' => 3, 'discount' => 100]];
+    Pages::update($wc_page, ['offer' => $wc_tier_offer]);
+    Pages::forget_cached($wc_page);
+    $live_req = new WP_REST_Request('GET', '/noksha/v1/live');
+    $live_req->set_param('page_id', $wc_page);
+    check(count(rest_do_request($live_req)->get_data()['tiers'] ?? []) === 2, 'live gives the steps');
+    // Earlier checks used up some stock; this one needs three.
+    $simple->set_stock_quantity(10);
+    $simple->save();
+    Pages::forget_cached($wc_page);
+    $unit = (float) Pages::document($wc_page)['offer']['price'];
+    $both = $checkout->place(['phone' => '01712340007'] + $base + ['qty' => 3, 'coupon' => 'smoke10', 'expected_tier_discount' => 100]);
+    check(is_array($both), 'WooCommerce order with a step and a coupon placed ' . (is_wp_error($both) ? $both->get_error_code() : ''));
+    if (is_array($both)) {
+        $b_row = Orders::find_by_number($both['orderNumber']);
+        $b_wc = wc_get_order((int) $b_row['wc_order_id']);
+        $coupon_part = round(3 * $unit * 0.10, 2);
+        check((float) $b_row['discount'] === round(100 + $coupon_part, 2), 'the Noksha order records step + coupon (' . $b_row['discount'] . ')');
+        check((float) $b_row['total'] === round(3 * $unit - 100 - $coupon_part + (float) $b_row['shipping'], 2), 'total = lines - step - coupon + delivery');
+        check($b_wc instanceof WC_Order && (float) $b_wc->get_total() === (float) $b_row['total'], 'the WooCommerce total matches');
+        $fees = $b_wc instanceof WC_Order ? array_values($b_wc->get_fees()) : [];
+        check(count($fees) === 1 && (float) $fees[0]->get_total() === -100.0, 'the step is a "Quantity discount" line on the WooCommerce order');
+        check($b_wc instanceof WC_Order && (float) $b_wc->get_discount_total() === $coupon_part, 'the coupon is worked out on the full lines');
+    }
+    $wc_tier_offer['tiers'] = [];
+    Pages::update($wc_page, ['offer' => $wc_tier_offer]);
+    Pages::forget_cached($wc_page);
+
     wp_delete_post($coupon_id, true);
     wp_delete_post($expired_id, true);
 

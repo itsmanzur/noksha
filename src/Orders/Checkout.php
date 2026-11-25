@@ -138,14 +138,15 @@ final class Checkout {
             (string) ($geo['district_id'] ?? ''),
             (string) ($geo['upazila_id'] ?? '')
         );
-        $bump = is_array($doc['offer']['bump'] ?? null) ? $doc['offer']['bump'] : [];
-        $want_bump = !empty($input['bump']) && !empty($bump['enabled']) && (float) ($bump['price'] ?? 0) > 0;
-        $bump_price = $want_bump ? round((float) $bump['price'], 2) : 0.0;
+        $chosen_bumps = Pricing::chosen_bumps($doc['offer'], $input);
+        $want_bump = $chosen_bumps !== [];
+        $bump_price = round(array_sum(array_column($chosen_bumps, 'price')), 2);
+        $bump_indexes = array_column($chosen_bumps, 'index');
 
         // A coupon is checked by WooCommerce before anything is saved.
         $coupon_code = '';
         if (WcCoupon::enabled_for($doc) && !empty($input['coupon'])) {
-            $checked = WcCoupon::preview($doc['offer'], $qty, $want_bump, (string) $input['coupon']);
+            $checked = WcCoupon::preview($doc['offer'], $qty, $bump_indexes, (string) $input['coupon']);
             if (is_wp_error($checked)) {
                 return $this->coupon_error($checked, $lang);
             }
@@ -155,17 +156,31 @@ final class Checkout {
         // The page may come from a cache and show an old price. Never charge a price
         // the buyer did not see: send the new one back and let them confirm.
         $expected = isset($input['expected_price']) ? round((float) $input['expected_price'], 2) : 0.0;
-        $expected_bump = isset($input['expected_bump_price']) ? round((float) $input['expected_bump_price'], 2) : 0.0;
+        $expected_bump = isset($input['expected_bumps_total'])
+            ? round((float) $input['expected_bumps_total'], 2)
+            : (isset($input['expected_bump_price']) ? round((float) $input['expected_bump_price'], 2) : 0.0);
         if (($expected > 0 && abs($expected - $price) > 0.009)
             || ($want_bump && $expected_bump > 0 && abs($expected_bump - $bump_price) > 0.009)) {
             return new \WP_Error('noksha_price_changed', Catalog::line($lang, 'price_changed'), [
                 'status' => 409,
                 'price' => $price,
                 'bump_price' => $bump_price,
+                'bump_prices' => self::bump_prices($doc['offer']),
+            ]);
+        }
+        // Quantity discount from the page's steps. A cached page may show old steps;
+        // like the price, a different amount is sent back for the buyer to confirm.
+        $tier = Pricing::tier_discount($doc['offer'], $qty, $price * $qty);
+        if (isset($input['expected_tier_discount']) && abs(round((float) $input['expected_tier_discount'], 2) - $tier) > 0.009) {
+            return new \WP_Error('noksha_price_changed', Catalog::line($lang, 'price_changed'), [
+                'status' => 409,
+                'price' => $price,
+                'bump_price' => $bump_price,
+                'tiers' => $doc['offer']['tiers'] ?? [],
             ]);
         }
         $subtotal = round(($price * $qty) + $bump_price, 2);
-        $total = round($subtotal + $shipping, 2);
+        $total = round($subtotal - $tier + $shipping, 2);
         $event_id = self::event_id((string) ($input['event_id'] ?? ''), $number = Repository::next_number());
         $attribution = self::attribution($input);
         $variant = self::variant((string) ($input['variant'] ?? ''));
@@ -209,12 +224,12 @@ final class Checkout {
             'product_id' => $is_wc ? (int) $doc['offer']['productId'] : 0,
             'variation_id' => $is_wc ? (int) $doc['offer']['variationId'] : 0,
         ]];
-        if ($want_bump) {
+        foreach ($chosen_bumps as $chosen) {
             $items[] = [
-                'name' => (string) ($bump['name'] !== '' ? $bump['name'] : 'Add-on'),
+                'name' => $chosen['name'],
                 'qty' => 1,
-                'price' => $bump_price,
-                'product_id' => (int) ($bump['productId'] ?? 0),
+                'price' => $chosen['price'],
+                'product_id' => $chosen['productId'],
                 'variation_id' => 0,
             ];
         }
@@ -239,6 +254,7 @@ final class Checkout {
             'currency' => 'BDT',
             'subtotal' => $subtotal,
             'shipping' => $shipping,
+            'discount' => $tier,
             'total' => $total,
             'collect_amount' => $total,
             'cod_settled' => 0,
@@ -274,13 +290,10 @@ final class Checkout {
                 $order,
                 $doc['offer'],
                 $qty,
-                $want_bump ? [
-                    'name' => (string) ($bump['name'] !== '' ? $bump['name'] : 'Add-on'),
-                    'price' => $bump_price,
-                    'productId' => (int) ($bump['productId'] ?? 0),
-                ] : null,
+                $chosen_bumps,
                 $method,
-                $coupon_code
+                $coupon_code,
+                $tier
             );
             if (is_wp_error($created)) {
                 $wpdb->query('ROLLBACK');
@@ -292,7 +305,7 @@ final class Checkout {
             $total = (float) $created['total'];
             Repository::update($id, [
                 'wc_order_id' => $created['id'],
-                'discount' => $created['discount'],
+                'discount' => round($created['discount'] + $tier, 2),
                 'coupon' => $coupon_code,
                 'total' => $total,
                 'collect_amount' => $total,
@@ -472,6 +485,16 @@ final class Checkout {
     private static function variant(string $value): string {
         $value = strtolower($value);
         return in_array($value, ['a', 'b'], true) ? $value : '';
+    }
+
+    /**
+     * Each add-on's current price, by index, for a page that showed old ones.
+     *
+     * @return list<float>
+     */
+    private static function bump_prices(array $offer): array {
+        $list = is_array($offer['bumps'] ?? null) ? $offer['bumps'] : [];
+        return array_map(static fn($bump) => round((float) ($bump['price'] ?? 0), 2), $list);
     }
 
     /**

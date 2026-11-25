@@ -150,6 +150,10 @@ final class Controller {
             'methods' => 'POST',
             'callback' => [$this, 'courier_webhook'],
         ] + $public);
+        register_rest_route('noksha/v1', '/live', [
+            'methods' => 'GET',
+            'callback' => [$this, 'live'],
+        ] + $public);
         register_rest_route('noksha/v1', '/coupon', [
             'methods' => 'POST',
             'callback' => [$this, 'coupon'],
@@ -737,6 +741,51 @@ final class Controller {
     }
 
     /**
+     * Live price and stock for a landing page. A page cache can serve old HTML;
+     * the page asks this once on load and corrects itself. Never cached.
+     */
+    public function live(\WP_REST_Request $request) {
+        if (RateLimit::hit('live', 240)) {
+            return new \WP_Error('noksha_rate', 'Too many requests.', ['status' => 429]);
+        }
+        $page_id = (int) $request->get_param('page_id');
+        $post = get_post($page_id);
+        if (!$post || $post->post_type !== \Noksha\Pages\PostType::TYPE || $post->post_status !== 'publish') {
+            return new \WP_Error('noksha_page_closed', 'This page is not taking orders.', ['status' => 404]);
+        }
+        $offer = Pages::document($page_id)['offer'];
+        $data = ['source' => 'custom', 'tiers' => $offer['tiers'] ?? []];
+        if (\Noksha\Catalog\WcProduct::is_wc_offer($offer)) {
+            $wc = is_array($offer['wc'] ?? null) ? $offer['wc'] : [];
+            $data = [
+                'source' => 'woocommerce',
+                'tiers' => $offer['tiers'] ?? [],
+                'price' => (float) $offer['price'],
+                'compareAt' => (float) $offer['compareAt'],
+                'variationId' => (int) $offer['variationId'],
+                'available' => !empty($wc['available']),
+                'stock' => $wc['stock'] ?? null,
+                'backorders' => !empty($wc['backorders']),
+                'variations' => array_map(static function (array $row): array {
+                    return [
+                        'id' => (int) $row['id'],
+                        'price' => (float) $row['price'],
+                        'regularPrice' => (float) $row['regularPrice'],
+                        'stock' => $row['stock'],
+                        'inStock' => !empty($row['inStock']),
+                    ];
+                }, is_array($wc['variations'] ?? null) ? $wc['variations'] : []),
+                'bumps' => array_map(static function ($bump): array {
+                    return ['enabled' => !empty($bump['enabled']), 'price' => (float) ($bump['price'] ?? 0)];
+                }, is_array($offer['bumps'] ?? null) ? $offer['bumps'] : []),
+            ];
+        }
+        $response = new \WP_REST_Response($data);
+        $response->header('Cache-Control', 'no-store, max-age=0');
+        return $response;
+    }
+
+    /**
      * What a coupon would take off, for the page's order summary. Saves nothing.
      */
     public function coupon(\WP_REST_Request $request) {
@@ -759,8 +808,8 @@ final class Controller {
         }
         $offer = \Noksha\Catalog\WcProduct::apply($doc['offer'], max(0, (int) ($params['variation_id'] ?? 0)));
         $qty = max(1, min(10, (int) ($params['qty'] ?? 1)));
-        $with_bump = !empty($params['bump']) && !empty($offer['bump']['enabled']);
-        $result = \Noksha\Catalog\WcCoupon::preview($offer, $qty, $with_bump, (string) ($params['code'] ?? ''));
+        $indexes = array_column(\Noksha\Orders\Pricing::chosen_bumps($offer, $params), 'index');
+        $result = \Noksha\Catalog\WcCoupon::preview($offer, $qty, $indexes, (string) ($params['code'] ?? ''));
         if (is_wp_error($result)) {
             $message = $result->get_error_message();
             return new \WP_Error('noksha_coupon_invalid', $message !== '' ? $message : \Noksha\I18n\Catalog::line($lang, 'coupon_invalid'), ['status' => 400]);

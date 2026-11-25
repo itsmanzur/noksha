@@ -36,6 +36,9 @@ Build a one-page offer, take cash on delivery, bKash, Nagad, or SSLCommerz on th
 * Editor: suggestions from the store product (headline, subtitle, description, key points, benefits and its real reviews). Nothing changes until you press a button; "Fill all empty fields" never replaces your own text. Reviews are the product's own approved reviews of 4 stars and up, verified buyers first.
 * Product gallery under the main image (switch in the Offer tab), the chosen option's own picture, and the product's average rating and review count on the page. Verified buyers are marked on reviews.
 * Fixed: the product's picture did not show in the top banner when the banner had no picture of its own.
+* Quantity discounts per page: "buy 2 or more, save 50", up to 4 steps, shown as buttons. The step is a "Quantity discount" line on the WooCommerce order, so coupons still apply to the full price.
+* Up to three add-ons per page (store products or custom). Pages with one add-on keep working.
+* A page from a cache corrects its price, stock and steps when it opens (new /live check). Optional "Only N left in stock" line from the real stock.
 * Database version 10: `discount` and `coupon` on orders.
 * Database version 9: `wc_order_id` on orders, product and variation ids on order items.
 

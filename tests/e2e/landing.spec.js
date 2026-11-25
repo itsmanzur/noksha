@@ -33,7 +33,7 @@ test.describe('landing page for a WooCommerce product', () => {
     await qty.dispatchEvent('change');
 
     // Add-on: a store product, 200.
-    await page.locator('[name="bump"]').check();
+    await page.locator('[data-bump-index="0"]').check();
     await expect(page.locator('[data-subtotal]')).toContainText('1,500');
 
     // Coupon: 10% of the lines.
@@ -46,7 +46,11 @@ test.describe('landing page for a WooCommerce product', () => {
     const subtotal = amount(await page.locator('[data-subtotal]').textContent());
     const shipping = amount(await page.locator('[data-shipping]').textContent());
     const total = amount(await page.locator('[data-total]').textContent());
-    expect(total).toBe(subtotal - 150 + shipping);
+    // Two pieces reach the first step: 50 off, shown on its own row.
+    await expect(page.locator('[data-tier-row]')).toBeVisible();
+    const tier = amount(await page.locator('[data-tier]').textContent());
+    expect(tier).toBe(50);
+    expect(total).toBe(subtotal - tier - 150 + shipping);
 
     // A wrong coupon shows WooCommerce's reason and takes the discount away.
     await page.locator('#nk-coupon-code').fill('nope');
@@ -70,6 +74,40 @@ test.describe('landing page for a WooCommerce product', () => {
     await expect(page.locator('body')).toContainText(/NK-/);
 
     expect(errors, 'no JavaScript errors on the page').toEqual([]);
+  });
+
+  test('several add-ons', async ({ page }) => {
+    await page.goto(fixture.url);
+    await expect(page.locator('[name="bump"]')).toHaveCount(2);
+    const sub = async () => amount(await page.locator('[data-subtotal]').textContent());
+    const base = await sub();
+    await page.locator('[data-bump-index="1"]').check();
+    await expect(page.locator('[data-subtotal]')).toContainText(String(base + 30));
+    await page.locator('[data-bump-index="0"]').check();
+    await expect(page.locator('[data-subtotal]')).toContainText(String(base + 230));
+    await page.locator('[data-bump-index="1"]').uncheck();
+    await expect(page.locator('[data-subtotal]')).toContainText(String(base + 200));
+  });
+
+  test('quantity steps', async ({ page }) => {
+    await page.goto(fixture.url);
+    const steps = page.locator('[data-tier-qty]');
+    await expect(steps).toHaveCount(2);
+    await expect(page.locator('[data-tier-row]')).toBeHidden();
+
+    await page.locator('[data-tier-qty="3"]').click();
+    await expect(page.locator('[name="qty"]')).toHaveValue('3');
+    await expect(page.locator('[data-tier-qty="3"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-tier]')).toContainText('100');
+    const subtotal = amount(await page.locator('[data-subtotal]').textContent());
+    const shipping = amount(await page.locator('[data-shipping]').textContent());
+    await expect(page.locator('[data-total]')).toContainText(String(subtotal - 100 + shipping).replace(/\B(?=(\d{3})+(?!\d))/g, ','));
+
+    // Back to one piece: no step.
+    await page.locator('[name="qty"]').fill('1');
+    await page.locator('[name="qty"]').dispatchEvent('change');
+    await expect(page.locator('[data-tier-row]')).toBeHidden();
+    await expect(page.locator('[data-tier-qty="3"]')).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('gallery and rating', async ({ page }) => {
@@ -100,8 +138,28 @@ test.describe('landing page for a WooCommerce product', () => {
     expect(errors, 'no JavaScript errors on the page').toEqual([]);
   });
 
+  test('a cached page with an old price corrects itself, and shows the real stock', async ({ page }) => {
+    // Serve the page as an old cache would: a lower price baked into the HTML.
+    await page.route('**/offer/e2e-noksha/**', async (route) => {
+      const response = await route.fetch();
+      let body = await response.text();
+      body = body.replace(/"price":500(\.0+)?,/, '"price":1,').replace(/৳500/g, '৳1');
+      await route.fulfill({ response, body });
+    });
+    await page.goto(fixture.url);
+    // The live check fixes the price shown, before the buyer does anything.
+    await expect(page.locator('.nk-price-now').first()).toContainText('500');
+    expect(await page.evaluate(() => window.nokshaFront.price)).toBe(500);
+
+    // Low stock from the real numbers: size S has 5.
+    await expect(page.locator('[data-stock-hint]')).toContainText('Only 5 left');
+    await page.locator('[data-variation]').selectOption(String(fixture.variations.L));
+    await expect(page.locator('[data-stock-hint]')).toContainText(/Only \d left/);
+  });
+
   test('a stale price is caught before the order is placed', async ({ page }) => {
     await page.goto(fixture.url);
+    await page.waitForLoadState('networkidle');
     // Pretend the page came from a cache with an old price.
     await page.evaluate(() => {
       window.nokshaFront.price = 1;
