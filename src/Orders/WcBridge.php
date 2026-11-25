@@ -112,7 +112,7 @@ final class WcBridge {
      * @param string                    $coupon WooCommerce coupon code, or ''.
      * @return array{id:int,discount:float,total:float}|\WP_Error
      */
-    public static function create(array $row, array $offer, int $qty, array $bumps, string $method, string $coupon = '', float $tier = 0.0) {
+    public static function create(array $row, array $offer, int $qty, array $bumps, string $method, string $coupon = '', float $tier = 0.0, array $rate = []) {
         if (!WcProduct::active()) {
             return new \WP_Error('noksha_wc_inactive', 'WooCommerce is not active.');
         }
@@ -153,8 +153,13 @@ final class WcBridge {
 
             $shipping = (float) ($row['shipping'] ?? 0);
             $ship_item = new \WC_Order_Item_Shipping();
-            $ship_item->set_method_title(__('Delivery', 'noksha'));
-            $ship_item->set_method_id('noksha_delivery');
+            // A WooCommerce zone rate keeps its own name and id; otherwise it is the page's delivery charge.
+            $rate_id = (string) ($rate['id'] ?? '');
+            $ship_item->set_method_title((string) ($rate['label'] ?? '') !== '' ? (string) $rate['label'] : __('Delivery', 'noksha'));
+            $ship_item->set_method_id($rate_id !== '' ? (string) strtok($rate_id, ':') : 'noksha_delivery');
+            if ($rate_id !== '' && str_contains($rate_id, ':')) {
+                $ship_item->set_instance_id((string) substr($rate_id, strpos($rate_id, ':') + 1));
+            }
             $ship_item->set_total($shipping);
             $order->add_item($ship_item);
 
@@ -326,27 +331,12 @@ final class WcBridge {
             'address_1' => (string) ($row['address'] ?? ''),
             'address_2' => $upazila,
             'city' => $district !== '' ? $district : $upazila,
-            'state' => self::state_code($district),
+            'state' => \Noksha\Region\WcStates::code((string) ($row['district_id'] ?? '')),
             'postcode' => '',
             'country' => 'BD',
             'email' => (string) ($row['email'] ?? ''),
             'phone' => (string) ($row['phone'] ?? ''),
         ];
-    }
-
-    /**
-     * WooCommerce stores Bangladesh districts as codes such as "BD-13".
-     */
-    private static function state_code(string $district): string {
-        if ($district === '' || !function_exists('WC') || !WC()->countries) {
-            return '';
-        }
-        foreach ((array) WC()->countries->get_states('BD') as $code => $name) {
-            if (strcasecmp((string) $name, $district) === 0) {
-                return (string) $code;
-            }
-        }
-        return '';
     }
 
     private static function method_title(string $method): string {

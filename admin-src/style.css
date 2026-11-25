@@ -1812,3 +1812,26 @@ a.nk-btn-ghost {
   align-items: center;
   justify-content: space-between;
 }
+
+/* Pages from store products */
+.nk-bulk-list {
+  display: grid;
+  gap: 6px;
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.nk-bulk-list li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: 6px;
+}
+.nk-bulk-list .nk-tag {
+  margin-inline-start: 6px;
+}

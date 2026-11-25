@@ -14,6 +14,8 @@ use Noksha\Front\CachePurge;
 use Noksha\Options;
 use Noksha\Orders\Checkout;
 use Noksha\Orders\Pricing;
+use Noksha\Region\WcStates;
+use Noksha\Shipping\WcRates;
 use Noksha\Orders\Repository as Orders;
 use Noksha\Pages\Renderer;
 use Noksha\Pages\Repository as Pages;
@@ -131,6 +133,13 @@ if (is_array($wallet)) {
     $row = Orders::find((int) $row['id']);
     check($row['status'] === 'paid' && (int) $row['trx_verified'] === 1, 'trx can be marked received');
 }
+
+// A visitor who types a phone and leaves is kept as a lead.
+$lead_req = new WP_REST_Request('POST', '/noksha/v1/leads/capture');
+$lead_req->set_header('content-type', 'application/json');
+$lead_req->set_body(wp_json_encode(['nonce' => wp_create_nonce('noksha_public'), 'page_id' => $id, 'phone' => '01712340099', 'session_id' => 'smokelead1', 'name' => 'Lead']));
+$lead_res = rest_do_request($lead_req);
+check($lead_res->get_status() === 200 && !empty($lead_res->get_data()['ok']), 'lead capture answers (it used to fail on a missing method)');
 
 $tokens = Tokens::save([
     'preset' => 'custom',
@@ -268,6 +277,9 @@ if (Noksha\Catalog\WcProduct::active()) {
             check(count(Orders::items((int) $bb_row['id'])) === 3, 'the Noksha order has three lines');
             check($bb_wc instanceof WC_Order && count($bb_wc->get_items()) === 2 && count($bb_wc->get_fees()) === 1, 'WooCommerce: the store add-on is a product line, the custom one a fee');
             check($bb_wc instanceof WC_Order && (float) $bb_wc->get_total() === (float) $bb_row['total'], 'the WooCommerce total matches');
+            // Ad-platform ids: the product for the order, each line its own.
+            check(($both_bumps['purchase']['content_ids'] ?? null) === [(string) $simple_id], 'Purchase uses the product id, like ViewContent');
+            check(array_column($both_bumps['purchase']['contents'] ?? [], 'id') === [(string) $simple_id, (string) $addon_id, (string) $wc_page], 'each line has its own id (a custom add-on falls back to the page)');
         }
         $one_only = $checkout->place(['phone' => '01712340009'] + $base + ['qty' => 1, 'bumps' => [1]]);
         if (is_array($one_only)) {
@@ -330,6 +342,8 @@ if (Noksha\Catalog\WcProduct::active()) {
     WC_Product_Variable::sync($variable_id);
 
     $resolved = Noksha\Catalog\WcProduct::apply(['source' => 'woocommerce', 'productId' => $variable_id], $variation_ids['L']);
+    $agg = Noksha\Pages\Schema::product(['offer' => $resolved], '', '');
+    check(is_array($agg) && $agg['offers']['@type'] === 'AggregateOffer' && $agg['offers']['lowPrice'] === '500.00' && $agg['offers']['highPrice'] === '650.00', 'a product with options gives a price range');
     check((float) $resolved['price'] === 650.0 && count($resolved['wc']['variations']) === 2, 'variable product resolves the chosen variation');
     $fallback = Noksha\Catalog\WcProduct::apply(['source' => 'woocommerce', 'productId' => $variable_id], 999999);
     check((int) $fallback['variationId'] !== 999999 && $fallback['wc']['available'], 'unknown variation falls back to a real one');
@@ -412,6 +426,36 @@ if (Noksha\Catalog\WcProduct::active()) {
     }
     check(is_array($kept_review) && $kept_review['verified'] === true, 'the verified mark survives saving');
 
+    // ---- One content id for every ad event ----
+    check(Noksha\Analytics\ContentId::for_ids(10, 5, 7) === '7' && Noksha\Analytics\ContentId::for_ids(10, 5) === '5' && Noksha\Analytics\ContentId::for_ids(10) === '10', 'content id: option, else product, else page');
+    $sku_ids = static fn($value, $page, $product, $variation) => $product > 0 ? 'sku_' . ($variation ?: $product) : $value;
+    add_filter('noksha_content_id', $sku_ids, 10, 4);
+    check(Noksha\Analytics\ContentId::for_ids(10, 5, 7) === 'sku_7', 'a store can map content ids to its catalog');
+    remove_filter('noksha_content_id', $sku_ids, 10);
+    Pages::forget_cached($wc_page);
+    $cfg = Renderer::script_config(Pages::payload($wc_page), false);
+    check($cfg['contentId'] === (string) $simple_id, 'the page tells the browser the product id for its events');
+
+    // ---- Product structured data (JSON-LD) ----
+    Pages::forget_cached($wc_page);
+    $seo_payload = Pages::payload($wc_page);
+    $seo = Renderer::seo_tags($seo_payload);
+    $ld = null;
+    if (preg_match('#<script type="application/ld\+json">(.*?)</script>#s', $seo['html'], $found)) {
+        $ld = json_decode($found[1], true);
+    }
+    check(is_array($ld) && $ld['@type'] === 'Product' && $ld['name'] === 'Smoke WC simple', 'the page has Product data with the product name');
+    check(is_array($ld) && $ld['offers']['@type'] === 'Offer' && $ld['offers']['priceCurrency'] === 'BDT' && (float) $ld['offers']['price'] === (float) $seo_payload['offer']['price'], 'the offer has the live price in BDT');
+    check(is_array($ld) && $ld['offers']['availability'] === 'https://schema.org/' . (!empty($seo_payload['offer']['wc']['available']) ? 'InStock' : 'OutOfStock'), 'availability follows the stock');
+    check(is_array($ld) && (int) ($ld['aggregateRating']['reviewCount'] ?? 0) === (int) $seo_payload['offer']['wc']['rating']['count'], 'the rating uses the real review count');
+    check(str_contains($seo['html'], 'product:price:amount'), 'the price is in the link-preview tags');
+    $no_ld = static fn() => null;
+    add_filter('noksha_product_schema', $no_ld);
+    check(!str_contains(Renderer::seo_tags($seo_payload)['html'], 'ld+json'), 'a filter can leave the Product data out');
+    remove_filter('noksha_product_schema', $no_ld);
+    $variable_ld = Noksha\Pages\Schema::product(['offer' => Noksha\Catalog\WcProduct::apply(['source' => 'woocommerce', 'productId' => 0] + Pages::document($wc_page)['offer'])], '', '');
+    check($variable_ld === null || $variable_ld['@type'] === 'Product', 'a missing product never breaks the page head');
+
     $simple->set_date_on_sale_to(gmdate('Y-m-d', time() + 3 * DAY_IN_SECONDS));
     $simple->save();
     $sale_end = (string) Pages::document($wc_page)['offer']['wc']['saleEndsAt'];
@@ -457,6 +501,122 @@ if (Noksha\Catalog\WcProduct::active()) {
     Pages::update($wc_page, ['offer' => $hint_offer]);
     Pages::forget_cached($wc_page);
     check(!str_contains(Renderer::article_for_post($wc_page), 'left in stock</p>'), 'the line stays hidden above the chosen number');
+
+    // ---- Delivery from WooCommerce shipping zones (hybrid) ----
+    $find_district = static function (string $name): array {
+        foreach (Noksha\Region\Geo::data()['divisions'] as $division) {
+            foreach ($division['districts'] as $district) {
+                if ($district['en'] === $name) {
+                    return ['division_id' => (string) $division['id'], 'district_id' => (string) $district['id']];
+                }
+            }
+        }
+        return [];
+    };
+    $all_codes = [];
+    foreach (Noksha\Region\Geo::data()['divisions'] as $division) {
+        foreach ($division['districts'] as $district) {
+            $all_codes[] = WcStates::code((string) $district['id']);
+        }
+    }
+    check(count(array_filter($all_codes)) === 64 && count(array_unique($all_codes)) === 64, 'all 64 districts have their own WooCommerce state code');
+    check(WcStates::code('47') === 'BD-13', 'Dhaka is BD-13');
+
+    $sylhet = $find_district('Sylhet');
+    $rangpur = $find_district('Rangpur');
+    $make_zone = static function (string $name, string $state, int $order): WC_Shipping_Zone {
+        $zone = new WC_Shipping_Zone();
+        $zone->set_zone_name($name);
+        $zone->set_zone_order($order);
+        $zone->add_location('BD:' . $state, 'state');
+        $zone->save();
+        return $zone;
+    };
+    $set_method = static function (WC_Shipping_Zone $zone, string $type, array $settings): void {
+        $instance = $zone->add_shipping_method($type);
+        update_option('woocommerce_' . $type . '_' . $instance . '_settings', $settings + ['enabled' => 'yes']);
+    };
+    // New zones sort after the site's own (WooCommerce has no negative order), so while these
+    // checks run the site's zones are left out of matching. Nothing is changed in the database.
+    $site_zone_ids = array_map(static fn($z) => (int) $z['id'], WC_Shipping_Zones::get_zones());
+    $hide_site_zones = static function ($criteria) use ($site_zone_ids) {
+        if ($site_zone_ids !== []) {
+            $criteria[] = 'AND zones.zone_id NOT IN (' . implode(',', $site_zone_ids) . ')';
+        }
+        return $criteria;
+    };
+    add_filter('woocommerce_get_zone_criteria', $hide_site_zones);
+    $zone_s = $make_zone('Smoke Sylhet', 'BD-60', 0);
+    $set_method($zone_s, 'flat_rate', ['title' => 'Smoke flat', 'cost' => '90', 'tax_status' => 'none']);
+    $set_method($zone_s, 'free_shipping', ['title' => 'Smoke free', 'requires' => 'min_amount', 'min_amount' => '3000', 'ignore_discounts' => 'no']);
+    $zone_r = $make_zone('Smoke Rangpur', 'BD-55', 1);
+    $set_method($zone_r, 'flat_rate', ['title' => 'Smoke per piece', 'cost' => '50 + 10 * [qty]', 'tax_status' => 'none']);
+    $set_method($zone_r, 'local_pickup', ['title' => 'Smoke pickup', 'cost' => '0']);
+    WC_Cache_Helper::invalidate_cache_group('shipping_zones');
+
+    $simple->set_stock_quantity(20);
+    $simple->save();
+    Pages::forget_cached($wc_page);
+    $ship_offer = Pages::document($wc_page)['offer'];
+    $unit_price = (float) $ship_offer['price'];
+    $q = WcRates::quote($ship_offer, 1, [], $sylhet['district_id'], 'Sylhet', '');
+    check($q !== null && $q['cost'] === 90.0 && $q['label'] === 'Smoke flat', 'Sylhet zone: flat rate 90');
+    $big = (int) ceil(3000 / max(1, $unit_price));
+    $q_free = WcRates::quote($ship_offer, $big, [], $sylhet['district_id'], 'Sylhet', '');
+    check($q_free !== null && $q_free['cost'] === 0.0, 'free shipping once the lines reach the minimum (' . $big . ' pieces)');
+    $q_disc = WcRates::quote($ship_offer, $big, [], $sylhet['district_id'], 'Sylhet', '', $big * $unit_price);
+    check($q_disc !== null && $q_disc['cost'] === 90.0, 'discounts count against the free-shipping minimum');
+    $q_r = WcRates::quote($ship_offer, 2, [], $rangpur['district_id'], 'Rangpur', '');
+    check($q_r !== null && $q_r['cost'] === 70.0, 'a [qty] formula works (50 + 10 x 2) and local pickup is left out');
+    check(WcRates::quote($ship_offer, 1, [], '', '', '') === null, 'no district, no WooCommerce quote');
+
+    $ship_offer_save = Pages::payload($wc_page)['offer'];
+    $ship_offer_save['shippingSource'] = 'woocommerce';
+    Pages::update($wc_page, ['offer' => $ship_offer_save]);
+    Pages::forget_cached($wc_page);
+    check(Pages::document($wc_page)['offer']['shippingSource'] === 'woocommerce', 'the page keeps its delivery source');
+    $custom_try = Noksha\Pages\Sanitizer::offer(['source' => 'custom', 'shippingSource' => 'woocommerce']);
+    check($custom_try['shippingSource'] === 'noksha', 'a custom product always uses the page charges');
+
+    $sylhet_input = ['phone' => '01712340012', 'division_id' => $sylhet['division_id'], 'district_id' => $sylhet['district_id'], 'upazila_id' => ''] + $base + ['qty' => 1];
+    $ship_order = $checkout->place($sylhet_input);
+    check(is_array($ship_order), 'order to Sylhet placed ' . (is_wp_error($ship_order) ? $ship_order->get_error_code() : ''));
+    if (is_array($ship_order)) {
+        $s_row = Orders::find_by_number($ship_order['orderNumber']);
+        $s_wc = wc_get_order((int) $s_row['wc_order_id']);
+        check((float) $s_row['shipping'] === 90.0, 'the Noksha order charges the zone rate');
+        $lines = $s_wc instanceof WC_Order ? array_values($s_wc->get_shipping_methods()) : [];
+        check(count($lines) === 1 && $lines[0]->get_method_title() === 'Smoke flat' && $lines[0]->get_method_id() === 'flat_rate', 'the WooCommerce order names the zone rate');
+        check($s_wc instanceof WC_Order && $s_wc->get_shipping_state() === 'BD-60' && (float) $s_wc->get_total() === (float) $s_row['total'], 'state code and total are right on the WooCommerce order');
+    }
+    $stale_ship = $checkout->place(['phone' => '01712340013', 'expected_shipping' => 60] + $sylhet_input);
+    check(is_wp_error($stale_ship) && $stale_ship->get_error_code() === 'noksha_price_changed' && (float) ($stale_ship->get_error_data()['shipping'] ?? 0) === 90.0, 'a page showing another delivery charge is told the right one');
+
+    $ship_req = new WP_REST_Request('GET', '/noksha/v1/shipping');
+    $ship_req->set_param('page_id', $wc_page);
+    $ship_req->set_param('district_id', $sylhet['district_id']);
+    $ship_res = rest_do_request($ship_req);
+    check(($ship_res->get_data()['cost'] ?? null) === 90.0 && ($ship_res->get_headers()['Cache-Control'] ?? '') === 'no-store, max-age=0', 'the page can ask for a district\'s charge');
+
+    // No zone delivers there: "WooCommerce" refuses, "Auto" falls back to the page charges.
+    $no_methods = static fn() => [];
+    add_filter('woocommerce_shipping_zone_shipping_methods', $no_methods);
+    $refused = $checkout->place(['phone' => '01712340014'] + $sylhet_input);
+    check(is_wp_error($refused) && $refused->get_error_code() === 'noksha_no_delivery', 'with WooCommerce zones only, an area without delivery is refused');
+    $ship_offer_save['shippingSource'] = 'auto';
+    Pages::update($wc_page, ['offer' => $ship_offer_save]);
+    Pages::forget_cached($wc_page);
+    $fallback = $checkout->place(['phone' => '01712340015'] + $sylhet_input);
+    check(is_array($fallback) && (float) Orders::find_by_number($fallback['orderNumber'])['shipping'] === Checkout::shipping_for(Pages::document($wc_page)['offer'], $sylhet['district_id']), 'with Auto, an area without a zone uses the page charges');
+    remove_filter('woocommerce_shipping_zone_shipping_methods', $no_methods);
+
+    $ship_offer_save['shippingSource'] = 'noksha';
+    Pages::update($wc_page, ['offer' => $ship_offer_save]);
+    Pages::forget_cached($wc_page);
+    $zone_s->delete();
+    $zone_r->delete();
+    remove_filter('woocommerce_get_zone_criteria', $hide_site_zones);
+    WC_Cache_Helper::invalidate_cache_group('shipping_zones');
 
     // ---- Coupons: WooCommerce decides, Noksha follows ----
     $coupon = new WC_Coupon();
@@ -584,6 +744,59 @@ if (Noksha\Catalog\WcProduct::active()) {
     Pages::forget_cached($wc_page);
     $draft_html = Renderer::article_for_post($wc_page);
     check(str_contains($draft_html, 'not available right now'), 'an unpublished product shows the unavailable message');
+
+    // ---- Draft pages from store products ----
+    $simple->set_status('publish');
+    $simple->set_stock_quantity(10);
+    $simple->set_stock_status('instock');
+    $simple->save();
+    $admin_user = get_users(['role' => 'administrator', 'number' => 1])[0] ?? null;
+    $previous_user = get_current_user_id();
+    if ($admin_user) {
+        wp_set_current_user($admin_user->ID);
+    }
+    $bulk_req = new WP_REST_Request('POST', '/noksha/v1/pages/from-products');
+    $bulk_req->set_header('content-type', 'application/json');
+    $bulk_req->set_body(wp_json_encode(['productIds' => [$simple_id, 99999999], 'language' => 'en']));
+    $bulk = rest_do_request($bulk_req)->get_data();
+    check(count($bulk['made'] ?? []) === 1 && count($bulk['failed'] ?? []) === 1, 'one page made, a missing product reported');
+    $made_id = (int) ($bulk['made'][0]['pageId'] ?? 0);
+    if ($made_id > 0) {
+        $made_post = get_post($made_id);
+        $made = Pages::payload($made_id);
+        check($made_post->post_status === 'draft' && $made_post->post_title === 'Smoke WC simple', 'the page is a draft named after the product');
+        check($made['offer']['source'] === 'woocommerce' && (int) $made['offer']['productId'] === $simple_id, 'the page sells the store product');
+        $by_type = [];
+        foreach ($made['sections'] as $section) {
+            $by_type[$section['type']] = $section;
+        }
+        check($by_type['hero']['props']['title'] === 'Smoke WC simple' && $by_type['hero']['props']['subtitle'] === 'A very comfortable shirt for daily wear.', 'the top banner has the product name and short description');
+        check(in_array('Soft cotton', $by_type['product']['props']['bullets'], true), 'key points come from the description');
+        check(($by_type['benefits']['props']['items'][0]['title'] ?? '') === 'Material' && empty($by_type['benefits']['hidden']), 'benefits come from the attributes');
+        $review_names = array_column($by_type['reviews']['props']['items'], 'name');
+        check(in_array('Nasrin', $review_names, true) && !in_array('Nasrin, Mirpur', $review_names, true), 'reviews are the product\'s own, not the samples');
+        check(!empty($by_type['guarantee']['hidden']), 'the sample guarantee is hidden');
+        Pages::forget_cached($made_id);
+        $made_html = strtolower(Renderer::article_for_post($made_id));
+        check(!str_contains($made_html, 'mustard') && !str_contains($made_html, 'broken seal') && !str_contains($made_html, 'ghani'), 'no sample text from the template is left on the page');
+        $search_req = new WP_REST_Request('GET', '/noksha/v1/wc-products');
+        $search_req->set_param('q', 'Smoke WC simple');
+        $found = rest_do_request($search_req)->get_data()['products'][0] ?? [];
+        check(($found['pages'] ?? 0) >= 1, 'the product search says the product already has a page');
+        wp_delete_post($made_id, true);
+    }
+    wp_set_current_user($previous_user);
+
+    // ---- Sales by product ----
+    $by_product = Noksha\Analytics\Tracker::by_product(wp_date('Y-m-d 00:00:00', current_time('timestamp') - DAY_IN_SECONDS), 1000);
+    $rows_by_key = array_column($by_product, null, 'key');
+    $main_row = $rows_by_key['p' . $simple_id] ?? null;
+    check(is_array($main_row) && $main_row['orders'] >= 3 && $main_row['units'] >= $main_row['orders'] && $main_row['revenue'] > 0, 'sales by product: the store product has orders, pieces and sales');
+    check(is_array($main_row) && $main_row['name'] === 'Smoke WC simple', 'the row uses the product name');
+    $addon_row = $rows_by_key['p' . $addon_id] ?? null;
+    check(is_array($addon_row) && $addon_row['addonUnits'] >= 1 && $addon_row['addonUnits'] === $addon_row['units'], 'an add-on product counts as sold as an add-on ' . wp_json_encode($addon_row));
+    $sum_units = array_sum(array_column(Orders::items((int) Orders::find_by_number($both_bumps['orderNumber'])['id']), 'qty'));
+    check($sum_units === 3, 'an order with two add-ons has three lines to count');
 
     wp_delete_post($wc_page, true);
     wp_delete_post($variable_id, true);

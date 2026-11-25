@@ -39,6 +39,14 @@ Build a one-page offer, take cash on delivery, bKash, Nagad, or SSLCommerz on th
 * Quantity discounts per page: "buy 2 or more, save 50", up to 4 steps, shown as buttons. The step is a "Quantity discount" line on the WooCommerce order, so coupons still apply to the full price.
 * Up to three add-ons per page (store products or custom). Pages with one add-on keep working.
 * A page from a cache corrects its price, stock and steps when it opens (new /live check). Optional "Only N left in stock" line from the real stock.
+* Delivery charge from the store's WooCommerce shipping zones, per page: the page's own charges, WooCommerce zones, or Auto (WooCommerce, else the page's charges). Free shipping minimums and free-shipping coupons count, local pickup is left out, the cheapest rate is used. Checkout refuses a delivery charge the buyer did not see.
+* Fixed: the WooCommerce order's state (district) was empty on a Bangla site, because WooCommerce translates state names. Districts now map to state codes by id.
+* Product structured data (schema.org Product, JSON-LD) on landing pages: name, images, live price in BDT (a price range for products with options), stock, sale end and the real rating. Filter noksha_product_schema can leave it out. Price tags for link previews too.
+* Ad events (ViewContent, InitiateCheckout, Purchase in the browser and the Conversions API) all use the same id: the chosen option, else the WooCommerce product, else the page. Each order line has its own id. Filter noksha_content_id maps ids to a catalog.
+* Analytics: sales by product (orders, pieces, sales, pieces sold as an add-on, each option, page visits and conversion).
+* Pages: make draft pages from up to 20 store products at once. Each takes the product's own text and reviews; sections it has nothing for are hidden, so no sample text is left in. The product search shows which products already have a page.
+* Fixed: product prices in the editor's product search showed an HTML code instead of the taka sign.
+* Fixed: saving a visitor who typed a phone and left (leads) always failed with an error; it called a method that did not exist.
 * Database version 10: `discount` and `coupon` on orders.
 * Database version 9: `wc_order_id` on orders, product and variation ids on order items.
 

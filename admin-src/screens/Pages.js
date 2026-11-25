@@ -42,6 +42,7 @@ export function Pages({ t, go, locale }) {
   const [createLang, setCreateLang] = useState('en');
   const [createTitle, setCreateTitle] = useState('');
   const [busy, setBusy] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   function load(pageNum = 1) {
     setStatus('loading');
@@ -176,6 +177,7 @@ export function Pages({ t, go, locale }) {
       <header className="nk-screen-header">
         <h1>{t('pages.title')}</h1>
         <div className="nk-screen-actions">
+          <Button variant="ghost" onClick={() => setBulkOpen(true)}>{t('bulk.open')}</Button>
           <Button onClick={() => setModalOpen(true)}>{t('pages.new')}</Button>
         </div>
       </header>
@@ -346,6 +348,8 @@ export function Pages({ t, go, locale }) {
         </div>
       ) : null}
 
+      <FromProductsModal t={t} open={bulkOpen} onClose={() => setBulkOpen(false)} onMade={() => load(1)} go={go} defaultLang={createLang} />
+
       <Modal
         open={modalOpen}
         onClose={() => !busy && setModalOpen(false)}
@@ -381,5 +385,128 @@ export function Pages({ t, go, locale }) {
         </div>
       </Modal>
     </div>
+  );
+}
+/**
+ * Draft pages from store products, several at once. Each page gets the
+ * product's own text and reviews; sections it has nothing for are hidden.
+ */
+function FromProductsModal({ t, open, onClose, onMade, go, defaultLang }) {
+  const [query, setQuery] = useState('');
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [picked, setPicked] = useState([]);
+  const [lang, setLang] = useState(defaultLang || 'en');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [searchError, setSearchError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery('');
+      setPicked([]);
+      setResult(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setSearchError(false);
+    const timer = window.setTimeout(() => {
+      api('wc-products?q=' + encodeURIComponent(query))
+        .then((data) => { if (!cancelled) setProducts(data.products || []); })
+        .catch(() => {
+          if (!cancelled) {
+            setProducts([]);
+            setSearchError(true);
+          }
+        })
+        .then(() => { if (!cancelled) setLoading(false); });
+    }, query ? 250 : 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [open, query, attempt]);
+
+  function toggle(id) {
+    setPicked((current) => (current.includes(id) ? current.filter((item) => item !== id) : (current.length < 20 ? current.concat(id) : current)));
+  }
+
+  async function make() {
+    setBusy(true);
+    try {
+      const data = await api('pages/from-products', { method: 'POST', body: { productIds: picked, language: lang } });
+      setResult(data);
+      setPicked([]);
+      onMade();
+    } catch (err) {
+      setResult({ made: [], failed: [{ productId: 0, message: err.message }] });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => !busy && onClose()}
+      title={t('bulk.title')}
+      footer={
+        result ? (
+          <Button onClick={onClose}>{t('bulk.done')}</Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
+            <Button onClick={make} loading={busy} disabled={!picked.length}>
+              {t('bulk.make').replace('{n}', String(picked.length))}
+            </Button>
+          </>
+        )
+      }
+    >
+      {result ? (
+        <div className="nk-detail-stack">
+          <p>{t('bulk.made').replace('{n}', String(result.made.length))}</p>
+          <ul className="nk-bulk-list">
+            {result.made.map((row) => (
+              <li key={row.pageId}>
+                <span>{row.title}</span>
+                <Button size="sm" variant="ghost" onClick={() => { onClose(); go('pages/' + row.pageId); }}>{t('bulk.openPage')}</Button>
+              </li>
+            ))}
+          </ul>
+          {result.failed.length ? (
+            <p className="nk-banner" role="alert">{t('bulk.failed').replace('{n}', String(result.failed.length))} {result.failed.map((row) => row.message).join(' ')}</p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="nk-detail-stack">
+          <p className="nk-muted">{t('bulk.help')}</p>
+          <Input label={t('offer.wcSearch')} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('offer.wcSearchPlaceholder')} />
+          <Select label={t('pages.language')} value={lang} onChange={(e) => setLang(e.target.value)}>
+            <option value="en">{t('settings.english')}</option>
+            <option value="bn">{t('settings.bangla')}</option>
+          </Select>
+          {loading ? <p className="nk-muted">{t('common.loading')}</p> : null}
+          {!loading && searchError ? (
+            <div className="nk-banner" role="alert">
+              <p>{t('common.error')}</p>
+              <Button size="sm" variant="ghost" onClick={() => setAttempt((n) => n + 1)}>{t('common.retry')}</Button>
+            </div>
+          ) : null}
+          {!loading && !searchError && products.length === 0 ? <p className="nk-muted">{t('offer.wcNone')}</p> : null}
+          <ul className="nk-bulk-list">
+            {products.map((product) => (
+              <li key={product.id}>
+                <label>
+                  <input type="checkbox" checked={picked.includes(product.id)} onChange={() => toggle(product.id)} />
+                  {' '}{product.name}
+                  {product.pages > 0 ? <em className="nk-tag">{t('bulk.hasPage').replace('{n}', String(product.pages))}</em> : null}
+                </label>
+                <small className="nk-muted">{product.priceHtml}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Modal>
   );
 }

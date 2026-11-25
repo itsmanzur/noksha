@@ -25,6 +25,22 @@ final class Geo {
     /**
      * @return array<string, string>|null
      */
+    /**
+     * A district by id, wherever it is.
+     *
+     * @return array{id:string,name:string}|null
+     */
+    public static function district(string $district_id): ?array {
+        foreach (self::data()['divisions'] ?? [] as $division) {
+            foreach ($division['districts'] ?? [] as $district) {
+                if ((string) ($district['id'] ?? '') === $district_id) {
+                    return ['id' => $district_id, 'name' => (string) ($district['en'] ?? '')];
+                }
+            }
+        }
+        return null;
+    }
+
     public static function resolve(string $division_id, string $district_id, string $upazila_id, bool $upazila_required): ?array {
         $division = null;
         foreach (self::data()['divisions'] ?? [] as $candidate) {

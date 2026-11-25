@@ -81,6 +81,9 @@ final class Controller {
             ['methods' => 'PUT', 'callback' => [$this, 'put_page']] + $admin,
             ['methods' => 'DELETE', 'callback' => [$this, 'delete_page']] + $admin,
         ]);
+        register_rest_route('noksha/v1', '/pages/from-products', [
+            ['methods' => 'POST', 'callback' => [$this, 'pages_from_products']] + $admin,
+        ]);
         register_rest_route('noksha/v1', '/wc-products', [
             ['methods' => 'GET', 'callback' => [$this, 'wc_products']] + $admin,
         ]);
@@ -149,6 +152,10 @@ final class Controller {
         register_rest_route('noksha/v1', '/webhooks/(?P<courier>steadfast|pathao|redx)', [
             'methods' => 'POST',
             'callback' => [$this, 'courier_webhook'],
+        ] + $public);
+        register_rest_route('noksha/v1', '/shipping', [
+            'methods' => 'GET',
+            'callback' => [$this, 'shipping_quote'],
         ] + $public);
         register_rest_route('noksha/v1', '/live', [
             'methods' => 'GET',
@@ -332,6 +339,26 @@ final class Controller {
         }
         wp_delete_post($post->ID, true);
         return ['deleted' => true];
+    }
+
+    /**
+     * One draft page per chosen store product. Returns what was made and what was not.
+     */
+    public function pages_from_products(\WP_REST_Request $request): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array) $request->get_param('productIds')))));
+        $ids = array_slice($ids, 0, \Noksha\Pages\FromProduct::MAX);
+        $lang = $request->get_param('language') === 'bn' ? 'bn' : 'en';
+        $made = [];
+        $failed = [];
+        foreach ($ids as $product_id) {
+            $result = \Noksha\Pages\FromProduct::create($product_id, $lang);
+            if (is_wp_error($result)) {
+                $failed[] = ['productId' => $product_id, 'message' => $result->get_error_message()];
+            } else {
+                $made[] = $result;
+            }
+        }
+        return ['made' => $made, 'failed' => $failed];
     }
 
     public function wc_suggestions(\WP_REST_Request $request) {
@@ -648,7 +675,7 @@ final class Controller {
     }
 
     public function capture_lead(\WP_REST_Request $request) {
-        if ($this->limited('lead', 40)) {
+        if (RateLimit::hit('lead', 40)) {
             return new \WP_Error('noksha_rate', 'Too many requests.', ['status' => 429]);
         }
         $params = $this->params($request);
@@ -738,6 +765,47 @@ final class Controller {
         $variant = in_array($variant, ['a', 'b'], true) ? $variant : '';
         Tracker::record($page_id, $event, $session, $variant);
         return ['ok' => true];
+    }
+
+    /**
+     * The delivery charge for a district from the store's WooCommerce zones.
+     * cost is null when no zone delivers there; 'fallback' says the page's own
+     * charges apply then (Auto). Never cached.
+     */
+    public function shipping_quote(\WP_REST_Request $request) {
+        if (RateLimit::hit('shipping', 240)) {
+            return new \WP_Error('noksha_rate', 'Too many requests.', ['status' => 429]);
+        }
+        $page_id = (int) $request->get_param('page_id');
+        $post = get_post($page_id);
+        if (!$post || $post->post_type !== \Noksha\Pages\PostType::TYPE || $post->post_status !== 'publish') {
+            return new \WP_Error('noksha_page_closed', 'This page is not taking orders.', ['status' => 404]);
+        }
+        $doc = Pages::document($page_id);
+        $offer = \Noksha\Catalog\WcProduct::apply($doc['offer'], max(0, (int) $request->get_param('variation_id')));
+        $source = \Noksha\Shipping\WcRates::source($offer);
+        $data = ['source' => $source, 'cost' => null, 'label' => '', 'fallback' => $source === 'auto'];
+        $district = \Noksha\Region\Geo::district(sanitize_text_field((string) $request->get_param('district_id')));
+        if ($source !== 'noksha' && $district !== null) {
+            $qty = max(1, min(10, (int) ($request->get_param('qty') ?: 1)));
+            $bumps = \Noksha\Orders\Pricing::chosen_bumps($offer, ['bumps' => (array) $request->get_param('bumps')]);
+            $tier = \Noksha\Orders\Pricing::tier_discount($offer, $qty, (float) $offer['price'] * $qty);
+            $coupon = \Noksha\Catalog\WcCoupon::clean((string) $request->get_param('coupon'));
+            $coupon_discount = 0.0;
+            if ($coupon !== '' && \Noksha\Catalog\WcCoupon::enabled_for($doc)) {
+                $checked = \Noksha\Catalog\WcCoupon::preview($offer, $qty, array_column($bumps, 'index'), $coupon);
+                $coupon_discount = is_wp_error($checked) ? 0.0 : (float) $checked['discount'];
+                $coupon = is_wp_error($checked) ? '' : $coupon;
+            }
+            $quote = \Noksha\Shipping\WcRates::quote($offer, $qty, $bumps, $district['id'], $district['name'], '', $tier + $coupon_discount, $coupon);
+            if ($quote !== null) {
+                $data['cost'] = $quote['cost'];
+                $data['label'] = $quote['label'];
+            }
+        }
+        $response = new \WP_REST_Response($data);
+        $response->header('Cache-Control', 'no-store, max-age=0');
+        return $response;
     }
 
     /**

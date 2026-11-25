@@ -131,6 +131,13 @@ final class Renderer {
             $html .= '<meta property="og:url" content="' . esc_url($url) . '">';
         }
         $html .= '<meta property="og:type" content="product">';
+        $offer_price = (float) ($payload['offer']['price'] ?? 0);
+        if ($offer_price > 0) {
+            // Product price for Facebook and other link previews.
+            $html .= '<meta property="product:price:amount" content="' . esc_attr(number_format($offer_price, 2, '.', '')) . '">';
+            $html .= '<meta property="product:price:currency" content="BDT">';
+        }
+        $html .= Schema::tag(Schema::product($payload, $description, $url));
         return [
             'title' => $title,
             'description' => $description,
@@ -184,8 +191,12 @@ final class Renderer {
             'shippingInside' => (float) ($offer['shippingInside'] ?? $offer['shipping'] ?? 0),
             'shippingOutside' => (float) ($offer['shippingOutside'] ?? $offer['shipping'] ?? 0),
             'shippingZones' => is_array($offer['shippingZones'] ?? null) ? $offer['shippingZones'] : [],
+            'shippingSource' => \Noksha\Shipping\WcRates::source($offer),
             'dhakaDistrictId' => '47',
             'productName' => (string) ($offer['productName'] ?? ''),
+            // Ad-platform ids: this page's product, and each option's own.
+            'contentId' => \Noksha\Analytics\ContentId::for_offer($offer, (int) ($payload['id'] ?? 0)),
+            'contentIds' => (object) \Noksha\Analytics\ContentId::for_variations($offer, (int) ($payload['id'] ?? 0)),
             'variationId' => (int) ($offer['variationId'] ?? 0),
             'variations' => is_array($offer['wc']['variations'] ?? null) ? $offer['wc']['variations'] : [],
             'stockHint' => [
@@ -225,6 +236,7 @@ final class Renderer {
                 'bumpAdd' => Catalog::line($lang, 'bump_add'),
                 'couponApplied' => Catalog::line($lang, 'coupon_applied'),
                 'stockLeft' => Catalog::line($lang, 'stock_left'),
+                'noDelivery' => Catalog::line($lang, 'no_delivery'),
                 'tierLabel' => Catalog::line($lang, 'tier_label'),
                 'outOfStock' => Catalog::line($lang, 'out_of_stock'),
                 'couponInvalid' => Catalog::line($lang, 'coupon_invalid'),
@@ -687,13 +699,15 @@ final class Renderer {
         if (!hash_equals(self::order_key($order), $key)) {
             return null;
         }
+        $contents = \Noksha\Analytics\ContentId::contents(\Noksha\Orders\Repository::items((int) $order['id']), (int) $order['page_id']);
         return [
             'value' => (float) $order['total'],
             'currency' => 'BDT',
             'event_id' => (string) ($order['event_id'] ?: ('nk_' . $order['order_number'])),
             'order_number' => $order['order_number'],
             'content_name' => (string) ($payload['offer']['productName'] ?? ''),
-            'content_ids' => [(string) ($payload['id'] ?? '')],
+            'content_ids' => [$contents !== [] ? $contents[0]['id'] : \Noksha\Analytics\ContentId::for_ids((int) ($payload['id'] ?? 0))],
+            'contents' => $contents,
             'num_items' => (int) $order['qty'],
         ];
     }

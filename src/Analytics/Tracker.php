@@ -97,6 +97,7 @@ final class Tracker {
             'codOpen' => self::cod_open_balance(),
             'byDistrict' => self::ops_by('district_name', $start),
             'byPage' => self::ops_by_page($start),
+            'byProduct' => self::by_product($start),
         ];
     }
 
@@ -460,6 +461,102 @@ final class Tracker {
             $args[] = $page_id;
         }
         return (int) $wpdb->get_var($wpdb->prepare($sql, $args));
+    }
+
+    /**
+     * Sales by product, from the order lines: orders, pieces and money, how many
+     * went as an add-on, each option's pieces, and for a page's main product its
+     * page visits and conversion. Same orders as the funnel (countable statuses).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function by_product(string $start, int $limit = 20): array {
+        global $wpdb;
+        $items = Orders::items_table();
+        $orders = Orders::table();
+        $statuses = self::status_sql();
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT i.order_id, i.name, i.qty, i.price, i.product_id, i.variation_id, o.page_id,
+                (i.id = (SELECT MIN(first.id) FROM {$items} first WHERE first.order_id = i.order_id)) AS is_main
+             FROM {$items} i
+             INNER JOIN {$orders} o ON o.id = i.order_id
+             WHERE o.created_at >= %s AND o.status IN ($statuses)",
+            $start
+        ), ARRAY_A);
+
+        $products = [];
+        foreach ((array) $rows as $row) {
+            $product_id = (int) $row['product_id'];
+            // A custom product has no store id: it is that page's own product.
+            $key = $product_id > 0 ? 'p' . $product_id : 'c' . (int) $row['page_id'] . ':' . $row['name'];
+            if (!isset($products[$key])) {
+                $products[$key] = [
+                    'key' => $key,
+                    'productId' => $product_id,
+                    'pageId' => $product_id > 0 ? 0 : (int) $row['page_id'],
+                    'name' => (string) $row['name'],
+                    'orders' => [],
+                    'units' => 0,
+                    'revenue' => 0.0,
+                    'addonUnits' => 0,
+                    'mainOrders' => [],
+                    'options' => [],
+                ];
+            }
+            $qty = (int) $row['qty'];
+            $products[$key]['orders'][(int) $row['order_id']] = true;
+            $products[$key]['units'] += $qty;
+            $products[$key]['revenue'] += $qty * (float) $row['price'];
+            if ((int) $row['is_main'] === 1) {
+                $products[$key]['mainOrders'][(int) $row['order_id']] = (int) $row['page_id'];
+            } else {
+                $products[$key]['addonUnits'] += $qty;
+            }
+            $variation_id = (int) $row['variation_id'];
+            if ($variation_id > 0) {
+                $products[$key]['options'][$variation_id] = ($products[$key]['options'][$variation_id] ?? 0) + $qty;
+            }
+        }
+
+        $out = [];
+        foreach ($products as $product) {
+            // Visits: the pages where this product was the main product.
+            $pages = array_unique(array_values($product['mainOrders']));
+            $visits = 0;
+            foreach ($pages as $page_id) {
+                $visits += self::stage_sessions('page_view', $start, (int) $page_id);
+            }
+            $main_orders = count($product['mainOrders']);
+            $name = $product['name'];
+            $options = [];
+            if ($product['productId'] > 0 && function_exists('wc_get_product')) {
+                $wc = wc_get_product($product['productId']);
+                if ($wc) {
+                    $name = $wc->get_name();
+                }
+                foreach ($product['options'] as $variation_id => $units) {
+                    $variation = wc_get_product((int) $variation_id);
+                    $label = $variation instanceof \WC_Product_Variation ? wc_get_formatted_variation($variation, true, false, false) : '#' . $variation_id;
+                    $options[] = ['id' => (int) $variation_id, 'label' => (string) $label, 'units' => (int) $units];
+                }
+                usort($options, static fn($a, $b) => $b['units'] <=> $a['units']);
+            }
+            $out[] = [
+                'key' => $product['key'],
+                'productId' => $product['productId'],
+                'pageId' => $product['pageId'],
+                'name' => $name,
+                'orders' => count($product['orders']),
+                'units' => $product['units'],
+                'revenue' => round($product['revenue'], 2),
+                'addonUnits' => $product['addonUnits'],
+                'visits' => $visits,
+                'conversion' => $pages !== [] ? self::conversion_rate($visits, $main_orders) : null,
+                'options' => $options,
+            ];
+        }
+        usort($out, static fn($a, $b) => $b['revenue'] <=> $a['revenue']);
+        return array_slice($out, 0, max(1, $limit));
     }
 
     private static function status_sql(): string {

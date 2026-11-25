@@ -76,6 +76,73 @@ test.describe('landing page for a WooCommerce product', () => {
     expect(errors, 'no JavaScript errors on the page').toEqual([]);
   });
 
+  test('delivery charge from WooCommerce zones', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(fixture.shipUrl);
+    // The district lists load when the form is first touched.
+    await page.locator('input[name="name"]').focus();
+    await page.waitForFunction(() => document.querySelectorAll('[data-geo="division"] option').length > 1);
+
+    const pick = (where) => page.evaluate(([division, district]) => {
+      const d = document.querySelector('[data-geo="division"]');
+      d.value = division;
+      d.dispatchEvent(new Event('change', { bubbles: true }));
+      const s = document.querySelector('[data-geo="district"]');
+      s.value = district;
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    }, [where.division, where.district]);
+    // What the server says for this district (cost is null when no zone covers it).
+    const quote = (where) => page.evaluate(async ([pageId, district]) => {
+      const res = await fetch(window.nokshaFront.root + 'shipping?page_id=' + pageId + '&district_id=' + district + '&qty=1&_=' + Date.now());
+      return res.json();
+    }, [fixture.shipPageId, where.district]);
+
+    for (const name of ['dhaka', 'gazipur', 'sylhet']) {
+      const where = fixture.districts[name];
+      await pick(where);
+      const q = await quote(where);
+      expect(q.source).toBe('auto');
+      if (q.cost !== null) {
+        await expect(page.locator('[data-shipping]'), name).toContainText(String(q.cost));
+      }
+    }
+
+    // Order to the last district: checkout compares the charge shown with its own.
+    await page.locator('input[name="name"]').fill('E2E Delivery');
+    await page.locator('input[name="phone"]').fill('01999000111');
+    await page.locator('.nk-submit').click();
+    await page.waitForURL(/nk_order=/, { timeout: 30000 });
+    expect(errors, 'no JavaScript errors on the page').toEqual([]);
+  });
+
+  test('ad events use the product and option ids', async ({ page }) => {
+    // Catch what would go to Meta, and switch the pixel on for this page only.
+    await page.addInitScript(() => {
+      window.__events = [];
+      window.fbq = function () { window.__events.push(Array.prototype.slice.call(arguments)); };
+      let config;
+      Object.defineProperty(window, 'nokshaFront', {
+        configurable: true,
+        get() { return config; },
+        set(value) { config = value; config.pixels = Object.assign({}, config.pixels, { meta: '1' }); },
+      });
+    });
+    await page.goto(fixture.url);
+    const events = () => page.evaluate(() => window.__events.filter((e) => e[0] === 'track').map((e) => ({ name: e[1], ids: (e[2] || {}).content_ids, contents: (e[2] || {}).contents })));
+    await expect.poll(async () => (await events()).map((e) => e.name)).toContain('ViewContent');
+    const view = (await events()).find((e) => e.name === 'ViewContent');
+    expect(view.ids).toEqual([String(fixture.variations.S)]);
+
+    // Choose size L, then start the form: InitiateCheckout carries L's id.
+    await page.locator('[data-variation]').selectOption(String(fixture.variations.L));
+    await page.locator('input[name="name"]').focus();
+    await expect.poll(async () => (await events()).map((e) => e.name)).toContain('InitiateCheckout');
+    const start = (await events()).find((e) => e.name === 'InitiateCheckout');
+    expect(start.ids).toEqual([String(fixture.variations.L)]);
+    expect(start.contents[0].id).toBe(String(fixture.variations.L));
+  });
+
   test('several add-ons', async ({ page }) => {
     await page.goto(fixture.url);
     await expect(page.locator('[name="bump"]')).toHaveCount(2);
@@ -132,6 +199,18 @@ test.describe('landing page for a WooCommerce product', () => {
     await expect(main).toHaveAttribute('src', /nk-e2e-variation/);
     await expect(thumbs).toHaveCount(3);
 
+    // Search engines get the same facts as Product data in <head>.
+    const ld = await page.evaluate(() => {
+      const node = document.querySelector('head script[type="application/ld+json"]');
+      return node ? JSON.parse(node.textContent) : null;
+    });
+    expect(ld && ld['@type']).toBe('Product');
+    expect(ld.name).toBe('E2E Shirt');
+    expect(ld.offers['@type']).toBe('AggregateOffer');
+    expect([ld.offers.lowPrice, ld.offers.highPrice]).toEqual(['500.00', '650.00']);
+    expect(ld.aggregateRating.reviewCount).toBe(3);
+    expect(ld.image.length).toBe(3);
+
     // The product's real rating counts every approved review (5, 4 and 3 stars): 4.0 from 3.
     await expect(page.locator('.nk-rating')).toContainText('4.0');
     await expect(page.locator('.nk-rating')).toContainText('(3)');
@@ -151,8 +230,10 @@ test.describe('landing page for a WooCommerce product', () => {
     await expect(page.locator('.nk-price-now').first()).toContainText('500');
     expect(await page.evaluate(() => window.nokshaFront.price)).toBe(500);
 
-    // Low stock from the real numbers: size S has 5.
-    await expect(page.locator('[data-stock-hint]')).toContainText('Only 5 left');
+    // Low stock from the real numbers (other tests may have bought some): ask the live check.
+    const live = await page.evaluate(async (pageId) => (await fetch(window.nokshaFront.root + 'live?page_id=' + pageId + '&_=' + Date.now())).json(), fixture.pageId);
+    const small = live.variations.find((row) => row.id === fixture.variations.S);
+    await expect(page.locator('[data-stock-hint]')).toContainText('Only ' + small.stock + ' left');
     await page.locator('[data-variation]').selectOption(String(fixture.variations.L));
     await expect(page.locator('[data-stock-hint]')).toContainText(/Only \d left/);
   });

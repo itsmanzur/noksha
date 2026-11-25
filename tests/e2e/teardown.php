@@ -27,8 +27,16 @@ foreach ((array) $rows as $row) {
     $wpdb->delete($wpdb->prefix . 'noksha_orders', ['id' => (int) $row['id']]);
 }
 
-if (!empty($state['pageId'])) {
-    wp_delete_post((int) $state['pageId'], true);
+foreach (['pageId', 'shipPageId'] as $key) {
+    if (!empty($state[$key])) {
+        wp_delete_post((int) $state[$key], true);
+    }
+}
+// Pages the browser tests made from the fixture products.
+foreach ((array) ($state['productIds'] ?? []) as $id) {
+    foreach (Noksha\Front\CachePurge::pages_using((int) $id, ['publish', 'draft']) as $made_page) {
+        wp_delete_post((int) $made_page, true);
+    }
 }
 foreach ((array) ($state['productIds'] ?? []) as $id) {
     $product = wc_get_product((int) $id);

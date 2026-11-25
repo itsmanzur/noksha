@@ -55,17 +55,12 @@ final class Capi {
         }
         $items = \Noksha\Orders\Repository::items((int) ($order['id'] ?? 0));
         if ($items !== []) {
-            $custom['contents'] = array_map(static function (array $item) use ($order): array {
-                return [
-                    'id' => (string) ($order['page_id'] ?? ''),
-                    'quantity' => (int) ($item['qty'] ?? 1),
-                    'item_price' => (float) ($item['price'] ?? 0),
-                ];
-            }, $items);
+            $custom['contents'] = ContentId::contents($items, (int) ($order['page_id'] ?? 0));
+            $custom['content_ids'] = [$custom['contents'][0]['id']];
             $custom['num_items'] = (int) ($order['qty'] ?? array_sum(array_map(static fn ($item) => (int) ($item['qty'] ?? 1), $items)));
         } elseif ($name !== '') {
             $custom['contents'] = [[
-                'id' => (string) ($order['page_id'] ?? ''),
+                'id' => ContentId::for_ids((int) ($order['page_id'] ?? 0)),
                 'quantity' => (int) ($order['qty'] ?? 1),
                 'item_price' => (float) ($order['subtotal'] ?? 0) / max(1, (int) ($order['qty'] ?? 1)),
             ]];

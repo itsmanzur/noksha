@@ -136,6 +136,28 @@ $checkout['payments'] = ['cod'];
 $checkout['coupon'] = true;
 Pages::update($page_id, ['status' => 'publish', 'slug' => 'e2e-noksha', 'offer' => $offer, 'checkout' => $checkout]);
 
+// A second page that asks for the district and takes delivery from WooCommerce zones (Auto).
+$ship_page_id = Pages::create('single', 'en', 'E2E delivery');
+$ship_doc = Pages::payload($ship_page_id);
+$ship_offer = $ship_doc['offer'];
+$ship_offer['source'] = 'woocommerce';
+$ship_offer['productId'] = $shirt_id;
+$ship_offer['shippingSource'] = 'auto';
+$ship_checkout = $ship_doc['checkout'];
+foreach (['upazila', 'address'] as $field) {
+    $ship_checkout['fields'][$field] = ['enabled' => false, 'required' => false];
+}
+$ship_checkout['payments'] = ['cod'];
+Pages::update($ship_page_id, ['status' => 'publish', 'slug' => 'e2e-noksha-ship', 'offer' => $ship_offer, 'checkout' => $ship_checkout]);
+$districts = [];
+foreach (Noksha\Region\Geo::data()['divisions'] as $division) {
+    foreach ($division['districts'] as $district) {
+        if (in_array($district['en'], ['Dhaka', 'Gazipur', 'Sylhet'], true)) {
+            $districts[strtolower($district['en'])] = ['division' => (string) $division['id'], 'district' => (string) $district['id']];
+        }
+    }
+}
+
 // An administrator to open the editor with.
 $login = 'nk_e2e';
 $password = wp_generate_password(24, false);
@@ -156,6 +178,7 @@ update_option('noksha_e2e_state', [
     'productIds' => [$shirt_id, $addon_id],
     'couponId' => $coupon_id,
     'userId' => (int) $user_id,
+    'shipPageId' => $ship_page_id,
     'attachmentIds' => $images,
 ], false);
 
@@ -165,6 +188,9 @@ file_put_contents($out, wp_json_encode([
     'adminUrl' => admin_url('admin.php?page=noksha'),
     'loginUrl' => wp_login_url(),
     'shirtId' => $shirt_id,
+    'shipPageId' => $ship_page_id,
+    'shipUrl' => get_permalink($ship_page_id),
+    'districts' => $districts,
     'variations' => $variations,
     'addonId' => $addon_id,
     'user' => $login,

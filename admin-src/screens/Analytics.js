@@ -229,6 +229,42 @@ export function Analytics({ t, locale }) {
             </Card>
           ) : null}
 
+          {(data.byProduct || []).length > 0 ? (
+            <Card title={t('analytics.byProduct')}>
+              <Table
+                columns={[
+                  {
+                    key: 'name',
+                    label: t('analytics.product'),
+                    render: (row) => (
+                      <span>
+                        {row.name}
+                        {row.options && row.options.length ? (
+                          <small className="nk-muted" style={{ display: 'block' }}>
+                            {row.options.map((option) => option.label + ': ' + formatNumber(option.units, locale)).join(' · ')}
+                          </small>
+                        ) : null}
+                      </span>
+                    ),
+                  },
+                  { key: 'orders', label: t('analytics.orders'), render: (row) => formatNumber(row.orders, locale) },
+                  { key: 'units', label: t('analytics.pieces'), render: (row) => formatNumber(row.units, locale) },
+                  { key: 'revenue', label: t('analytics.sales'), render: (row) => formatMoney(row.revenue, locale) },
+                  { key: 'addonUnits', label: t('analytics.asAddon'), render: (row) => formatNumber(row.addonUnits, locale) },
+                  { key: 'visits', label: t('analytics.visits'), render: (row) => formatNumber(row.visits, locale) },
+                  {
+                    key: 'conversion',
+                    label: t('analytics.conversion'),
+                    render: (row) => (row.conversion == null ? '—' : `${formatNumber(row.conversion, locale)}%`),
+                  },
+                ]}
+                rows={data.byProduct}
+                rowKey={(row) => row.key}
+              />
+              <p className="nk-help">{t('analytics.byProductHelp')}</p>
+            </Card>
+          ) : null}
+
           {(data.byPage || []).length > 0 ? (
             <Card title={t('analytics.byPage')}>
               <Table

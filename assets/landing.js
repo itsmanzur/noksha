@@ -112,10 +112,22 @@
     } catch (err) {}
   }
 
+  // The id the ad platform knows this product (or the chosen option) by.
+  function currentContentId() {
+    var select = document.querySelector('[data-variation]');
+    var ids = cfg.contentIds || {};
+    if (select && ids[String(select.value)]) {
+      return String(ids[String(select.value)]);
+    }
+    return String(cfg.contentId || cfg.pageId || '');
+  }
+
   function productPayload(extra) {
+    var count = Number((document.querySelector('[name="qty"]') || {}).value) || 1;
     var base = {
       content_name: cfg.productName || '',
-      content_ids: [String(cfg.pageId || '')],
+      content_ids: [currentContentId()],
+      contents: [{ id: currentContentId(), quantity: count, item_price: Number(cfg.price || 0) }],
       content_type: 'product',
       currency: 'BDT',
       value: Number(cfg.price || 0),
@@ -487,7 +499,54 @@
     return found ? found.upazilas : [];
   }
 
+  /* ---- Delivery from the store's WooCommerce zones (when the page uses them) ---- */
+
+  var wcShip = { cost: null, timer: 0, seq: 0 };
+
+  function usesWcShipping() {
+    return cfg.shippingSource === 'woocommerce' || cfg.shippingSource === 'auto';
+  }
+
+  function refreshWcShipping() {
+    if (!usesWcShipping() || cfg.preview) {
+      return;
+    }
+    window.clearTimeout(wcShip.timer);
+    wcShip.timer = window.setTimeout(function () {
+      var districtId = district ? String(district.value || '') : '';
+      if (!districtId) {
+        wcShip.cost = null;
+        updateTotals();
+        return;
+      }
+      var seq = ++wcShip.seq;
+      var params = 'page_id=' + encodeURIComponent(cfg.pageId)
+        + '&district_id=' + encodeURIComponent(districtId)
+        + '&qty=' + encodeURIComponent(String(Number(qty && qty.value) || 1))
+        + '&variation_id=' + encodeURIComponent(String(variationSelect ? Number(variationSelect.value) || 0 : 0))
+        + '&coupon=' + encodeURIComponent(couponApplied || '')
+        + chosenBumps().map(function (i) { return '&bumps[]=' + i; }).join('')
+        + '&_=' + Date.now();
+      window.fetch(cfg.root + 'shipping?' + params, { credentials: 'same-origin' })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (quote) {
+          if (seq !== wcShip.seq || !quote) {
+            return;
+          }
+          wcShip.cost = quote.cost == null ? null : Number(quote.cost);
+          if (wcShip.cost == null && cfg.shippingSource === 'woocommerce') {
+            showFormError(strings.noDelivery || 'No delivery to this area', 'district_id');
+          }
+          updateTotals();
+        })
+        .catch(function () {});
+    }, 250);
+  }
+
   function currentShipping() {
+    if (usesWcShipping() && wcShip.cost != null) {
+      return wcShip.cost;
+    }
     var districtId = district ? String(district.value || '') : '';
     var upazilaId = upazila ? String(upazila.value || '') : '';
     var zones = Array.isArray(cfg.shippingZones) ? cfg.shippingZones : [];
@@ -564,6 +623,7 @@
       couponApplied = result.code || code;
       setCouponMessage((strings.couponApplied || 'Coupon applied') + ': ' + couponApplied, true);
       updateTotals();
+      refreshWcShipping();
     }).catch(function (error) {
       couponDiscount = 0;
       couponApplied = '';
@@ -678,6 +738,7 @@
   if (variationSelect) {
     variationSelect.addEventListener('change', applyVariation);
     variationSelect.addEventListener('change', refreshCoupon);
+    variationSelect.addEventListener('change', refreshWcShipping);
   }
 
   function renderStockHint(stock) {
@@ -1001,11 +1062,13 @@
       fill(district, districtsOf(division.value), districtLabel);
       fill(upazila, [], upazilaLabel);
       updateTotals();
+      refreshWcShipping();
     });
     if (district) {
       district.addEventListener('change', function () {
         fill(upazila, upazilasOf(division.value, district.value), upazilaLabel);
         updateTotals();
+        refreshWcShipping();
       });
     }
     [division, district, upazila].forEach(function (sel) {
@@ -1108,10 +1171,12 @@
     qty.addEventListener('change', updateTotals);
     qty.addEventListener('input', refreshCoupon);
     qty.addEventListener('change', refreshCoupon);
+    qty.addEventListener('change', refreshWcShipping);
   }
   bumpInputs.forEach(function (input) {
     input.addEventListener('change', updateTotals);
     input.addEventListener('change', refreshCoupon);
+    input.addEventListener('change', refreshWcShipping);
   });
   bindTiers();
   updateTotals();
@@ -1544,6 +1609,7 @@
       variation_id: variationSelect ? Number(variationSelect.value) || 0 : 0,
       coupon: couponInput ? couponInput.value.trim() : '',
       expected_price: Number(cfg.price) || 0,
+      expected_shipping: currentShipping(),
       expected_tier_discount: tierDiscount(Number(data.get('qty') || 1)),
       expected_bumps_total: bumpPrice(),
       otp_code: data.get('otp_code') || '',
@@ -1602,6 +1668,9 @@
         landing.querySelectorAll('.nk-price-now').forEach(function (el) {
           el.textContent = money(cfg.price);
         });
+        if (payload.data.shipping != null && usesWcShipping()) {
+          wcShip.cost = Number(payload.data.shipping);
+        }
         if (Array.isArray(payload.data.tiers)) {
           cfg.tiers = payload.data.tiers;
           renderTiers();

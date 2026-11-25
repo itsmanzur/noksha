@@ -1469,6 +1469,17 @@ function OfferFields({ t, offer, onChange, afterProduct }) {
           </button>
         ) : null}
       </div>
+      {isWc ? (
+        <label className="nk-field">
+          <span>{t('offer.shippingSource')}</span>
+          <select value={offer.shippingSource || 'noksha'} onChange={(event) => onChange({ ...offer, shippingSource: event.target.value })}>
+            <option value="noksha">{t('offer.shippingSourceNoksha')}</option>
+            <option value="woocommerce">{t('offer.shippingSourceWc')}</option>
+            <option value="auto">{t('offer.shippingSourceAuto')}</option>
+          </select>
+          <small className="nk-help">{t('offer.shippingSourceHelp')}</small>
+        </label>
+      ) : null}
       <div className="nk-two">
         <MoneyField label={t('offer.shippingInside')} help={t('offer.shippingInsideHelp')} value={inside} onChange={(value) => setShipping({ shippingInside: value })} />
         <MoneyField label={t('offer.shippingOutside')} help={t('offer.shippingOutsideHelp')} value={outside} onChange={(value) => setShipping({ shippingOutside: value })} />

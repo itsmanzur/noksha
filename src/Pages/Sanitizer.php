@@ -230,6 +230,8 @@ final class Sanitizer {
             'shippingInside' => $inside,
             'shippingOutside' => $outside,
             'shippingZones' => $zones,
+            // Delivery charge: these zones, the store's WooCommerce zones, or WooCommerce first and these when no zone matches.
+            'shippingSource' => $source === 'woocommerce' && in_array($offer['shippingSource'] ?? '', ['woocommerce', 'auto'], true) ? (string) $offer['shippingSource'] : 'noksha',
             'imageUrl' => self::url($offer['imageUrl'] ?? ''),
             // Add-ons beside the order summary (up to 3); 'bump' stays as the first, for older readers.
             'bumps' => $bumps,

@@ -38,7 +38,7 @@ final class CachePurge {
      *
      * @return list<int>
      */
-    public static function pages_using(int $product_id): array {
+    public static function pages_using(int $product_id, array $statuses = ['publish']): array {
         if ($product_id <= 0) {
             return [];
         }
@@ -48,7 +48,7 @@ final class CachePurge {
             "SELECT m.post_id FROM {$wpdb->postmeta} m
              INNER JOIN {$wpdb->posts} p ON p.ID = m.post_id
              WHERE m.meta_key = '_noksha_offer' AND m.meta_value LIKE %s
-               AND p.post_type = %s AND p.post_status = 'publish'",
+               AND p.post_type = %s AND p.post_status IN ('" . implode("','", array_map('sanitize_key', $statuses)) . "')",
             $like,
             PostType::TYPE
         ));

@@ -219,7 +219,7 @@ final class Repository {
     public static function items(int $order_id): array {
         global $wpdb;
         $rows = $wpdb->get_results(
-            $wpdb->prepare('SELECT name, qty, price FROM ' . self::items_table() . ' WHERE order_id = %d', $order_id),
+            $wpdb->prepare('SELECT name, qty, price, product_id, variation_id FROM ' . self::items_table() . ' WHERE order_id = %d', $order_id),
             ARRAY_A
         );
         return is_array($rows) ? $rows : [];

@@ -24,6 +24,7 @@ use Noksha\Payments\WalletVerifier;
 use Noksha\Support\RateLimit;
 use Noksha\Region\Geo;
 use Noksha\Region\Phone;
+use Noksha\Shipping\WcRates;
 
 final class Checkout {
     public function place(array $input) {
@@ -179,6 +180,27 @@ final class Checkout {
                 'tiers' => $doc['offer']['tiers'] ?? [],
             ]);
         }
+        // Delivery from the store's WooCommerce zones, when the page asks for it.
+        $ship_rate = [];
+        $ship_source = WcRates::source($doc['offer']);
+        if ($ship_source !== WcRates::SOURCE_NOKSHA && ($geo['district_id'] ?? '') !== '') {
+            $coupon_discount = ($coupon_code !== '' && isset($checked) && is_array($checked)) ? (float) $checked['discount'] : 0.0;
+            $quote = WcRates::quote($doc['offer'], $qty, $chosen_bumps, (string) $geo['district_id'], (string) $geo['district_name'], (string) $geo['upazila_name'], $tier + $coupon_discount, $coupon_code);
+            if ($quote !== null) {
+                $shipping = $quote['cost'];
+                $ship_rate = $quote;
+            } elseif ($ship_source === WcRates::SOURCE_WC) {
+                return $this->error('no_delivery', $lang, 400);
+            }
+        }
+        // A page that showed another delivery charge (old cache, or the charge was still loading).
+        if (isset($input['expected_shipping']) && $input['expected_shipping'] !== '' && abs(round((float) $input['expected_shipping'], 2) - $shipping) > 0.009) {
+            return new \WP_Error('noksha_price_changed', Catalog::line($lang, 'shipping_changed'), [
+                'status' => 409,
+                'price' => $price,
+                'shipping' => $shipping,
+            ]);
+        }
         $subtotal = round(($price * $qty) + $bump_price, 2);
         $total = round($subtotal - $tier + $shipping, 2);
         $event_id = self::event_id((string) ($input['event_id'] ?? ''), $number = Repository::next_number());
@@ -293,7 +315,8 @@ final class Checkout {
                 $chosen_bumps,
                 $method,
                 $coupon_code,
-                $tier
+                $tier,
+                $ship_rate
             );
             if (is_wp_error($created)) {
                 $wpdb->query('ROLLBACK');
@@ -397,8 +420,8 @@ final class Checkout {
             'message' => Catalog::line($lang, 'thank_you_text'),
             'key' => Renderer::order_key($order),
         ];
-        // Pixels and the catalog feed match on the store product id when there is one.
-        $content_id = $is_wc ? (string) $doc['offer']['productId'] : (string) $page_id;
+        // The same ids as ViewContent and InitiateCheckout, so the ad platform joins them up.
+        $content_id = \Noksha\Analytics\ContentId::for_offer($doc['offer'], $page_id);
         // Do not fire Purchase before an external payment redirect completes.
         if (empty($result['redirect'])) {
             $payload['purchase'] = [
@@ -409,13 +432,7 @@ final class Checkout {
                 'content_name' => $doc['offer']['productName'],
                 'content_ids' => [$content_id],
                 'num_items' => (int) $order['qty'],
-                'contents' => array_map(static function (array $item) use ($content_id): array {
-                    return [
-                        'id' => $content_id,
-                        'quantity' => (int) ($item['qty'] ?? 1),
-                        'item_price' => (float) ($item['price'] ?? 0),
-                    ];
-                }, Repository::items($id)),
+                'contents' => \Noksha\Analytics\ContentId::contents(Repository::items($id), $page_id),
             ];
         }
         return $payload;

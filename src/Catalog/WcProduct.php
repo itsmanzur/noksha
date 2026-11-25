@@ -312,10 +312,12 @@ final class WcProduct {
                 'name' => $product->get_name(),
                 'type' => $product->get_type(),
                 'price' => (float) $product->get_price(),
-                'priceHtml' => wp_strip_all_tags($product->get_price_html()),
+                'priceHtml' => html_entity_decode(wp_strip_all_tags($product->get_price_html()), ENT_QUOTES, 'UTF-8'),
                 'sku' => $product->get_sku(),
                 'inStock' => $product->is_in_stock(),
                 'imageUrl' => self::image_url($product),
+                // Landing pages (published or draft) already selling it.
+                'pages' => count(\Noksha\Front\CachePurge::pages_using($product->get_id(), ['publish', 'draft'])),
             ];
         }
         return $out;
