@@ -99,6 +99,7 @@ final class Sanitizer {
 
     public const SPACINGS = ['compact', 'normal', 'roomy'];
     public const SHOWS = ['all', 'mobile', 'desktop'];
+    public const WHENS = ['always', 'sale', 'not_sale', 'in_stock', 'sold_out', 'dates'];
     public const SIZES = ['sm', 'md', 'lg', 'xl'];
     public const RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
     public const FITS = ['cover', 'contain'];
@@ -116,7 +117,7 @@ final class Sanitizer {
         $raw = is_array($raw) ? $raw : [];
         if (in_array($type, self::SINGLE_TYPES, true)) {
             // The order form and WhatsApp button show everywhere.
-            return ['layout' => '', 'bg' => 'none', 'space' => 'normal', 'size' => 'md', 'ratio' => 'auto', 'fit' => 'cover', 'round' => 'md', 'show' => 'all'];
+            return ['layout' => '', 'bg' => 'none', 'space' => 'normal', 'size' => 'md', 'ratio' => 'auto', 'fit' => 'cover', 'round' => 'md', 'show' => 'all', 'when' => 'always', 'from' => '', 'to' => ''];
         }
         $layouts = self::LAYOUTS[$type] ?? [];
         $layout = sanitize_key((string) ($raw['layout'] ?? ''));
@@ -146,7 +147,22 @@ final class Sanitizer {
             'round' => $image ? $pick('round', self::ROUNDS, 'md') : 'md',
             // Where the section shows: every screen, phones only (under 768px), or larger screens only.
             'show' => $pick('show', self::SHOWS, 'all'),
+            // When it shows: always, during a sale or not, in stock or sold out, or between two dates.
+            'when' => $pick('when', self::WHENS, 'always'),
+            'from' => self::local_time($raw['from'] ?? ''),
+            'to' => self::local_time($raw['to'] ?? ''),
         ];
+    }
+
+    /**
+     * A date and time in the site's time zone, as the editor sends it (2026-12-01T09:00), or ''.
+     */
+    private static function local_time($value): string {
+        $value = substr(trim((string) $value), 0, 16);
+        if (!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$/', $value)) {
+            return '';
+        }
+        return date_create_immutable(str_replace('T', ' ', $value), wp_timezone()) ? $value : '';
     }
 
     public static function section(array $section, bool $stored = false): ?array {
@@ -208,6 +224,18 @@ final class Sanitizer {
                 'usLabel' => self::short($props['usLabel'] ?? '', 40),
                 'themLabel' => self::short($props['themLabel'] ?? '', 40),
                 'rows' => self::compare_rows($props['rows'] ?? []),
+            ],
+            // A table (size chart, specs): up to 6 columns and 20 rows of short text.
+            'table' => self::table($props),
+            // Formatted text: paragraphs, bold, italic, lists, links and small headings only.
+            'text' => [
+                'title' => self::short($props['title'] ?? ''),
+                'body' => self::rich($props['body'] ?? ''),
+            ],
+            // A shared block: the page shows the library section it points to.
+            'shared' => [
+                'ref' => sanitize_key((string) ($props['ref'] ?? '')),
+                'name' => self::short($props['name'] ?? '', 80),
             ],
             // Bundle cards: the page's quantity steps as cards (1 piece, 2 pieces ...).
             'bundles' => [
@@ -466,9 +494,55 @@ final class Sanitizer {
         $base['deliveryNote'] = self::long($checkout['deliveryNote'] ?? '', 300);
         // A coupon field, offered only for a WooCommerce product.
         $base['coupon'] = !empty($checkout['coupon']);
+        // Two steps: the buyer's details first, then payment.
+        $base['multiStep'] = !empty($checkout['multiStep']);
         $base['customFields'] = self::custom_fields($checkout['customFields'] ?? []);
         $base['fieldOrder'] = self::field_order($checkout['fieldOrder'] ?? [], $base['customFields']);
         return $base;
+    }
+
+    /**
+     * @return array{title:string,headers:list<string>,rows:list<list<string>>,note:string}
+     */
+    private static function table(array $props): array {
+        $headers = [];
+        foreach (array_slice((array) ($props['headers'] ?? []), 0, 6) as $header) {
+            $headers[] = self::short($header, 60);
+        }
+        if ($headers === []) {
+            $headers = [''];
+        }
+        $width = count($headers);
+        $rows = [];
+        foreach (array_slice((array) ($props['rows'] ?? []), 0, 20) as $row) {
+            $cells = [];
+            $row = array_values((array) $row);
+            for ($i = 0; $i < $width; $i++) {
+                $cells[] = self::short($row[$i] ?? '', 80);
+            }
+            $rows[] = $cells;
+        }
+        return [
+            'title' => self::short($props['title'] ?? ''),
+            'headers' => $headers,
+            'rows' => $rows,
+            'note' => self::long($props['note'] ?? '', 300),
+        ];
+    }
+
+    /**
+     * Formatted text, kept to a few safe tags. Links get rel="noopener".
+     */
+    public static function rich($value): string {
+        $allowed = [
+            'p' => [], 'br' => [], 'strong' => [], 'b' => [], 'em' => [], 'i' => [], 'u' => [],
+            'ul' => [], 'ol' => [], 'li' => [], 'h3' => [], 'h4' => [], 'blockquote' => [],
+            'a' => ['href' => true, 'target' => true, 'rel' => true],
+        ];
+        $html = wp_kses(noksha_clip((string) $value, 8000), $allowed, ['http', 'https', 'mailto', 'tel']);
+        $html = (string) preg_replace('/<a /i', '<a rel="noopener" ', $html);
+        $html = (string) preg_replace('/(<a [^>]*)rel="noopener" ([^>]*rel=)/i', '$1$2', $html);
+        return trim($html);
     }
 
     public const CUSTOM_TYPES = ['text', 'textarea', 'select', 'date'];

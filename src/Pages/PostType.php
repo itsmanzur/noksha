@@ -12,6 +12,9 @@ final class PostType {
 
     public function register(): void {
         add_action('init', [$this, 'register_type']);
+        add_action('before_delete_post', [Versions::class, 'delete_for']);
+        add_action('before_delete_post', [Translation::class, 'delete_for']);
+        add_action('transition_post_status', [Translation::class, 'status_changed'], 10, 3);
         if (did_action('init')) {
             $this->register_type();
         }
@@ -38,5 +41,6 @@ final class PostType {
             'capability_type' => 'post',
             'map_meta_cap' => true,
         ]);
+        Versions::register_type();
     }
 }

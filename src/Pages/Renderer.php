@@ -141,6 +141,7 @@ final class Renderer {
             $html .= '<meta property="product:price:currency" content="BDT">';
         }
         $html .= Schema::tag(Schema::product($payload, $description, $url));
+        $html .= Translation::head_links($payload);
         return [
             'title' => $title,
             'description' => $description,
@@ -156,6 +157,7 @@ final class Renderer {
         $style = esc_attr(Tokens::declarations($tokens));
         $motion = ($payload['motion'] ?? 'simple') === 'lively' ? ' nk-motion-lively' : '';
         $html = '<article class="nk-landing' . $motion . '" lang="' . esc_attr($lang === 'bn' ? 'bn' : 'en') . '" style="' . $style . '">';
+        $html .= Translation::switcher($payload, $preview);
         $has_form = false;
         foreach ($payload['sections'] as $section) {
             if (!empty($section['hidden'])) {
@@ -274,16 +276,73 @@ final class Renderer {
             'compare' => self::compare($props, $preview),
             'whatsapp' => self::whatsapp($props, $payload),
             'bundles' => self::bundles($props, $payload, $preview),
+            'shared' => self::shared($props, $payload, $preview),
+            'table' => self::table($props, $preview),
+            'text' => self::rich_text($props, $preview),
             'html' => ($props['html'] ?? '') !== ''
                 ? '<section class="nk-section nk-html"><div class="nk-html-inner">' . Sanitizer::clean_html((string) $props['html']) . '</div></section>'
                 : '',
             default => '',
         };
         $html = self::apply_style($html, is_array($section['style'] ?? null) ? $section['style'] : []);
+        $html = self::apply_when($html, is_array($section['style'] ?? null) ? $section['style'] : [], $payload, $preview);
         if ($preview && $html !== '') {
             $html = preg_replace('/^<([a-z0-9]+)/i', '<$1 data-nk-section="' . esc_attr((string) ($section['id'] ?? '')) . '"', $html, 1) ?? $html;
         }
         return $html;
+    }
+
+    /**
+     * "Show when": the section starts hidden when its condition is false now, and
+     * carries the condition so the page script checks it again with the live price,
+     * stock and the visitor's clock (the HTML may come from a page cache).
+     * The editor preview always shows it, marked.
+     */
+    private static function apply_when(string $html, array $style, array $payload, bool $preview): string {
+        $when = sanitize_key((string) ($style['when'] ?? 'always'));
+        if ($html === '' || !in_array($when, Sanitizer::WHENS, true) || $when === 'always') {
+            return $html;
+        }
+        $attrs = ' data-nk-when="' . esc_attr($when) . '"';
+        $from = $when === 'dates' ? self::stamp((string) ($style['from'] ?? '')) : 0;
+        $to = $when === 'dates' ? self::stamp((string) ($style['to'] ?? '')) : 0;
+        if ($from > 0) {
+            $attrs .= ' data-nk-from="' . $from . '"';
+        }
+        if ($to > 0) {
+            $attrs .= ' data-nk-to="' . $to . '"';
+        }
+        if ($preview) {
+            $attrs .= ' data-nk-when-preview=""';
+        } elseif (!self::when_now($when, $from, $to, $payload)) {
+            $attrs .= ' hidden';
+        }
+        return preg_replace('/^<([a-z0-9]+)/i', '<$1' . $attrs, $html, 1) ?? $html;
+    }
+
+    private static function stamp(string $local): int {
+        if ($local === '') {
+            return 0;
+        }
+        $date = date_create_immutable(str_replace('T', ' ', $local), wp_timezone());
+        return $date ? $date->getTimestamp() : 0;
+    }
+
+    public static function when_now(string $when, int $from, int $to, array $payload): bool {
+        $offer = is_array($payload['offer'] ?? null) ? $payload['offer'] : [];
+        $price = (float) ($offer['price'] ?? 0);
+        $on_sale = (float) ($offer['compareAt'] ?? 0) > $price && $price > 0;
+        $wc = $offer['wc'] ?? null;
+        $available = !is_array($wc) || !empty($wc['available']);
+        $now = time();
+        return match ($when) {
+            'sale' => $on_sale,
+            'not_sale' => !$on_sale,
+            'in_stock' => $available,
+            'sold_out' => !$available,
+            'dates' => ($from === 0 || $now >= $from) && ($to === 0 || $now < $to),
+            default => true,
+        };
     }
 
     /** Adds layout/background/spacing classes to the section's root element. */
@@ -725,21 +784,37 @@ final class Renderer {
             . '<button type="button" class="nk-btn-ghost" data-otp-send>' . esc_html(Catalog::line($lang, 'otp_send')) . '</button>'
             . '</div>';
 
-        $form = '<form class="nk-form" id="nk-order-form" data-preview="' . ($preview ? '1' : '0') . '" novalidate>'
-            . '<h2>' . self::text($props['title']) . '</h2>'
-            . $notice
-            . $thanks
-            . '<div class="nk-form-error" hidden tabindex="-1"></div>'
-            . $fields
-            . $otp
+        $pay_part = $otp
             . '<fieldset class="nk-payments"><legend>' . esc_html(Catalog::line($lang, 'payment')) . '</legend>' . $methods . '</fieldset>'
             . '<div class="nk-trx" hidden>'
             . '<p class="nk-how-pay"><strong>' . esc_html(Catalog::line($lang, 'how_to_pay')) . '</strong></p>'
             . '<label>' . esc_html(Catalog::line($lang, 'trx'))
             . '<input name="trx_id" inputmode="text" autocomplete="off" maxlength="40"></label>'
             . '</div>'
-            . '<div class="nk-hp" aria-hidden="true"><label>Website<input name="company_website" tabindex="-1" autocomplete="off"></label></div>'
-            . '<button class="nk-btn nk-submit" type="submit"' . ($sold_out && !$preview ? ' disabled' : '') . '><span class="nk-btn-label">' . esc_html($button) . '</span><span class="nk-btn-spinner" aria-hidden="true"></span></button>'
+            . '<div class="nk-hp" aria-hidden="true"><label>Website<input name="company_website" tabindex="-1" autocomplete="off"></label></div>';
+        $submit = '<button class="nk-btn nk-submit" type="submit"' . ($sold_out && !$preview ? ' disabled' : '') . '><span class="nk-btn-label">' . esc_html($button) . '</span><span class="nk-btn-spinner" aria-hidden="true"></span></button>';
+        if (!empty($checkout['multiStep'])) {
+            // Step 1: the buyer's details. Step 2: payment and the order button.
+            $label = static fn(int $n, string $key): string => esc_html(sprintf(Catalog::line($lang, 'step_of'), $n, 2) . ' · ' . Catalog::line($lang, $key));
+            $body = '<p class="nk-step-count" aria-live="polite">'
+                . '<span data-step-label="1">' . $label(1, 'step_details') . '</span>'
+                . '<span data-step-label="2" hidden>' . $label(2, 'step_payment') . '</span>'
+                . '</p>'
+                . '<div class="nk-step" data-step="1">' . $fields
+                . '<button type="button" class="nk-btn nk-step-next" data-step-next' . ($sold_out && !$preview ? ' disabled' : '') . '>' . esc_html(Catalog::line($lang, 'step_next')) . '</button>'
+                . '</div>'
+                . '<div class="nk-step" data-step="2" hidden>' . $pay_part . $submit
+                . '<button type="button" class="nk-btn-ghost nk-step-back" data-step-back>' . esc_html(Catalog::line($lang, 'step_back')) . '</button>'
+                . '</div>';
+        } else {
+            $body = $fields . $pay_part . $submit;
+        }
+        $form = '<form class="nk-form' . (!empty($checkout['multiStep']) ? ' nk-form-steps' : '') . '" id="nk-order-form" data-preview="' . ($preview ? '1' : '0') . '" novalidate>'
+            . '<h2>' . self::text($props['title']) . '</h2>'
+            . $notice
+            . $thanks
+            . '<div class="nk-form-error" hidden tabindex="-1"></div>'
+            . $body
             . '</form>';
 
         $max_qty = WcProduct::max_qty($offer);
@@ -978,6 +1053,62 @@ final class Renderer {
         }
         $digits = abs($amount - round($amount)) < 0.001 ? 0 : 2;
         return '৳' . number_format($amount, $digits);
+    }
+
+    /**
+     * A table (size chart, specs). Wide tables scroll sideways on phones.
+     */
+    private static function table(array $props, bool $preview): string {
+        $head = '';
+        foreach ((array) $props['headers'] as $header) {
+            $head .= '<th scope="col">' . self::text((string) $header) . '</th>';
+        }
+        $body = '';
+        foreach ((array) $props['rows'] as $row) {
+            $cells = '';
+            foreach ((array) $row as $i => $cell) {
+                $cells .= $i === 0 ? '<th scope="row">' . self::text((string) $cell) . '</th>' : '<td>' . self::text((string) $cell) . '</td>';
+            }
+            $body .= '<tr>' . $cells . '</tr>';
+        }
+        if ($body === '' && !$preview) {
+            return '';
+        }
+        return '<section class="nk-section nk-table">'
+            . ($props['title'] !== '' ? self::editable('h2', 'title', $props['title'], '', $preview) : '')
+            . '<div class="nk-table-scroll" tabindex="0"><table><thead><tr>' . $head . '</tr></thead><tbody>' . $body . '</tbody></table></div>'
+            . ($props['note'] !== '' ? '<p class="nk-table-note">' . self::text((string) $props['note']) . '</p>' : '')
+            . '</section>';
+    }
+
+    /**
+     * Formatted text (already reduced to safe tags when saved; checked again here).
+     */
+    private static function rich_text(array $props, bool $preview): string {
+        $body = Sanitizer::rich((string) ($props['body'] ?? ''));
+        if ($body === '' && ($props['title'] ?? '') === '' && !$preview) {
+            return '';
+        }
+        return '<section class="nk-section nk-rich">'
+            . (($props['title'] ?? '') !== '' ? self::editable('h2', 'title', (string) $props['title'], '', $preview) : '')
+            . '<div class="nk-rich-body">' . $body . '</div>'
+            . '</section>';
+    }
+
+    /**
+     * A shared block: drawn from the library, never edited inline here (that
+     * would change it on every page). Nothing on the live page when it was deleted.
+     */
+    private static function shared(array $props, array $payload, bool $preview): string {
+        $inner = Library::shared_section((string) ($props['ref'] ?? ''));
+        if ($inner === null || in_array($inner['type'] ?? '', ['shared', 'order_form'], true)) {
+            $lang = ($payload['language'] ?? 'en') === 'bn' ? 'bn' : 'en';
+            return $preview
+                ? '<section class="nk-section nk-shared-missing"><p class="nk-note">' . esc_html(Catalog::line($lang, 'shared_missing')) . '</p></section>'
+                : '';
+        }
+        $inner['id'] = '';
+        return self::section($inner, $payload, false);
     }
 
     /**

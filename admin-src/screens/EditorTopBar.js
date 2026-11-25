@@ -37,6 +37,7 @@ export function EditorTopBar({
   onSave,
   onSaveDraft,
   onUnpublish,
+  onHistory,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -154,6 +155,11 @@ export function EditorTopBar({
               <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onSaveDraft(); }}>
                 {t('editor.saveDraft')}
               </button>
+              {onHistory ? (
+                <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onHistory(); }}>
+                  {t('versions.open')}
+                </button>
+              ) : null}
               {liveStatus === 'publish' ? (
                 <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onUnpublish(); }}>
                   {t('editor.unpublish')}

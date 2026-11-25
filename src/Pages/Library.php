@@ -32,7 +32,7 @@ final class Library {
                 'language' => $item['language'],
                 'createdAt' => $item['createdAt'],
             ];
-            if ($item['kind'] === 'section') {
+            if ($item['kind'] === 'section' || $item['kind'] === 'shared') {
                 $row['type'] = $item['data']['type'];
                 $row['section'] = $item['data'];
             } else {
@@ -54,6 +54,81 @@ final class Library {
         unset($clean['id']);
         $clean['hidden'] = false;
         return self::add('section', $name, $clean, '');
+    }
+
+    /**
+     * A shared block: one section that pages show by reference, so editing it
+     * once changes every page that uses it. The order form cannot be shared.
+     *
+     * @return array<string, mixed>|\WP_Error
+     */
+    public static function save_shared(array $section, string $name) {
+        $clean = Sanitizer::section($section);
+        if ($clean === null || in_array($clean['type'], ['shared', 'order_form'], true)) {
+            return new \WP_Error('noksha_invalid_section', 'This section cannot be shared.', ['status' => 400]);
+        }
+        unset($clean['id']);
+        $clean['hidden'] = false;
+        return self::add('shared', $name, $clean, '');
+    }
+
+    /**
+     * Save a shared block for every page that uses it, and clear those pages' caches.
+     *
+     * @return array<string, mixed>|\WP_Error
+     */
+    public static function update_shared(string $id, array $section) {
+        $items = self::items();
+        foreach ($items as $i => $item) {
+            if ($item['id'] !== $id || $item['kind'] !== 'shared') {
+                continue;
+            }
+            $section['type'] = $item['data']['type'];
+            $clean = Sanitizer::section($section);
+            if ($clean === null) {
+                return new \WP_Error('noksha_invalid_section', 'This section cannot be saved.', ['status' => 400]);
+            }
+            unset($clean['id']);
+            $clean['hidden'] = false;
+            $items[$i]['data'] = $clean;
+            update_option(self::OPTION, $items, false);
+            self::$shared_cache = [];
+            foreach (self::pages_using_shared($id) as $page_id) {
+                \Noksha\Front\CachePurge::purge($page_id);
+            }
+            return $items[$i];
+        }
+        return new \WP_Error('noksha_not_found', 'Shared block not found.', ['status' => 404]);
+    }
+
+    /** @var array<string, array|null> */
+    private static array $shared_cache = [];
+
+    /**
+     * The section a shared block holds, for drawing a page. Null when it was deleted.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function shared_section(string $id): ?array {
+        if (!array_key_exists($id, self::$shared_cache)) {
+            $item = self::find($id);
+            self::$shared_cache[$id] = ($item !== null && $item['kind'] === 'shared') ? $item['data'] : null;
+        }
+        return self::$shared_cache[$id];
+    }
+
+    /**
+     * Pages (any status) that show this shared block.
+     *
+     * @return list<int>
+     */
+    public static function pages_using_shared(string $id): array {
+        global $wpdb;
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_noksha_sections' AND meta_value LIKE %s",
+            '%' . $wpdb->esc_like($id) . '%'
+        ));
+        return array_map('intval', (array) $ids);
     }
 
     /**
@@ -111,6 +186,7 @@ final class Library {
             return false;
         }
         update_option(self::OPTION, $kept, false);
+        self::$shared_cache = [];
         return true;
     }
 
@@ -191,7 +267,7 @@ final class Library {
         $stored = get_option(self::OPTION, []);
         $out = [];
         foreach (is_array($stored) ? $stored : [] as $item) {
-            if (is_array($item) && isset($item['id'], $item['kind'], $item['name'], $item['data']) && in_array($item['kind'], ['section', 'page'], true)) {
+            if (is_array($item) && isset($item['id'], $item['kind'], $item['name'], $item['data']) && in_array($item['kind'], ['section', 'page', 'shared'], true)) {
                 $item['language'] = (string) ($item['language'] ?? '');
                 $item['createdAt'] = (string) ($item['createdAt'] ?? '');
                 $out[] = $item;

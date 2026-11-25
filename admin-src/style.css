@@ -2244,3 +2244,91 @@ a.nk-btn-ghost {
   margin: 4px 0 0;
   padding-inline-start: 18px;
 }
+
+/* Table and formatted-text editors */
+.nk-table-grid {
+  display: grid;
+  gap: 4px;
+  align-items: center;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.nk-table-grid input {
+  width: 100%;
+  min-width: 0;
+}
+.nk-table-head {
+  font-weight: 700;
+}
+.nk-rich-toolbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.nk-rich-toolbar button {
+  min-width: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: 4px;
+  background: var(--noksha-color-card);
+  color: inherit;
+  cursor: pointer;
+}
+.nk-rich-input {
+  min-height: 140px;
+  padding: 8px 10px;
+  border: 1px solid var(--noksha-color-border);
+  border-radius: 6px;
+  background: var(--noksha-color-card);
+  overflow-wrap: anywhere;
+}
+.nk-rich-input:focus {
+  outline: 2px solid var(--noksha-color-brand);
+}
+
+.nk-when-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .nk-when-dates {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Version history */
+.nk-version-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.nk-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--noksha-color-border);
+}
+.nk-version-row small {
+  display: block;
+  color: var(--noksha-color-muted);
+}
+
+/* Other language */
+.nk-translation {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--noksha-color-border);
+}
+.nk-translation-pick {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+.nk-translation-pick .nk-field {
+  flex: 1;
+  min-width: 0;
+}

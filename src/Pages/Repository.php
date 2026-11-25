@@ -25,10 +25,16 @@ final class Repository {
             return $id;
         }
         self::write_meta((int) $id, $doc);
+        // Its first save is the template being filled in; no version for that.
+        update_post_meta((int) $id, '_noksha_fresh', 1);
         return (int) $id;
     }
 
-    public static function update(int $id, array $input): array|\WP_Error {
+    /**
+     * @param string $history 'auto' keeps the earlier state in the version history
+     *                        (grouped while editing); 'none' skips it.
+     */
+    public static function update(int $id, array $input, string $history = 'auto'): array|\WP_Error {
         $post = get_post($id);
         if (!$post || $post->post_type !== PostType::TYPE) {
             return new \WP_Error('noksha_not_found', 'Page not found.', ['status' => 404]);
@@ -40,6 +46,18 @@ final class Repository {
             $title = $post->post_title;
         }
         $status = ($input['status'] ?? $post->post_status) === 'publish' ? 'publish' : 'draft';
+        // A page saved for the first time has no earlier state worth keeping.
+        $fresh = (bool) get_post_meta($id, '_noksha_fresh', true);
+        if ($fresh) {
+            delete_post_meta($id, '_noksha_fresh');
+        } elseif ($history !== 'none') {
+            Versions::before_save(
+                $id,
+                Versions::snapshot($current, $post->post_title),
+                Versions::snapshot($doc, $title),
+                $status === 'publish' && $post->post_status !== 'publish' ? 'publish' : 'auto'
+            );
+        }
         $slug = sanitize_title((string) ($input['slug'] ?? $post->post_name));
         if ($slug === '') {
             $slug = sanitize_title($title);
@@ -127,6 +145,8 @@ final class Repository {
             'tokens' => $doc['tokens'],
             'seo' => $doc['seo'],
             'ab' => $doc['ab'],
+            // The same page in the other language, if linked.
+            'translation' => Translation::of($id),
         ];
         return self::$payload_cache[$id];
     }

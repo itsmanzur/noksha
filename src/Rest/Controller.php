@@ -85,6 +85,24 @@ final class Controller {
             ['methods' => 'PUT', 'callback' => [$this, 'put_page']] + $admin,
             ['methods' => 'DELETE', 'callback' => [$this, 'delete_page']] + $admin,
         ]);
+        register_rest_route('noksha/v1', '/pages/(?P<id>\d+)/export', [
+            ['methods' => 'GET', 'callback' => [$this, 'export_page']] + $admin,
+        ]);
+        register_rest_route('noksha/v1', '/pages/(?P<id>\d+)/translation', [
+            ['methods' => 'POST', 'callback' => [$this, 'link_translation']] + $admin,
+        ]);
+        register_rest_route('noksha/v1', '/pages/(?P<id>\d+)/translation/copy', [
+            ['methods' => 'POST', 'callback' => [$this, 'copy_translation']] + $admin,
+        ]);
+        register_rest_route('noksha/v1', '/pages/import', [
+            ['methods' => 'POST', 'callback' => [$this, 'import_page']] + $admin,
+        ]);
+        register_rest_route('noksha/v1', '/pages/(?P<id>\d+)/versions', [
+            ['methods' => 'GET', 'callback' => [$this, 'page_versions']] + $admin,
+        ]);
+        register_rest_route('noksha/v1', '/pages/(?P<id>\d+)/versions/(?P<version>\d+)/restore', [
+            ['methods' => 'POST', 'callback' => [$this, 'restore_page_version']] + $admin,
+        ]);
         register_rest_route('noksha/v1', '/pages/(?P<id>\d+)/duplicate', [
             ['methods' => 'POST', 'callback' => [$this, 'duplicate_page']] + $admin,
         ]);
@@ -94,6 +112,7 @@ final class Controller {
         ]);
         register_rest_route('noksha/v1', '/library/(?P<id>[a-z0-9_]+)', [
             ['methods' => 'DELETE', 'callback' => [$this, 'delete_from_library']] + $admin,
+            ['methods' => 'PUT', 'callback' => [$this, 'update_shared_block']] + $admin,
         ]);
         register_rest_route('noksha/v1', '/pages/from-products', [
             ['methods' => 'POST', 'callback' => [$this, 'pages_from_products']] + $admin,
@@ -314,6 +333,8 @@ final class Controller {
             $pages[] = [
                 'id' => (int) $post->ID,
                 'title' => $post->post_title,
+                'slug' => $post->post_name,
+                'language' => get_post_meta($post->ID, '_noksha_language', true) === 'bn' ? 'bn' : 'en',
                 'status' => $post->post_status === 'publish' ? 'publish' : 'draft',
                 'link' => $post->post_status === 'publish' ? get_permalink($post) : '',
                 'visits' => $visits,
@@ -360,13 +381,28 @@ final class Controller {
         $params = $request->get_json_params();
         $params = is_array($params) ? $params : [];
         $name = (string) ($params['name'] ?? '');
-        $item = ($params['kind'] ?? '') === 'page'
-            ? \Noksha\Pages\Library::save_page((int) ($params['pageId'] ?? 0), $name, is_array($params['page'] ?? null) ? $params['page'] : null)
-            : \Noksha\Pages\Library::save_section(is_array($params['section'] ?? null) ? $params['section'] : [], $name);
+        $section = is_array($params['section'] ?? null) ? $params['section'] : [];
+        $item = match ((string) ($params['kind'] ?? '')) {
+            'page' => \Noksha\Pages\Library::save_page((int) ($params['pageId'] ?? 0), $name, is_array($params['page'] ?? null) ? $params['page'] : null),
+            'shared' => \Noksha\Pages\Library::save_shared($section, $name),
+            default => \Noksha\Pages\Library::save_section($section, $name),
+        };
         if (is_wp_error($item)) {
             return $item;
         }
         return ['id' => $item['id'], 'items' => \Noksha\Pages\Library::all()];
+    }
+
+    /**
+     * Save a shared block for every page that uses it.
+     */
+    public function update_shared_block(\WP_REST_Request $request) {
+        $params = $request->get_json_params();
+        $item = \Noksha\Pages\Library::update_shared((string) $request['id'], is_array($params['section'] ?? null) ? $params['section'] : []);
+        if (is_wp_error($item)) {
+            return $item;
+        }
+        return ['items' => \Noksha\Pages\Library::all(), 'pages' => count(\Noksha\Pages\Library::pages_using_shared((string) $request['id']))];
     }
 
     public function delete_from_library(\WP_REST_Request $request) {
@@ -383,6 +419,68 @@ final class Controller {
     public function put_page(\WP_REST_Request $request) {
         $params = $request->get_json_params();
         return Pages::update((int) $request['id'], is_array($params) ? $params : []);
+    }
+
+    /**
+     * Link this page to a page in the other language (pageId 0 unlinks).
+     */
+    public function link_translation(\WP_REST_Request $request) {
+        $id = (int) $request['id'];
+        $linked = \Noksha\Pages\Translation::link($id, (int) $request->get_param('pageId'));
+        if (is_wp_error($linked)) {
+            return $linked;
+        }
+        return ['translation' => \Noksha\Pages\Translation::of($id)];
+    }
+
+    /**
+     * Make a linked draft copy of this page in the other language.
+     */
+    public function copy_translation(\WP_REST_Request $request) {
+        $id = (int) $request['id'];
+        $copy = \Noksha\Pages\Translation::create_copy($id);
+        if (is_wp_error($copy)) {
+            return $copy;
+        }
+        return ['id' => $copy, 'translation' => \Noksha\Pages\Translation::of($id)];
+    }
+
+    /**
+     * The whole page as one file's content.
+     */
+    public function export_page(\WP_REST_Request $request) {
+        return \Noksha\Pages\Transfer::export((int) $request['id']);
+    }
+
+    /**
+     * A new draft page from an exported file.
+     */
+    public function import_page(\WP_REST_Request $request) {
+        $params = $request->get_json_params();
+        $params = is_array($params) ? $params : [];
+        return \Noksha\Pages\Transfer::import($params['data'] ?? null, sanitize_text_field((string) ($params['title'] ?? '')));
+    }
+
+    /**
+     * Earlier states of a page, newest first.
+     */
+    public function page_versions(\WP_REST_Request $request): array|\WP_Error {
+        $post = get_post((int) $request['id']);
+        if (!$post || $post->post_type !== PostType::TYPE) {
+            return new \WP_Error('noksha_not_found', 'Page not found.', ['status' => 404]);
+        }
+        return ['versions' => \Noksha\Pages\Versions::all($post->ID)];
+    }
+
+    /**
+     * Put a page back to an earlier state (the current one is kept as a version).
+     */
+    public function restore_page_version(\WP_REST_Request $request) {
+        $result = \Noksha\Pages\Versions::restore((int) $request['id'], (int) $request['version']);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return ['page' => $result, 'versions' => \Noksha\Pages\Versions::all((int) $request['id'])];
     }
 
     public function delete_page(\WP_REST_Request $request): array|\WP_Error {
@@ -435,6 +533,8 @@ final class Controller {
         $doc['offer'] = \Noksha\Catalog\WcProduct::apply($doc['offer']);
         $doc['id'] = (int) ($params['id'] ?? 0);
         $doc['title'] = sanitize_text_field((string) ($params['title'] ?? ''));
+        // The linked other-language page is read from the site, not from the request.
+        $doc['translation'] = $doc['id'] > 0 ? \Noksha\Pages\Translation::of($doc['id']) : null;
         return ['html' => Renderer::document($doc, true)];
     }
 

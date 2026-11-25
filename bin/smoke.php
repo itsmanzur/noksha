@@ -924,6 +924,202 @@ if (Noksha\Catalog\WcProduct::active()) {
     $bundle_payload['offer']['tiers'] = [];
     check(!str_contains(Renderer::article($bundle_payload, false), 'nk-bundles') && str_contains(Renderer::article($bundle_payload, true), 'Bundle cards show the quantity discounts'), 'without steps: nothing on the live page, a reminder in the editor');
 
+    // ---- Shared blocks: edit once, every page changes ----
+    $share_hero = ['type' => 'guarantee', 'props' => ['title' => 'Shared promise v1', 'text' => 'We swap it.'], 'style' => ['bg' => 'soft']];
+    check(is_wp_error(Noksha\Pages\Library::save_shared(['type' => 'order_form', 'props' => []], 'Form')), 'the order form cannot be shared');
+    $shared = Noksha\Pages\Library::save_shared($share_hero, 'Smoke shared promise');
+    check(is_array($shared) && $shared['kind'] === 'shared', 'a shared block is saved');
+    $share_payload = Pages::payload($wc_page);
+    $share_payload['sections'][] = ['id' => 's_shared01', 'type' => 'shared', 'hidden' => false, 'props' => ['ref' => $shared['id'], 'name' => 'Smoke shared promise'], 'style' => []];
+    Pages::update($wc_page, ['sections' => $share_payload['sections']]);
+    Pages::forget_cached($wc_page);
+    $share_html = Renderer::article_for_post($wc_page);
+    check(str_contains($share_html, 'Shared promise v1') && str_contains($share_html, 'nk-bg-soft'), 'the page shows the shared block with its look');
+    check(!str_contains(Renderer::article(Pages::payload($wc_page), true), 'data-nk-prop="title">Shared promise'), 'in the editor it is not edited inline (that would change every page)');
+    check(in_array($wc_page, Noksha\Pages\Library::pages_using_shared($shared['id']), true), 'the pages that use it are known');
+    $share_purged = [];
+    $share_spy = static function ($page_id) use (&$share_purged) { $share_purged[] = (int) $page_id; };
+    add_action('noksha_page_cache_purged', $share_spy);
+    $share_hero['props']['title'] = 'Shared promise v2';
+    $updated = Noksha\Pages\Library::update_shared($shared['id'], $share_hero + ['type' => 'hero']);
+    remove_action('noksha_page_cache_purged', $share_spy);
+    check(is_array($updated) && $updated['data']['type'] === 'guarantee', 'saving keeps the block\'s type');
+    Pages::forget_cached($wc_page);
+    check(str_contains(Renderer::article_for_post($wc_page), 'Shared promise v2'), 'editing it once changes the page');
+    check(in_array($wc_page, $share_purged, true), 'and clears that page\'s cache');
+    Noksha\Pages\Library::delete($shared['id']);
+    Pages::forget_cached($wc_page);
+    check(!str_contains(Renderer::article_for_post($wc_page), 'Shared promise'), 'a deleted shared block leaves nothing on the live page');
+    check(str_contains(Renderer::article(Pages::payload($wc_page), true), 'shared block was deleted'), 'and the editor says so');
+    $share_payload['sections'] = array_values(array_filter($share_payload['sections'], static fn($s) => $s['type'] !== 'shared'));
+    Pages::update($wc_page, ['sections' => $share_payload['sections']]);
+    Pages::forget_cached($wc_page);
+
+    // ---- Table and formatted text sections ----
+    $wide = Noksha\Pages\Sanitizer::section(['type' => 'table', 'props' => [
+        'title' => 'Size chart',
+        'headers' => ['Size', 'Chest', 'Length', 'A', 'B', 'C', 'D', 'E'],
+        'rows' => array_fill(0, 25, ['M', '<b>38</b>']),
+    ]]);
+    check(count($wide['props']['headers']) === 6, 'a table keeps at most 6 columns');
+    check(count($wide['props']['rows']) === 20 && count($wide['props']['rows'][0]) === 6, 'and at most 20 rows, each as wide as the headings');
+    check($wide['props']['rows'][0][1] === '38', 'cells are plain text');
+    $rich = Noksha\Pages\Sanitizer::section(['type' => 'text', 'props' => ['body' => '<p onclick="x()">Hi <strong>bold</strong> <a href="javascript:alert(1)">bad</a> <a href="https://example.com">ok</a></p><script>alert(1)</script><iframe src="https://x.test"></iframe><ul><li>one</li></ul>']]);
+    $rb = $rich['props']['body'];
+    check(str_contains($rb, '<strong>bold</strong>') && str_contains($rb, '<li>one</li>'), 'formatted text keeps bold and lists');
+    check(!str_contains($rb, 'onclick') && !str_contains($rb, '<script') && !str_contains($rb, '<iframe') && !str_contains($rb, 'javascript:'), 'and drops scripts, frames, event handlers and javascript links');
+    check(str_contains($rb, 'href="https://example.com"') && str_contains($rb, 'rel="noopener"'), 'normal links stay, with rel="noopener"');
+    $tt_payload = Pages::payload($wc_page);
+    $tt_before = $tt_payload['sections'];
+    $tt_payload['sections'][] = ['id' => 's_table01', 'type' => 'table', 'hidden' => false, 'props' => ['title' => 'Smoke sizes', 'headers' => ['Size', 'Price'], 'rows' => [['M', '{price}']], 'note' => 'Measured flat.'], 'style' => []];
+    $tt_payload['sections'][] = ['id' => 's_text01', 'type' => 'text', 'hidden' => false, 'props' => ['title' => 'Smoke text', 'body' => '<p>Read <em>this</em></p>'], 'style' => []];
+    Pages::update($wc_page, ['sections' => $tt_payload['sections']]);
+    Pages::forget_cached($wc_page);
+    $tt_html = Renderer::article_for_post($wc_page);
+    check(str_contains($tt_html, 'nk-table-scroll') && str_contains($tt_html, '<th scope="col">Size</th>') && str_contains($tt_html, 'Measured flat.'), 'the page shows the table, scrollable on phones');
+    check(!str_contains($tt_html, '{price}'), 'live words work in table cells');
+    check(str_contains($tt_html, '<em>this</em>') && str_contains($tt_html, 'nk-rich'), 'the page shows the formatted text');
+    Pages::update($wc_page, ['sections' => $tt_before]);
+    Pages::forget_cached($wc_page);
+
+    // ---- Version history ----
+    $vh_page = Pages::create('single', 'en', 'Smoke versions');
+    Pages::update($vh_page, ['title' => 'Smoke versions']);
+    check(Noksha\Pages\Versions::all($vh_page) === [], 'a new page has no versions (its first save is the template)');
+    $vh_doc = Pages::document($vh_page);
+    $vh_count = count($vh_doc['sections']);
+    Pages::update($vh_page, ['sections' => array_slice($vh_doc['sections'], 0, 2)]);
+    Pages::update($vh_page, ['sections' => array_slice($vh_doc['sections'], 0, 1)]);
+    $vh_rows = Noksha\Pages\Versions::all($vh_page);
+    check(count($vh_rows) === 1 && $vh_rows[0]['sections'] === $vh_count && $vh_rows[0]['reason'] === 'auto', 'saves while editing are grouped into one version: the state before editing');
+    add_filter('noksha_version_gap', '__return_zero');
+    Pages::update($vh_page, ['sections' => array_slice($vh_doc['sections'], 0, 3)]);
+    check(count(Noksha\Pages\Versions::all($vh_page)) === 2, 'a later editing session adds another');
+    Pages::update($vh_page, ['sections' => array_slice($vh_doc['sections'], 0, 3)]);
+    check(count(Noksha\Pages\Versions::all($vh_page)) === 2, 'a save that changes nothing adds none');
+    Pages::update($vh_page, ['status' => 'publish', 'sections' => array_slice($vh_doc['sections'], 0, 2)]);
+    check(Noksha\Pages\Versions::all($vh_page)[0]['reason'] === 'publish', 'going live keeps the state before it');
+    $vh_restored = Noksha\Pages\Versions::restore($vh_page, $vh_rows[0]['id']);
+    check(is_array($vh_restored) && count($vh_restored['sections']) === $vh_count, 'restore puts the page back');
+    $vh_after = Noksha\Pages\Versions::all($vh_page);
+    check($vh_after[0]['reason'] === 'restore' && $vh_after[0]['sections'] === 2, 'and keeps the state it replaced, so a restore can be undone');
+    check(is_wp_error(Noksha\Pages\Versions::restore($wc_page, $vh_rows[0]['id'])), 'a version restores only its own page');
+    for ($i = 0; $i < 25; $i++) {
+        Pages::update($vh_page, ['sections' => array_slice($vh_doc['sections'], 0, 1 + $i % 2)]);
+    }
+    $vh_n = count(Noksha\Pages\Versions::all($vh_page));
+    check($vh_n === Noksha\Pages\Versions::KEEP, 'the newest 20 are kept (' . $vh_n . ')');
+    remove_filter('noksha_version_gap', '__return_zero');
+    $vh_ids = wp_list_pluck(get_posts(['post_type' => 'noksha_version', 'post_status' => 'private', 'post_parent' => $vh_page, 'numberposts' => -1]), 'ID');
+    wp_delete_post($vh_page, true);
+    check($vh_ids !== [] && array_filter(array_map('get_post', $vh_ids)) === [], 'deleting the page deletes its versions');
+
+    // ---- Bilingual pages ----
+    $bl_en = Pages::create('single', 'en', 'Smoke bilingual');
+    Pages::update($bl_en, ['status' => 'publish']);
+    $bl_other_en = Pages::create('single', 'en', 'Smoke other en');
+    check(is_wp_error(Noksha\Pages\Translation::link($bl_en, $bl_other_en)), 'two pages in the same language cannot be linked');
+    $bl_bn = Noksha\Pages\Translation::create_copy($bl_en);
+    check(is_int($bl_bn) && Pages::document($bl_bn)['language'] === 'bn' && get_post_status($bl_bn) === 'draft', 'the other-language copy is a Bangla draft');
+    $bl_pay = Pages::payload($bl_en);
+    check(($bl_pay['translation']['id'] ?? 0) === $bl_bn && (Pages::payload($bl_bn)['translation']['id'] ?? 0) === $bl_en, 'both pages know each other');
+    check(!str_contains(Renderer::article_for_post($bl_en), 'nk-lang-switch'), 'no switch while the other page is a draft');
+    check(str_contains(Renderer::article($bl_pay, true), 'nk-lang-switch'), 'the editor preview shows it already');
+    $bl_purged = [];
+    $bl_spy = static function ($page_id) use (&$bl_purged) { $bl_purged[] = (int) $page_id; };
+    add_action('noksha_page_cache_purged', $bl_spy);
+    Pages::update($bl_bn, ['status' => 'publish']);
+    remove_action('noksha_page_cache_purged', $bl_spy);
+    check(in_array($bl_en, $bl_purged, true), 'the Bangla page going live clears the English page\'s cache');
+    $bl_html = Renderer::article_for_post($bl_en);
+    check(str_contains($bl_html, 'nk-lang-switch') && str_contains($bl_html, 'hreflang="bn"') && str_contains($bl_html, (string) get_permalink($bl_bn)), 'once both are live, the page links to the Bangla one');
+    $bl_head = Renderer::seo_tags(Pages::payload($bl_en))['html'];
+    check(str_contains($bl_head, 'rel="alternate" hreflang="en"') && str_contains($bl_head, 'rel="alternate" hreflang="bn"'), 'and tells search engines about both');
+    $bl_third = Pages::create('single', 'bn', 'Smoke other bn');
+    Noksha\Pages\Translation::link($bl_en, $bl_third);
+    check(Noksha\Pages\Translation::of($bl_bn) === null && (Noksha\Pages\Translation::of($bl_third)['id'] ?? 0) === $bl_en, 'linking another page unlinks the old one');
+    wp_delete_post($bl_third, true);
+    check(Noksha\Pages\Translation::of($bl_en) === null, 'deleting a page removes the link');
+    foreach ([$bl_en, $bl_bn, $bl_other_en] as $bl_id) {
+        wp_delete_post($bl_id, true);
+    }
+
+    // ---- Export and import ----
+    $tr_shared = Noksha\Pages\Library::save_shared(['type' => 'guarantee', 'props' => ['title' => 'Exported promise', 'text' => 'x']], 'Export shared');
+    $tr_doc = Pages::document($wc_page);
+    $tr_sections = $tr_doc['sections'];
+    $tr_doc['sections'][] = ['id' => 's_trshar1', 'type' => 'shared', 'hidden' => false, 'props' => ['ref' => $tr_shared['id'], 'name' => 'Export shared'], 'style' => []];
+    Pages::update($wc_page, ['sections' => $tr_doc['sections']]);
+    Pages::forget_cached($wc_page);
+    $tr_file = Noksha\Pages\Transfer::export($wc_page);
+    check(is_array($tr_file) && $tr_file['format'] === 'noksha-page' && !isset($tr_file['offer']['wc']), 'a page exports as one file without live store data');
+    check(!in_array('shared', array_column($tr_file['sections'], 'type'), true) && str_contains(wp_json_encode($tr_file), 'Exported promise'), 'shared blocks are written out as normal sections');
+    check(!str_contains(wp_json_encode($tr_file), (string) home_url()), 'the file does not hold the site address');
+    $tr_json = json_decode(wp_json_encode($tr_file), true);
+    $tr_same = Noksha\Pages\Transfer::import($tr_json);
+    check(is_array($tr_same) && $tr_same['productKept'] && get_post_status($tr_same['id']) === 'draft', 'importing on the same site keeps the product, as a draft');
+    $tr_same_doc = Pages::document($tr_same['id']);
+    check(count($tr_same_doc['sections']) === count($tr_file['sections']) && $tr_same_doc['sections'][0]['id'] !== $tr_file['sections'][0]['id'], 'every section comes in, with new ids');
+    check($tr_same_doc['offer']['productId'] === $tr_file['offer']['productId'], 'with the same product');
+    $tr_other = $tr_json;
+    $tr_other['site'] = 'another-site';
+    $tr_other['offer']['productSku'] = 'no-such-sku-' . wp_generate_password(6, false);
+    $tr_other_result = Noksha\Pages\Transfer::import($tr_other, 'From another site');
+    $tr_other_doc = Pages::document($tr_other_result['id']);
+    check($tr_other_result['productDropped'] && $tr_other_doc['offer']['source'] === 'custom' && (int) $tr_other_doc['offer']['productId'] === 0, 'from another site without the SKU, the product is left out');
+    check(get_the_title($tr_other_result['id']) === 'From another site', 'the import can take a new title');
+    check(is_wp_error(Noksha\Pages\Transfer::import(['format' => 'other'])) && is_wp_error(Noksha\Pages\Transfer::import(['format' => 'noksha-page', 'version' => 99, 'sections' => []])), 'other files and newer formats are refused');
+    $tr_bad = $tr_json;
+    $tr_bad['sections'][] = ['type' => 'html', 'props' => ['html' => '<script>alert(1)</script><p>ok</p>']];
+    $tr_bad_result = Noksha\Pages\Transfer::import($tr_bad);
+    check(!str_contains(wp_json_encode(Pages::document($tr_bad_result['id'])['sections']), '<script'), 'imported content is cleaned like any edit');
+    foreach ([$tr_same['id'], $tr_other_result['id'], $tr_bad_result['id']] as $tr_id) {
+        wp_delete_post($tr_id, true);
+    }
+    Noksha\Pages\Library::delete($tr_shared['id']);
+    Pages::update($wc_page, ['sections' => $tr_sections]);
+    Pages::forget_cached($wc_page);
+
+    // ---- Two-step order form ----
+    $ms_doc = Pages::document($wc_page);
+    $ms_before = $ms_doc['checkout'];
+    check(Noksha\Pages\Sanitizer::checkout(['multiStep' => 1] + $ms_before)['multiStep'] === true, 'the two-step setting is kept');
+    check(str_contains(Renderer::article_for_post($wc_page), '<div class="nk-step"') === false, 'the form has one step by default');
+    Pages::update($wc_page, ['checkout' => ['multiStep' => true] + $ms_before]);
+    Pages::forget_cached($wc_page);
+    $ms_html = Renderer::article_for_post($wc_page);
+    $ms_step1 = (string) strstr((string) strstr($ms_html, 'data-step="1"'), 'data-step="2"', true);
+    $ms_step2 = (string) strstr((string) strstr($ms_html, 'data-step="2"'), '</form>', true);
+    check(str_contains($ms_step1, 'name="phone"') && !str_contains($ms_step1, 'payment_method'), 'step 1 holds the details');
+    check(str_contains($ms_step2, 'payment_method') && str_contains($ms_step2, 'nk-submit') && !str_contains($ms_step2, 'name="phone"'), 'step 2 holds payment and the order button');
+    check(str_contains($ms_html, 'data-step="2" hidden') && str_contains($ms_html, 'Step 1 of 2'), 'step 2 starts hidden, with a step count');
+    Pages::update($wc_page, ['checkout' => $ms_before]);
+    Pages::forget_cached($wc_page);
+
+    // ---- "Show when" sections ----
+    $wn_style = Noksha\Pages\Sanitizer::style('text', ['when' => 'party', 'from' => 'tomorrow', 'to' => '2030-01-02T10:30']);
+    check($wn_style['when'] === 'always' && $wn_style['from'] === '' && $wn_style['to'] === '2030-01-02T10:30', 'unknown conditions and bad dates are dropped');
+    check(Noksha\Pages\Sanitizer::style('order_form', ['when' => 'sold_out'])['when'] === 'always', 'the order form always shows');
+    $wn_payload = Pages::payload($wc_page);
+    $wn_before = $wn_payload['sections'];
+    $wn_text = static fn(string $title, array $style): array => ['id' => 's_' . substr(md5($title), 0, 8), 'type' => 'text', 'hidden' => false, 'props' => ['title' => $title, 'body' => '<p>x</p>'], 'style' => $style];
+    $wn_payload['sections'][] = $wn_text('When past', ['when' => 'dates', 'to' => '2020-01-01T00:00']);
+    $wn_payload['sections'][] = $wn_text('When open', ['when' => 'dates', 'from' => '2020-01-01T00:00']);
+    $wn_payload['sections'][] = $wn_text('When sold', ['when' => 'sold_out']);
+    $wn_payload['sections'][] = $wn_text('When stock', ['when' => 'in_stock']);
+    Pages::update($wc_page, ['sections' => $wn_payload['sections']]);
+    Pages::forget_cached($wc_page);
+    $wn_html = Renderer::article_for_post($wc_page);
+    $wn_hidden = static fn(string $title): bool => (bool) preg_match('/<section[^>]*hidden[^>]*>(?:(?!<\/section>).)*' . preg_quote($title, '/') . '/s', $wn_html);
+    check($wn_hidden('When past') && !$wn_hidden('When open'), 'a section outside its dates starts hidden; inside them it shows');
+    check($wn_hidden('When sold') && !$wn_hidden('When stock'), 'sold-out and in-stock sections follow the product stock');
+    check(str_contains($wn_html, 'data-nk-when="dates"') && str_contains($wn_html, 'data-nk-to="'), 'the condition is on the page for the visitor\'s browser to check again');
+    $wn_preview = Renderer::article(Pages::payload($wc_page), true);
+    check(!preg_match('/<section[^>]*hidden[^>]*>(?:(?!<\/section>).)*When past/s', $wn_preview), 'the editor preview shows every section');
+    check(str_contains($wn_preview, 'data-nk-when-preview'), 'and marks the ones with a condition');
+    Pages::update($wc_page, ['sections' => $wn_before]);
+    Pages::forget_cached($wc_page);
+
     // ---- Sales by product ----
     $by_product = Noksha\Analytics\Tracker::by_product(wp_date('Y-m-d 00:00:00', current_time('timestamp') - DAY_IN_SECONDS), 1000);
     $rows_by_key = array_column($by_product, null, 'key');

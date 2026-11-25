@@ -111,8 +111,20 @@ test.describe('landing page for a WooCommerce product', () => {
     }
 
     // Order to the last district: checkout compares the charge shown with its own.
+    // Two steps: payment and the order button come after the details.
+    await expect(page.locator('.nk-submit')).toBeHidden();
+    await expect(page.locator('.nk-step-count')).toContainText('Step 1 of 2');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.locator('.nk-form-error').first()).toBeVisible();
+    await expect(page.locator('.nk-submit')).toBeHidden();
     await page.locator('input[name="name"]').fill('E2E Delivery');
     await page.locator('input[name="phone"]').fill('01999000111');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.locator('.nk-step-count')).toContainText('Step 2 of 2');
+    await expect(page.locator('input[name="phone"]')).toBeHidden();
+    await page.getByRole('button', { name: 'Back' }).click();
+    await expect(page.locator('input[name="phone"]')).toHaveValue('01999000111');
+    await page.getByRole('button', { name: 'Next' }).click();
     await page.locator('.nk-submit').click();
     await page.waitForURL(/nk_order=/, { timeout: 30000 });
     expect(errors, 'no JavaScript errors on the page').toEqual([]);
@@ -160,6 +172,19 @@ test.describe('landing page for a WooCommerce product', () => {
     await expect(page.locator('[id="nk-order"]')).toHaveCount(1);
     expect(await page.evaluate(() => document.querySelector('[name="qty"]').form && document.querySelector('[name="qty"]').form.id)).toBe('nk-order-form');
     await expect(page.locator('.nk-submit')).toBeVisible();
+  });
+
+  test('sections shown only at some times or stock states', async ({ page }) => {
+    await page.goto(fixture.url);
+    await expect(page.locator('.nk-rich', { hasText: 'Coming offer' })).toBeHidden();
+    await expect(page.locator('.nk-rich', { hasText: 'Back soon' })).toBeHidden();
+    await expect(page.locator('.nk-bundles')).toBeVisible();
+
+    // A visitor whose clock is past the start sees it, even from the same (cached) HTML.
+    await page.clock.install({ time: Date.now() + 31 * 24 * 3600 * 1000 });
+    await page.goto(fixture.url);
+    await expect(page.locator('.nk-rich', { hasText: 'Coming offer' })).toBeVisible();
+    await expect(page.locator('.nk-rich', { hasText: 'Back soon' })).toBeHidden();
   });
 
   test('live words follow the chosen option', async ({ page }) => {

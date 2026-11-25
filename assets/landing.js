@@ -406,6 +406,7 @@
 
   var form = landing.querySelector('.nk-form');
   if (!form) {
+    applyWhen({});
     return;
   }
 
@@ -753,9 +754,39 @@
     hint.textContent = show ? String(strings.stockLeft || '%d left').replace('%d', String(left)) : '';
   }
 
+  // "Show when" sections: checked again here with the live price, stock and clock.
+  var whenState;
+  function applyWhen(change) {
+    whenState = whenState || { sale: null, available: null };
+    Object.keys(change || {}).forEach(function (key) {
+      whenState[key] = change[key];
+    });
+    var now = Date.now() / 1000;
+    landing.querySelectorAll('[data-nk-when]').forEach(function (el) {
+      if (el.hasAttribute('data-nk-when-preview')) {
+        return;
+      }
+      var when = el.getAttribute('data-nk-when');
+      var show = null;
+      if (when === 'dates') {
+        var from = Number(el.getAttribute('data-nk-from') || 0);
+        var to = Number(el.getAttribute('data-nk-to') || 0);
+        show = (!from || now >= from) && (!to || now < to);
+      } else if ((when === 'sale' || when === 'not_sale') && whenState.sale !== null) {
+        show = when === 'sale' ? whenState.sale : !whenState.sale;
+      } else if ((when === 'in_stock' || when === 'sold_out') && whenState.available !== null) {
+        show = when === 'in_stock' ? whenState.available : !whenState.available;
+      }
+      if (show !== null) {
+        el.hidden = !show;
+      }
+    });
+  }
+
   // {price}, {old_price}, {save}, {save_percent} and {stock} written in the page's text.
   function setTokens(price, regular, stock) {
     var onSale = regular > price && price > 0;
+    applyWhen({ sale: onSale });
     var values = {
       price: price > 0 ? money(price) : '',
       old_price: onSale ? money(regular) : '',
@@ -838,6 +869,7 @@
           renderStockHint(live.backorders ? null : live.stock);
           updateTotals();
         }
+        applyWhen({ available: Boolean(live.available) });
         if (!live.available) {
           var submit = form.querySelector('[type="submit"]');
           if (submit) {
@@ -1246,6 +1278,7 @@
   });
   bindTiers();
   updateTotals();
+  applyWhen({});
   refreshLive();
 
   /* ---- Phone validation ---- */
@@ -1560,13 +1593,72 @@
     if (fieldName) {
       markFieldInvalid(fieldName);
     }
+    showInvalidStep();
   }
 
-  function clientValidate() {
+  /* ---- Two-step form: details, then payment ---- */
+
+  var formSteps = form.querySelectorAll('[data-step]');
+  function stepOf(el) {
+    var step = el && el.closest ? el.closest('[data-step]') : null;
+    return step ? Number(step.getAttribute('data-step')) : 0;
+  }
+  function goStep(n, focus) {
+    if (!formSteps.length) {
+      return;
+    }
+    formSteps.forEach(function (step) {
+      step.hidden = Number(step.getAttribute('data-step')) !== n;
+    });
+    form.querySelectorAll('[data-step-label]').forEach(function (label) {
+      label.hidden = Number(label.getAttribute('data-step-label')) !== n;
+    });
+    if (focus) {
+      var target = form.querySelector('[data-step="' + n + '"] input:not([type="hidden"]):not([tabindex="-1"]), [data-step="' + n + '"] select, [data-step="' + n + '"] textarea');
+      if (form.scrollIntoView) {
+        form.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      }
+      if (target && target.focus) {
+        target.focus({ preventScroll: true });
+      }
+    }
+  }
+  // Show the step that holds the first field with a problem.
+  function showInvalidStep() {
+    var bad = form.querySelector('.is-invalid, [aria-invalid="true"]');
+    var n = stepOf(bad);
+    if (n) {
+      goStep(n, false);
+    }
+  }
+  if (formSteps.length) {
+    var nextButton = form.querySelector('[data-step-next]');
+    var backButton = form.querySelector('[data-step-back]');
+    if (nextButton) {
+      nextButton.addEventListener('click', function () {
+        if (!clientValidate(form.querySelector('[data-step="1"]'))) {
+          return;
+        }
+        if (errorBox) {
+          errorBox.hidden = true;
+        }
+        captureLead();
+        goStep(2, true);
+      });
+    }
+    if (backButton) {
+      backButton.addEventListener('click', function () {
+        goStep(1, true);
+      });
+    }
+  }
+
+  function clientValidate(scope) {
+    var root = scope || form;
     var messages = [];
     clearFieldErrors();
 
-    var required = form.querySelectorAll('[required]');
+    var required = root.querySelectorAll('[required]');
     for (var i = 0; i < required.length; i += 1) {
       var el = required[i];
       if (el.type === 'radio') {
@@ -1578,13 +1670,13 @@
       }
     }
 
-    if (phoneInput && String(phoneInput.value || '').trim() && !isValidBdPhone(phoneInput.value)) {
+    if (phoneInput && root.contains(phoneInput) && String(phoneInput.value || '').trim() && !isValidBdPhone(phoneInput.value)) {
       setPhoneError(true);
       messages.push(invalidPhoneMessage());
     }
 
     if (messages.length) {
-      showFormError(messages.join(' '), phoneInput && !isValidBdPhone(phoneInput.value) ? 'phone' : '');
+      showFormError(messages.join(' '), phoneInput && root.contains(phoneInput) && !isValidBdPhone(phoneInput.value) ? 'phone' : '');
       return false;
     }
     return true;

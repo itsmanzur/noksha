@@ -157,7 +157,12 @@ foreach ($sections as $i => $section) {
         $form_at = $i;
     }
 }
-array_splice($sections, $form_at, 0, [['type' => 'bundles', 'props' => ['title' => 'Pick a pack', 'popular' => 2, 'showSingle' => true]]]);
+array_splice($sections, $form_at, 0, [
+    ['type' => 'bundles', 'props' => ['title' => 'Pick a pack', 'popular' => 2, 'showSingle' => true]],
+    // "Show when": a section that starts in 30 days, and one only for when the product is sold out.
+    ['type' => 'text', 'props' => ['title' => 'Coming offer', 'body' => '<p>Later</p>'], 'style' => ['when' => 'dates', 'from' => wp_date('Y-m-d', time() + 30 * DAY_IN_SECONDS) . 'T09:00']],
+    ['type' => 'text', 'props' => ['title' => 'Back soon', 'body' => '<p>Sold out</p>'], 'style' => ['when' => 'sold_out']],
+]);
 Pages::update($page_id, ['status' => 'publish', 'slug' => 'e2e-noksha', 'offer' => $offer, 'checkout' => $checkout, 'sections' => $sections]);
 
 // A second page that asks for the district and takes delivery from WooCommerce zones (Auto).
@@ -172,6 +177,8 @@ foreach (['upazila', 'address'] as $field) {
     $ship_checkout['fields'][$field] = ['enabled' => false, 'required' => false];
 }
 $ship_checkout['payments'] = ['cod'];
+// This page uses the two-step form.
+$ship_checkout['multiStep'] = true;
 Pages::update($ship_page_id, ['status' => 'publish', 'slug' => 'e2e-noksha-ship', 'offer' => $ship_offer, 'checkout' => $ship_checkout]);
 $districts = [];
 foreach (Noksha\Region\Geo::data()['divisions'] as $division) {

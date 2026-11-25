@@ -220,4 +220,136 @@ test.describe('editor: WooCommerce product', () => {
     await page.getByRole('button', { name: 'Confirm' }).click();
     await expect(preview.locator('.nk-bundles')).toHaveCount(0, { timeout: 20000 });
   });
+
+  test('shared blocks', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${fixture.adminUrl}#/pages/${fixture.shipPageId}`);
+    await page.getByRole('button', { name: /Guarantee/ }).first().click();
+    await page.getByRole('button', { name: 'Make this a shared block' }).click();
+    await page.getByLabel('Name').fill('E2E shared promise');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    // The section is now the shared block.
+    await expect(page.getByText(/Shared block "E2E shared promise"/)).toBeVisible({ timeout: 20000 });
+
+    // Edit it and save it for all pages: the preview shows the change.
+    await page.getByLabel('Headline').first().fill('E2E promise for every page');
+    await page.getByRole('button', { name: 'Save for all pages' }).click();
+    await expect(page.getByText(/Saved\. \d+ page\(s\) show this block\./)).toBeVisible({ timeout: 20000 });
+    const preview = page.frameLocator('iframe.nk-editor-iframe');
+    await expect(preview.locator('.nk-guarantee')).toContainText('E2E promise for every page', { timeout: 20000 });
+
+    // Back to this page's own copy: a normal Guarantee section with the same text.
+    await page.getByRole('button', { name: "Make it this page's own copy" }).click();
+    await expect(page.getByRole('heading', { name: /Guarantee/ })).toBeVisible();
+    await expect(page.getByLabel('Headline').first()).toHaveValue('E2E promise for every page');
+    expect(errors, 'no JavaScript errors').toEqual([]);
+  });
+
+  test('table and formatted text sections', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${fixture.adminUrl}#/pages/${fixture.shipPageId}`);
+    const preview = page.frameLocator('iframe.nk-editor-iframe');
+
+    // Table: add it, fill a cell, add a row.
+    await page.getByRole('button', { name: 'Add section' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Table/ }).click();
+    await page.getByLabel('Row 1, column 2').fill('38 in');
+    await page.getByRole('button', { name: 'Add a row' }).click();
+    await page.getByLabel('Row 3, column 1').fill('XL');
+    await expect(preview.locator('.nk-table')).toContainText('38 in', { timeout: 20000 });
+    await expect(preview.locator('.nk-table tbody tr')).toHaveCount(3, { timeout: 20000 });
+
+    // Formatted text: type, select, make bold.
+    await page.getByRole('button', { name: /Sections/ }).first().click();
+    await page.getByRole('button', { name: 'Add section' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Formatted text/ }).click();
+    const box = page.getByRole('textbox', { name: 'Text' });
+    await box.click();
+    await page.keyboard.type('Wash cold');
+    await page.keyboard.press('Control+A');
+    await page.getByRole('button', { name: 'Bold' }).click();
+    await expect(preview.locator('.nk-rich-body strong, .nk-rich-body b')).toHaveText('Wash cold', { timeout: 20000 });
+    expect(errors, 'no JavaScript errors').toEqual([]);
+  });
+
+  test('version history', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${fixture.adminUrl}#/pages/${fixture.shipPageId}`);
+    const preview = page.frameLocator('iframe.nk-editor-iframe');
+    // Change the top banner and let it save.
+    await page.getByRole('button', { name: /Top banner/ }).first().click();
+    const before = (await preview.locator('.nk-hero h1').first().textContent()).trim();
+    await page.locator('.nk-ed-side').getByLabel('Headline', { exact: true }).first().fill('E2E headline to undo');
+    await expect(preview.locator('.nk-hero h1').first()).toHaveText('E2E headline to undo', { timeout: 20000 });
+    await expect(page.getByText('All changes saved')).toBeVisible({ timeout: 30000 });
+
+    // The history has the state before the edit; restore it.
+    await page.getByTitle('More publish options').click();
+    await page.getByRole('menuitem', { name: 'Version history' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('Before editing').first()).toBeVisible({ timeout: 20000 });
+    await dialog.getByRole('button', { name: 'Restore' }).first().click();
+    await page.getByRole('button', { name: 'Restore' }).last().click();
+    await expect(dialog).toBeHidden({ timeout: 20000 });
+    await expect(preview.locator('.nk-hero h1').first()).toHaveText(before, { timeout: 20000 });
+    expect(errors, 'no JavaScript errors').toEqual([]);
+  });
+
+  test('export a page and import it', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${fixture.adminUrl}#/pages`);
+    await page.getByLabel('Search pages').fill('E2E delivery');
+    const card = page.locator('.nk-page-card', { hasText: 'E2E delivery' }).first();
+    await card.getByRole('button', { name: 'More actions' }).click();
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      card.getByRole('button', { name: 'Export' }).click(),
+    ]);
+    const file = await download.path();
+    const data = JSON.parse(require('fs').readFileSync(file, 'utf8'));
+    expect(data.format).toBe('noksha-page');
+
+    // Import it: a new draft opens in the editor.
+    await page.locator('input[type="file"]').setInputFiles(file);
+    await expect(page).toHaveURL(/#\/pages\/\d+$/, { timeout: 30000 });
+    const newId = Number(page.url().split('/').pop());
+    expect(newId).not.toBe(fixture.shipPageId);
+    await expect(page.getByRole('button', { name: /Top banner/ }).first()).toBeVisible({ timeout: 30000 });
+    // Clean up the copy.
+    await page.evaluate(async (id) => {
+      await fetch(window.nokshaBoot.root + 'pages/' + id, { method: 'DELETE', credentials: 'same-origin', headers: { 'X-WP-Nonce': window.nokshaBoot.nonce } });
+    }, newId);
+    expect(errors, 'no JavaScript errors').toEqual([]);
+  });
+
+  test('a Bangla copy linked to the page', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`${fixture.adminUrl}#/pages/${fixture.shipPageId}`);
+    await page.getByRole('button', { name: /Page settings/ }).click();
+    await page.getByRole('tab', { name: 'Link & language' }).click();
+    await page.getByRole('button', { name: 'Make the Bangla copy' }).click();
+    await page.getByRole('button', { name: 'Make the Bangla copy' }).last().click();
+    await expect(page.getByText('The copy is made as a draft')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('.nk-translation-linked')).toContainText('(বাংলা)');
+    // The preview shows the language switch already.
+    const preview = page.frameLocator('iframe.nk-editor-iframe');
+    await expect(preview.locator('.nk-lang-switch')).toContainText('বাংলা', { timeout: 20000 });
+
+    // The copy is a Bangla page: its order form speaks Bangla.
+    await page.getByRole('button', { name: 'Open it' }).click();
+    await expect(page).toHaveURL(new RegExp('#/pages/(?!' + fixture.shipPageId + '$)[0-9]+$'), { timeout: 30000 });
+    const copyId = Number(page.url().split('/').pop());
+    expect(copyId).not.toBe(fixture.shipPageId);
+    await expect(preview.locator('.nk-lang-switch .is-current')).toHaveText('বাংলা', { timeout: 30000 });
+    // Clean up: deleting the copy also removes the link.
+    await page.evaluate(async (id) => {
+      await fetch(window.nokshaBoot.root + 'pages/' + id, { method: 'DELETE', credentials: 'same-origin', headers: { 'X-WP-Nonce': window.nokshaBoot.nonce } });
+    }, copyId);
+    expect(errors, 'no JavaScript errors').toEqual([]);
+  });
 });

@@ -21,6 +21,14 @@ Build a one-page offer, take cash on delivery, bKash, Nagad, or SSLCommerz on th
 == Changelog ==
 
 = Unreleased =
+* Shared blocks: make a section shared and add it to other pages. Edit it once and every page that shows it changes (their caches are cleared). A page can turn it back into its own copy. The order form cannot be shared.
+* Table section (size chart, specs): up to 6 columns and 20 rows, a note below, live words in cells, scrolls sideways on phones.
+* Formatted text section: bold, italic, lists, links and small headings, with a simple toolbar. Other tags, scripts and javascript: links are removed.
+* Show when: a section can show only during a sale, only when not on sale, only in stock, only when sold out, or between two dates. The page checks again with the live price, stock and the visitor's clock, so cached pages stay right. The editor shows every section and outlines the conditional ones.
+* Two-step order form (Checkout tab): the buyer's details first, then payment and the order button. Next checks the details and saves the phone as a lead; an error on a field takes the buyer back to its step.
+* Version history (menu next to Update page): earlier states of a page, one per editing session (at most every 10 minutes), before going live and before a restore; the newest 20 are kept. Restore puts the page back and keeps the state it replaced. Versions are hidden posts, so page views do not load them, and they are deleted with the page.
+* Export and import (Pages screen): a page as one .json file (shared blocks written out, images by URL, no site address). Import makes a new draft; the store product is kept on the same site, matched by SKU on another site, or left out with a note. Imported content is cleaned like any edit.
+* Bilingual pages (Link & language tab): link a page to the same page in the other language, or make a linked Bangla/English draft copy. Once both are live they show an English | বাংলা switch and hreflang tags; each keeps its own sections, price and orders. Publishing, unpublishing or deleting one updates the other.
 * My sections and My templates: keep a section (with its look) or a whole page (sections, order form, colors, offer settings, without the store product) and reuse it. A new page can start from My template.
 * Fixed: Duplicate made a new page from the bare template instead of copying the page. It now copies everything as a draft.
 * A section can show on all screens, phones only (under 768 px) or larger screens only. The order form always shows.

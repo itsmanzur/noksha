@@ -49,6 +49,9 @@ export const SECTION_ICONS = {
   compare: 'columns',
   whatsapp: 'chat',
   bundles: 'tag',
+  shared: 'link',
+  table: 'columns',
+  text: 'list',
 };
 
 export function Icon({ name, size = 18 }) {
@@ -71,7 +74,7 @@ export function summaryOf(section, t) {
   const props = section.props || {};
   const text = section.type === 'html'
     ? String(props.html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-    : String(props.title || props.eyebrow || props.text || props.label || props.number || '').trim();
+    : String(props.title || props.eyebrow || props.text || props.label || props.number || props.name || '').trim();
   if (!text) {
     return section.type === 'whatsapp' ? t('editor.waSiteNumber') : t('editor.untitled');
   }

@@ -20,7 +20,7 @@ function previewScale(device, fit) {
 /** Section picker groups, ordered by what the seller is trying to do. */
 const TYPE_GROUPS = [
   { key: 'attention', types: ['hero', 'countdown', 'whatsapp'] },
-  { key: 'trust', types: ['benefits', 'reviews', 'guarantee', 'faq', 'compare'] },
+  { key: 'trust', types: ['benefits', 'reviews', 'guarantee', 'faq', 'compare', 'table', 'text'] },
   { key: 'product', types: ['product', 'bundles', 'gallery', 'video', 'steps', 'order_form'] },
   { key: 'advanced', types: ['html'] },
 ];
@@ -109,6 +109,8 @@ function blankSection(type, t) {
     },
     whatsapp: { number: '', label: '', message: '' },
     bundles: { title: t('section.bundles'), popular: 0, showSingle: true },
+    table: { title: t('section.table'), headers: [t('table.size'), t('table.chest'), t('table.length')], rows: [['M', '', ''], ['L', '', '']], note: '' },
+    text: { title: '', body: '' },
   };
   return {
     id: 's_' + Math.random().toString(36).slice(2, 10),
@@ -167,6 +169,7 @@ export function Editor({ t, id, go }) {
   const [redoStack, setRedoStack] = useState([]);
   const [settingsTab, setSettingsTab] = useState('offer');
   const [addOpen, setAddOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   // Focus mode by default: hides the WP admin menu/bar so the preview gets the full width.
   const [fullscreen, setFullscreen] = useState(true);
 
@@ -480,6 +483,18 @@ export function Editor({ t, id, go }) {
     setRedoStack([]);
   }
 
+  // The other-language link is saved by its own request, so it does not make the page "unsaved".
+  function setTranslation(translation) {
+    setPage((current) => ({ ...current, translation }));
+    setSaved((current) => {
+      try {
+        return JSON.stringify({ ...JSON.parse(current), translation });
+      } catch (err) {
+        return current;
+      }
+    });
+  }
+
   function patch(partial) {
     setPage((current) => {
       pushHistory(current);
@@ -539,6 +554,23 @@ export function Editor({ t, id, go }) {
   function openSettings(tab) {
     setSettingsTab(tab);
     setView({ kind: 'settings' });
+  }
+
+  function replaceSection(sectionId, next) {
+    setSections((sections) => sections.map((item) => (item.id === sectionId ? next : item)));
+    setView({ kind: 'section', id: next.id });
+  }
+
+  function insertShared(item) {
+    const created = { id: 's_' + Math.random().toString(36).slice(2, 10), type: 'shared', hidden: false, props: { ref: item.id, name: item.name }, style: {} };
+    const anchorId = selectedRef.current;
+    setSections((sections) => {
+      const next = sections.slice();
+      next.splice(insertIndex(sections, item.type, anchorId), 0, created);
+      return next;
+    });
+    setView({ kind: 'section', id: created.id });
+    setAddOpen(false);
   }
 
   function patchSection(sectionId, props) {
@@ -614,7 +646,7 @@ export function Editor({ t, id, go }) {
   async function deleteSaved(item) {
     const ok = await confirm({
       title: t('common.confirm'),
-      message: t('library.deleteConfirm').replace('{name}', item.name),
+      message: (item.kind === 'shared' ? t('shared.deleteConfirm') : t('library.deleteConfirm')).replace('{name}', item.name),
       confirmLabel: t('common.confirm'),
       cancelLabel: t('common.cancel'),
       danger: true,
@@ -728,7 +760,25 @@ export function Editor({ t, id, go }) {
             onSave={save}
             onSaveDraft={() => save('draft')}
             onUnpublish={() => save('draft')}
+            onHistory={() => setHistoryOpen(true)}
           />
+          {historyOpen ? (
+            <VersionHistory
+              t={t}
+              pageId={page.id}
+              dirty={dirty}
+              live={liveStatus === 'publish'}
+              onClose={() => setHistoryOpen(false)}
+              onRestored={(data) => {
+                setPage(data);
+                setSaved(JSON.stringify(data));
+                setLiveStatus(data.status);
+                setHistory([]);
+                setRedoStack([]);
+                setView({ kind: 'home' });
+              }}
+            />
+          ) : null}
           {error ? <div className="nk-banner nk-ed-error" role="alert">{error}</div> : null}
           <div className="nk-editor-cols nk-ed-body">
             <aside className="nk-editor-pane nk-ed-side">
@@ -754,12 +804,15 @@ export function Editor({ t, id, go }) {
                   onSettingsTab={setSettingsTab}
                   onBack={() => setView({ kind: 'home' })}
                   onPatch={patch}
+                  onTranslation={setTranslation}
                   onPatchSection={patchSection}
                   onPatchStyle={patchSectionStyle}
                   onOpenSettings={openSettings}
                   onToggleHidden={toggleHidden}
                   onRemoveSection={removeSection}
                   onLibraryChange={setLibrary}
+                  library={library}
+                  onReplaceSection={replaceSection}
                   onRemovePage={removePage}
                   onLeave={leave}
                 />
@@ -822,6 +875,23 @@ export function Editor({ t, id, go }) {
                 ? `${t('editor.addAfter')} ${t('section.' + section.type)}`
                 : t('editor.addHelp')}
             </p>
+            {library.some((item) => item.kind === 'shared') ? (
+              <div className="nk-type-group">
+                <h3 className="nk-type-group-title">{t('shared.group')}</h3>
+                <ul className="nk-library-list">
+                  {library.filter((item) => item.kind === 'shared').map((item) => (
+                    <li key={item.id}>
+                      <button type="button" className="nk-library-item" onClick={() => insertShared(item)}>
+                        <span className="nk-type-icon"><Icon name="link" size={16} /></span>
+                        <strong>{item.name}</strong>
+                        <small>{t('section.' + item.type)}</small>
+                      </button>
+                      <IconButton icon="trash" label={t('shared.delete')} danger onClick={() => deleteSaved(item)} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {library.some((item) => item.kind === 'section') ? (
               <div className="nk-type-group">
                 <h3 className="nk-type-group-title">{t('library.mySections')}</h3>
@@ -879,6 +949,7 @@ function EditorInspector({
   onSettingsTab,
   onBack,
   onPatch,
+  onTranslation,
   onPatchSection,
   onPatchStyle,
   onOpenSettings,
@@ -887,6 +958,8 @@ function EditorInspector({
   onRemovePage,
   onLeave,
   onLibraryChange,
+  library,
+  onReplaceSection,
 }) {
   if (view.kind === 'section' && section) {
     return (
@@ -905,23 +978,52 @@ function EditorInspector({
           {section.hidden ? (
             <p className="nk-note"><Icon name="eyeOff" size={16} /> {t('editor.hiddenNote')}</p>
           ) : null}
-          <SectionFields
-            key={section.id}
-            t={t}
-            section={section}
-            onChange={(props) => onPatchSection(section.id, props)}
-            onOpen={onOpenSettings}
-            offer={page.offer}
-          />
-          <StyleFields t={t} section={section} onChange={(style) => onPatchStyle(section.id, style)} />
-          <SaveToLibrary
-            key={'save-' + section.id}
-            t={t}
-            label={t('library.saveSection')}
-            help={t('library.saveSectionHelp')}
-            defaultName={t('section.' + section.type)}
-            onSave={(name) => api('library', { method: 'POST', body: { kind: 'section', name, section } }).then((data) => onLibraryChange && onLibraryChange(data.items || []))}
-          />
+          {section.type === 'shared' ? (
+            <SharedBlockFields
+              key={section.id}
+              t={t}
+              section={section}
+              page={page}
+              library={library || []}
+              onOpen={onOpenSettings}
+              onLibraryChange={onLibraryChange}
+              onRefresh={() => onPatchSection(section.id, { v: Date.now() })}
+              onDetach={(copy) => onReplaceSection(section.id, { ...copy, id: section.id, hidden: section.hidden })}
+            />
+          ) : (
+            <>
+              <SectionFields
+                key={section.id}
+                t={t}
+                section={section}
+                onChange={(props) => onPatchSection(section.id, props)}
+                onOpen={onOpenSettings}
+                offer={page.offer}
+              />
+              <StyleFields t={t} section={section} onChange={(style) => onPatchStyle(section.id, style)} />
+              <SaveToLibrary
+                key={'save-' + section.id}
+                t={t}
+                label={t('library.saveSection')}
+                help={t('library.saveSectionHelp')}
+                defaultName={t('section.' + section.type)}
+                onSave={(name) => api('library', { method: 'POST', body: { kind: 'section', name, section } }).then((data) => onLibraryChange && onLibraryChange(data.items || []))}
+              />
+              {section.type !== 'order_form' ? (
+                <SaveToLibrary
+                  key={'share-' + section.id}
+                  t={t}
+                  label={t('shared.make')}
+                  help={t('shared.makeHelp')}
+                  defaultName={t('section.' + section.type)}
+                  onSave={(name) => api('library', { method: 'POST', body: { kind: 'shared', name, section } }).then((data) => {
+                    if (onLibraryChange) onLibraryChange(data.items || []);
+                    onReplaceSection(section.id, { id: section.id, type: 'shared', hidden: section.hidden, props: { ref: data.id, name }, style: {} });
+                  })}
+                />
+              ) : null}
+            </>
+          )}
           <div className="nk-panel-foot">
             <button type="button" className="nk-btn-ghost nk-btn-icon" onClick={() => onToggleHidden(section.id)}>
               <Icon name={section.hidden ? 'eye' : 'eyeOff'} size={16} /> {section.hidden ? t('editor.showSection') : t('editor.hideSection')}
@@ -990,6 +1092,7 @@ function EditorInspector({
       content: (
         <>
           <PageMetaFields t={t} page={page} onChange={onPatch} onDelete={onRemovePage} />
+          <TranslationFields t={t} page={page} onLinked={onTranslation} onOpen={(id) => onLeave('pages/' + id)} />
           <SaveToLibrary
             t={t}
             label={t('library.savePage')}
@@ -1116,6 +1219,7 @@ const STYLE_LAYOUTS = {
 const STYLE_BACKGROUNDS = ['none', 'soft', 'warm', 'dark', 'brand', 'gradient'];
 const STYLE_SPACINGS = ['compact', 'normal', 'roomy'];
 const STYLE_SHOWS = ['all', 'mobile', 'desktop'];
+const STYLE_WHENS = ['always', 'sale', 'not_sale', 'in_stock', 'sold_out', 'dates'];
 const STYLE_SIZES = ['sm', 'md', 'lg', 'xl'];
 const STYLE_SIZE_SCALE = { sm: 0.88, md: 1, lg: 1.15, xl: 1.3 };
 const STYLE_RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
@@ -1131,6 +1235,301 @@ function headingRange(type, size) {
 }
 
 /** Look & feel: layout variant, background band and spacing for one section. */
+/**
+ * Other language: link this page to the same page in Bangla or English. Both
+ * pages then show a language switch. "Make the copy" creates the other page.
+ */
+function TranslationFields({ t, page, onLinked, onOpen }) {
+  const confirm = useConfirm();
+  const other = page.translation || null;
+  const otherLang = page.language === 'bn' ? 'en' : 'bn';
+  const [pages, setPages] = useState(null);
+  const [pick, setPick] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (other) {
+      return;
+    }
+    api('pages?per_page=100').then((data) => setPages((data.pages || []).filter((row) => row.id !== page.id && row.language === otherLang))).catch(() => setPages([]));
+  }, [page.id, other ? other.id : 0, otherLang]);
+
+  function run(request) {
+    setBusy(true);
+    setMessage('');
+    return request
+      .catch((err) => {
+        setMessage(err.message || t('common.error'));
+        return null;
+      })
+      .then((data) => {
+        setBusy(false);
+        return data;
+      });
+  }
+
+  async function makeCopy() {
+    const ok = await confirm({
+      title: t('translation.copy.' + otherLang),
+      message: t('translation.copyConfirm'),
+      confirmLabel: t('translation.copy.' + otherLang),
+      cancelLabel: t('common.cancel'),
+    });
+    if (!ok) {
+      return;
+    }
+    const data = await run(api('pages/' + page.id + '/translation/copy', { method: 'POST' }));
+    if (data) {
+      onLinked(data.translation);
+      setMessage(t('translation.copied'));
+    }
+  }
+
+  async function link(id) {
+    const data = await run(api('pages/' + page.id + '/translation', { method: 'POST', body: { pageId: id } }));
+    if (data) {
+      onLinked(data.translation);
+    }
+  }
+
+  return (
+    <div className="nk-translation">
+      <h3 className="nk-group-title">{t('translation.title')}</h3>
+      <p className="nk-help">{t('translation.help')}</p>
+      {other ? (
+        <div className="nk-translation-linked">
+          <p>
+            <strong>{t('translation.lang.' + other.language)}:</strong> {other.title}
+            {other.status !== 'publish' ? <span className="nk-muted"> ({t('translation.draft')})</span> : null}
+          </p>
+          <div className="nk-library-actions">
+            <button type="button" className="nk-btn-ghost" onClick={() => onOpen(other.id)}>{t('translation.open')}</button>
+            <button type="button" className="nk-btn-ghost" disabled={busy} onClick={() => link(0)}>{t('translation.unlink')}</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <button type="button" className="nk-btn" disabled={busy} onClick={makeCopy}>{t('translation.copy.' + otherLang)}</button>
+          {pages && pages.length ? (
+            <div className="nk-translation-pick">
+              <label className="nk-field">
+                <span>{t('translation.pick.' + otherLang)}</span>
+                <select value={pick} onChange={(event) => setPick(event.target.value)}>
+                  <option value="">—</option>
+                  {pages.map((row) => <option key={row.id} value={row.id}>{row.title}</option>)}
+                </select>
+              </label>
+              <button type="button" className="nk-btn-ghost" disabled={busy || !pick} onClick={() => link(Number(pick))}>{t('translation.link')}</button>
+            </div>
+          ) : null}
+        </>
+      )}
+      {message ? <p className="nk-muted" role="status">{message}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Version history: earlier states of the page, newest first, each with a Restore button.
+ */
+function VersionHistory({ t, pageId, dirty, live, onClose, onRestored }) {
+  const confirm = useConfirm();
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(0);
+  useEffect(() => {
+    api('pages/' + pageId + '/versions').then((data) => setRows(data.versions || [])).catch((err) => setError(err.message || t('common.error')));
+  }, [pageId]);
+
+  async function restore(row) {
+    const ok = await confirm({
+      title: t('versions.restore'),
+      message: [t('versions.confirm'), live ? t('versions.confirmLive') : '', dirty ? t('versions.confirmDirty') : ''].filter(Boolean).join(' '),
+      confirmLabel: t('versions.restore'),
+      cancelLabel: t('common.cancel'),
+    });
+    if (!ok) {
+      return;
+    }
+    setBusy(row.id);
+    setError('');
+    api('pages/' + pageId + '/versions/' + row.id + '/restore', { method: 'POST' })
+      .then((data) => {
+        setRows(data.versions || []);
+        onRestored(data.page);
+        onClose();
+      })
+      .catch((err) => setError(err.message || t('common.error')))
+      .then(() => setBusy(0));
+  }
+
+  return (
+    <Modal open onClose={onClose} title={t('versions.title')} size="md">
+      <p className="nk-muted">{t('versions.help')}</p>
+      {error ? <p className="nk-banner" role="alert">{error}</p> : null}
+      {rows === null && !error ? <p className="nk-muted">{t('common.loading')}</p> : null}
+      {rows && rows.length === 0 ? <p className="nk-muted">{t('versions.none')}</p> : null}
+      {rows && rows.length ? (
+        <ul className="nk-version-list">
+          {rows.map((row) => (
+            <li key={row.id} className="nk-version-row">
+              <div>
+                <strong>{new Date(row.time).toLocaleString()}</strong>
+                <small>
+                  {t('versions.reason.' + row.reason)}
+                  {row.user ? ' · ' + row.user : ''}
+                  {' · ' + t('versions.sections').replace('{n}', String(row.sections))}
+                </small>
+              </div>
+              <button type="button" className="nk-btn-ghost" disabled={busy !== 0} onClick={() => restore(row)}>
+                {busy === row.id ? t('common.loading') : t('versions.restore')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Modal>
+  );
+}
+
+/**
+ * Table: column headings and rows of short text. The first column reads as the row's name.
+ */
+function TableFields({ t, props, onChange }) {
+  const headers = Array.isArray(props.headers) && props.headers.length ? props.headers : [''];
+  const rows = Array.isArray(props.rows) ? props.rows : [];
+  const width = headers.length;
+  const setHeader = (i, value) => onChange({ headers: headers.map((h, j) => (j === i ? value : h)) });
+  const setCell = (r, c, value) => onChange({ rows: rows.map((row, i) => (i === r ? headers.map((_, j) => (j === c ? value : row[j] || '')) : row)) });
+  return (
+    <div className="nk-table-edit">
+      <TextField label={t('prop.title')} value={props.title} onChange={(title) => onChange({ title })} />
+      <div className="nk-table-grid" style={{ gridTemplateColumns: 'repeat(' + width + ', minmax(70px, 1fr)) 32px' }}>
+        {headers.map((header, i) => (
+          <input key={'h' + i} className="nk-table-head" aria-label={t('table.heading').replace('{n}', String(i + 1))} value={header} maxLength={60} onChange={(event) => setHeader(i, event.target.value)} />
+        ))}
+        <span />
+        {rows.map((row, r) => (
+          <div key={'r' + r} className="nk-table-row-edit" style={{ display: 'contents' }}>
+            {headers.map((_, c) => (
+              <input key={c} aria-label={t('table.cell').replace('{row}', String(r + 1)).replace('{col}', String(c + 1))} value={row[c] || ''} maxLength={80} onChange={(event) => setCell(r, c, event.target.value)} />
+            ))}
+            <IconButton icon="trash" label={t('table.removeRow')} onClick={() => onChange({ rows: rows.filter((__, i) => i !== r) })} />
+          </div>
+        ))}
+      </div>
+      <div className="nk-library-actions">
+        {rows.length < 20 ? <button type="button" className="nk-btn-ghost" onClick={() => onChange({ rows: rows.concat([headers.map(() => '')]) })}>{t('table.addRow')}</button> : null}
+        {width < 6 ? <button type="button" className="nk-btn-ghost" onClick={() => onChange({ headers: headers.concat(''), rows: rows.map((row) => row.concat('')) })}>{t('table.addColumn')}</button> : null}
+        {width > 1 ? <button type="button" className="nk-btn-ghost" onClick={() => onChange({ headers: headers.slice(0, -1), rows: rows.map((row) => row.slice(0, width - 1)) })}>{t('table.removeColumn')}</button> : null}
+      </div>
+      <TextField label={t('table.note')} value={props.note} multiline maxLength={300} onChange={(note) => onChange({ note })} />
+    </div>
+  );
+}
+
+/**
+ * Formatted text: bold, italic, lists, links and a small heading. The page keeps
+ * only these (the server removes anything else).
+ */
+function RichTextField({ t, value, onChange }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current && ref.current.innerHTML !== value) {
+      ref.current.innerHTML = value;
+    }
+  }, [value]);
+  const run = (command, arg) => {
+    if (ref.current) {
+      ref.current.focus();
+    }
+    document.execCommand(command, false, arg);
+    if (ref.current) {
+      onChange(ref.current.innerHTML);
+    }
+  };
+  const link = () => {
+    const url = window.prompt(t('rich.linkPrompt'), 'https://');
+    if (url) {
+      run('createLink', url);
+    }
+  };
+  return (
+    <div className="nk-ed-field">
+      <span className="nk-ed-label" id="nk-rich-label">{t('rich.body')}</span>
+      <div className="nk-rich-toolbar" role="toolbar" aria-label={t('rich.body')}>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => run('bold')} aria-label={t('rich.bold')}><strong>B</strong></button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => run('italic')} aria-label={t('rich.italic')}><em>I</em></button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => run('insertUnorderedList')} aria-label={t('rich.list')}>• —</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => run('insertOrderedList')} aria-label={t('rich.numbers')}>1.</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => run('formatBlock', 'h3')} aria-label={t('rich.heading')}>H</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={link} aria-label={t('rich.link')}>🔗</button>
+      </div>
+      <div
+        ref={ref}
+        className="nk-rich-input"
+        contentEditable
+        role="textbox"
+        aria-multiline="true"
+        aria-label={t('rich.body')}
+        suppressContentEditableWarning
+        onInput={(event) => onChange(event.currentTarget.innerHTML)}
+      />
+      <p className="nk-help">{t('rich.help')}</p>
+    </div>
+  );
+}
+
+/**
+ * A shared block on this page: edit the library copy, then save it for every
+ * page that shows it. "Make it this page's own" turns it back into a normal section.
+ */
+function SharedBlockFields({ t, section, page, library, onOpen, onLibraryChange, onRefresh, onDetach }) {
+  const item = library.find((row) => row.id === (section.props || {}).ref && row.kind === 'shared');
+  const [draft, setDraft] = useState(item ? item.section : null);
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setDraft(item ? item.section : null);
+  }, [item ? item.id : '']);
+
+  if (!item || !draft) {
+    return <p className="nk-banner" role="alert">{t('shared.missing')}</p>;
+  }
+
+  function save() {
+    setSaving(true);
+    api('library/' + item.id, { method: 'PUT', body: { section: draft } })
+      .then((data) => {
+        if (onLibraryChange) onLibraryChange(data.items || []);
+        setMessage(t('shared.saved').replace('{n}', String(data.pages || 0)));
+        onRefresh();
+      })
+      .catch((err) => setMessage(err.message || t('common.error')))
+      .then(() => setSaving(false));
+  }
+
+  return (
+    <div className="nk-shared-block">
+      <p className="nk-note"><Icon name="link" size={16} /> {t('shared.note').replace('{name}', item.name)}</p>
+      <SectionFields
+        t={t}
+        section={draft}
+        onChange={(props) => setDraft((current) => ({ ...current, props: { ...current.props, ...props } }))}
+        onOpen={onOpen}
+        offer={page.offer}
+      />
+      <StyleFields t={t} section={draft} onChange={(style) => setDraft((current) => ({ ...current, style: { ...(current.style || {}), ...style } }))} />
+      <div className="nk-library-actions">
+        <button type="button" className="nk-btn" disabled={saving} onClick={save}>{t('shared.save')}</button>
+        <button type="button" className="nk-btn-ghost" onClick={() => onDetach(draft)}>{t('shared.detach')}</button>
+      </div>
+      {message ? <p className="nk-muted" role="status">{message}</p> : null}
+    </div>
+  );
+}
+
 /**
  * "Save to my sections" / "Save as my template": a name, then save.
  */
@@ -1183,6 +1582,7 @@ function StyleFields({ t, section, onChange }) {
   const fit = STYLE_FITS.includes(style.fit) ? style.fit : 'cover';
   const round = STYLE_ROUNDS.includes(style.round) ? style.round : 'md';
   const show = STYLE_SHOWS.includes(style.show) ? style.show : 'all';
+  const when = STYLE_WHENS.includes(style.when) ? style.when : 'always';
   const hasImage = STYLE_IMAGE_TYPES.includes(section.type);
   return (
     <div className="nk-style-box">
@@ -1212,6 +1612,25 @@ function StyleFields({ t, section, onChange }) {
       <Field label={t('look.show')} help={t('look.showHelp')}>
         <Choice label={t('look.show')} value={show} options={STYLE_SHOWS.map((key) => [key, t('look.show.' + key)])} onChange={(value) => onChange({ show: value })} />
       </Field>
+      <label className="nk-field">
+        <span>{t('look.when')}</span>
+        <select value={when} onChange={(event) => onChange({ when: event.target.value })}>
+          {STYLE_WHENS.map((key) => <option key={key} value={key}>{t('look.when.' + key)}</option>)}
+        </select>
+      </label>
+      {when === 'dates' ? (
+        <div className="nk-when-dates">
+          <label className="nk-field">
+            <span>{t('look.from')}</span>
+            <input type="datetime-local" value={style.from || ''} onChange={(event) => onChange({ from: event.target.value })} />
+          </label>
+          <label className="nk-field">
+            <span>{t('look.to')}</span>
+            <input type="datetime-local" value={style.to || ''} onChange={(event) => onChange({ to: event.target.value })} />
+          </label>
+        </div>
+      ) : null}
+      {when !== 'always' ? <p className="nk-help">{t('look.whenHelp')}</p> : null}
       <Field label={t('look.spacing')}>
         <Choice label={t('look.spacing')} value={space} options={STYLE_SPACINGS.map((key) => [key, t('look.space.' + key)])} onChange={(value) => onChange({ space: value })} />
       </Field>
@@ -1241,6 +1660,13 @@ function SectionFields({ t, section, onChange, onOpen, offer }) {
   const type = section.type;
   return (
     <div className="nk-form-stack">
+      {type === 'table' ? <TableFields t={t} props={props} onChange={onChange} /> : null}
+      {type === 'text' ? (
+        <>
+          <TextField label={t('prop.title')} value={props.title} onChange={(title) => onChange({ title })} />
+          <RichTextField t={t} value={props.body || ''} onChange={(body) => onChange({ body })} />
+        </>
+      ) : null}
       {type === 'bundles' ? (
         <>
           <TextField label={t('prop.title')} value={props.title} onChange={(title) => onChange({ title })} />
@@ -2153,6 +2579,12 @@ function CheckoutFields({ t, checkout, settings, onChange, onSetup }) {
         onChange={(coupon) => onChange({ ...checkout, coupon })}
       />
       <p className="nk-help">{t('checkout.couponHelp')}</p>
+      <Switch
+        checked={Boolean(checkout.multiStep)}
+        label={t('checkout.multiStep')}
+        onChange={(multiStep) => onChange({ ...checkout, multiStep })}
+      />
+      <p className="nk-help">{t('checkout.multiStepHelp')}</p>
       <TextField label={t('checkout.note')} help={t('checkout.noteHelp')} value={checkout.deliveryNote} multiline maxLength={300} onChange={(deliveryNote) => onChange({ ...checkout, deliveryNote })} />
     </div>
   );

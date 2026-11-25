@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from '@wordpress/element';
+import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
 import { LayoutGrid, MoreVertical, Table as TableIcon } from 'lucide-react';
 import {
   Button,
@@ -105,6 +105,51 @@ export function Pages({ t, go, locale }) {
     navigator.clipboard?.writeText(link).then(() => success(t('pages.copied'))).catch(() => toast({ message: link }));
   }
 
+  // Export: the whole page as one .json file.
+  async function exportPage(page) {
+    setMenuId(0);
+    try {
+      const data = await api('pages/' + page.id + '/export');
+      const blob = new window.Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'noksha-' + (page.slug || 'page-' + page.id) + '.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      toast({ message: err.message || t('common.error') });
+    }
+  }
+
+  // Import: a new draft page from an exported file.
+  const importRef = useRef(null);
+  async function importFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+    setBusy(true);
+    try {
+      let data;
+      try {
+        data = JSON.parse(await file.text());
+      } catch (parseError) {
+        throw new Error(t('transfer.badFile'));
+      }
+      const result = await api('pages/import', { method: 'POST', body: { data } });
+      success(result.productDropped ? t('transfer.importedNoProduct') : t('transfer.imported'));
+      go('pages/' + result.id);
+    } catch (err) {
+      toast({ message: err.message || t('common.error') });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function duplicatePage(page) {
     setBusy(true);
     try {
@@ -174,6 +219,8 @@ export function Pages({ t, go, locale }) {
       <header className="nk-screen-header">
         <h1>{t('pages.title')}</h1>
         <div className="nk-screen-actions">
+          <Button variant="ghost" onClick={() => importRef.current && importRef.current.click()} disabled={busy}>{t('transfer.import')}</Button>
+          <input ref={importRef} type="file" accept="application/json,.json" hidden aria-label={t('transfer.import')} onChange={importFile} />
           <Button variant="ghost" onClick={() => setBulkOpen(true)}>{t('bulk.open')}</Button>
           <Button onClick={() => setModalOpen(true)}>{t('pages.new')}</Button>
         </div>
@@ -266,6 +313,9 @@ export function Pages({ t, go, locale }) {
                         <Button variant="ghost" size="sm" onClick={() => duplicatePage(page)} disabled={busy}>
                           {t('pages.duplicate')}
                         </Button>
+                        <Button variant="ghost" size="sm" onClick={() => exportPage(page)}>
+                          {t('transfer.export')}
+                        </Button>
                         <Button variant="danger" size="sm" onClick={() => { setMenuId(0); removePage(page.id); }}>
                           {t('pages.delete')}
                         </Button>
@@ -307,6 +357,9 @@ export function Pages({ t, go, locale }) {
               <div className="nk-phone-actions">
                 <Button size="sm" variant="ghost" onClick={() => copyLink(page)}>
                   {t('pages.copyLink')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => exportPage(page)}>
+                  {t('transfer.export')}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => removePage(page.id)}>
                   {t('pages.delete')}
