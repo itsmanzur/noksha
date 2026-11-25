@@ -23,6 +23,7 @@ final class Options {
                 'meta' => '',
                 'ga4' => '',
                 'tiktok' => '',
+                'meta_test' => '',
             ],
             'gateways' => [
                 'cod' => ['enabled' => true],
@@ -45,6 +46,13 @@ final class Options {
                 'sender' => 'Noksha',
                 'otp_mode' => 'risk',
                 'otp_ttl' => 300,
+                'events' => [
+                    'placed' => ['enabled' => true, 'en' => '', 'bn' => ''],
+                    'confirmed' => ['enabled' => true, 'en' => '', 'bn' => ''],
+                    'shipped' => ['enabled' => true, 'en' => '', 'bn' => ''],
+                    'delivered' => ['enabled' => true, 'en' => '', 'bn' => ''],
+                    'cancelled' => ['enabled' => false, 'en' => '', 'bn' => ''],
+                ],
             ],
             'woocommerce' => [
                 // Send WooCommerce's own emails for orders placed on a landing page.
@@ -218,6 +226,7 @@ final class Options {
                 'meta' => preg_replace('/\D+/', '', (string) ($pixels['meta'] ?? '')) ?? '',
                 'ga4' => self::ga4((string) ($pixels['ga4'] ?? '')),
                 'tiktok' => preg_replace('/[^A-Za-z0-9]/', '', (string) ($pixels['tiktok'] ?? '')) ?? '',
+                'meta_test' => substr(preg_replace('/[^A-Za-z0-9]/', '', (string) ($pixels['meta_test'] ?? '')) ?? '', 0, 20),
             ],
             'gateways' => [
                 'cod' => [
@@ -236,6 +245,7 @@ final class Options {
                     ? (string) ($sms['otp_mode'] ?? $current['sms']['otp_mode'] ?? 'risk')
                     : 'risk',
                 'otp_ttl' => max(120, min(900, (int) ($sms['otp_ttl'] ?? $current['sms']['otp_ttl'] ?? 300))),
+                'events' => self::sms_events($sms['events'] ?? null, $current['sms']['events'] ?? []),
             ],
             'woocommerce' => [
                 'emails' => array_key_exists('emails', $woocommerce)
@@ -307,6 +317,22 @@ final class Options {
         return self::public_settings();
     }
 
+    /** @param mixed $input @param mixed $current */
+    private static function sms_events($input, $current): array {
+        $out = [];
+        foreach (\Noksha\Notify\Sms::EVENTS as $event) {
+            $row = is_array($input) && is_array($input[$event] ?? null)
+                ? $input[$event]
+                : (is_array($current) && is_array($current[$event] ?? null) ? $current[$event] : []);
+            $out[$event] = [
+                'enabled' => array_key_exists('enabled', $row) ? !empty($row['enabled']) : $event !== 'cancelled',
+                'en' => noksha_clip(sanitize_textarea_field((string) ($row['en'] ?? '')), 320),
+                'bn' => noksha_clip(sanitize_textarea_field((string) ($row['bn'] ?? '')), 320),
+            ];
+        }
+        return $out;
+    }
+
     public static function public_settings(): array {
         $settings = self::settings();
         $secrets = self::secrets();
@@ -315,6 +341,7 @@ final class Options {
         $settings['ssl_ready'] = $settings['has_ssl_password'] && $settings['sslcommerz_store_id'] !== '';
         $settings['has_meta_capi_token'] = ($secrets['meta_capi_token'] ?? '') !== '';
         $settings['has_sms_key'] = ($secrets['sms_api_key'] ?? '') !== '';
+        $settings['sms_defaults'] = \Noksha\Notify\Sms::defaults();
         $settings['has_bkash_api'] = ($secrets['bkash_app_key'] ?? '') !== '' && ($secrets['bkash_app_secret'] ?? '') !== '';
         $settings['has_nagad_api'] = ($secrets['nagad_merchant_id'] ?? '') !== '';
         $settings['has_courier_webhook_secret'] = ($secrets['courier_webhook_secret'] ?? '') !== '';

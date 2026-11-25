@@ -216,13 +216,6 @@
   background: var(--nk-brand);
 }
 
-.nk-editor-shell {
-  display: grid;
-  grid-template-rows: 56px minmax(0, 1fr);
-  min-height: calc(100vh - 32px);
-  background: var(--nk-bg);
-}
-
 .nk-editor-top {
   display: flex;
   align-items: center;
@@ -230,54 +223,6 @@
   padding: 0 var(--nk-space-3);
   background: var(--nk-surface);
   border-bottom: 1px solid var(--nk-border);
-}
-
-.nk-editor-cols {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 320px;
-  min-height: 0;
-}
-
-.nk-editor-pane {
-  overflow: auto;
-  background: var(--nk-surface);
-  border-right: 1px solid var(--nk-border);
-  padding: var(--nk-space-3);
-}
-
-.nk-editor-pane:last-child {
-  border-right: 0;
-  border-left: 1px solid var(--nk-border);
-}
-
-.nk-editor-preview {
-  overflow: auto;
-  display: grid;
-  justify-items: center;
-  padding: var(--nk-space-4);
-  background: var(--nk-bg);
-}
-
-.nk-editor-frame {
-  width: 100%;
-  max-width: 100%;
-  height: min(80vh, 900px);
-  border: 1px solid var(--nk-border);
-  border-radius: var(--nk-radius);
-  background: #fff;
-}
-
-.nk-editor-frame.is-phone { max-width: 390px; }
-.nk-editor-frame.is-tablet { max-width: 768px; }
-.nk-editor-frame.is-desktop { max-width: 1100px; }
-
-.nk-editor-frame .nk-editor-iframe,
-.nk-editor-frame iframe {
-  width: 100%;
-  height: 100%;
-  min-height: 480px;
-  border: 0;
-  display: block;
 }
 
 .nk-editor-title-block {
@@ -362,16 +307,6 @@
 
 .nk-editor-inspector .nk-ui-tabs {
   gap: var(--nk-space-3);
-}
-
-.nk-editor-shell.nk-ed {
-  margin: -20px;
-  min-height: calc(100vh - 88px);
-}
-
-.nk-editor-shell.nk-ed.is-full {
-  height: 100vh;
-  min-height: 100vh;
 }
 
 .nk-section-row {
@@ -497,22 +432,10 @@
   background: var(--nk-danger);
 }
 
-@media (max-width: 1100px) {
-  .nk-editor-cols {
-    grid-template-columns: 200px minmax(0, 1fr);
-  }
-  .nk-editor-pane.is-inspector {
-    grid-column: 1 / -1;
-    border-left: 0;
-    border-top: 1px solid var(--nk-border);
-  }
-}
-
 @media (max-width: 900px) {
   .nk-split-2,
   .nk-split-brand,
-  .nk-settings-layout,
-  .nk-editor-cols {
+  .nk-settings-layout {
     grid-template-columns: 1fr;
   }
   .nk-funnel-step {

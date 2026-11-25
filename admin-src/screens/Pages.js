@@ -16,15 +16,7 @@ import {
 import { api } from '../api';
 import { formatNumber } from '../format';
 import { useConfirm, useToast } from '../providers';
-
-const TEMPLATES = [
-  { value: 'single', labelKey: 'pages.single', descKey: 'pages.singleBody' },
-  { value: 'lead', labelKey: 'pages.lead', descKey: 'pages.leadBody' },
-  { value: 'festival', labelKey: 'pages.festival', descKey: 'pages.festivalBody' },
-  { value: 'beauty', labelKey: 'pages.beauty', descKey: 'pages.beautyBody' },
-  { value: 'gadget', labelKey: 'pages.gadget', descKey: 'pages.gadgetBody' },
-  { value: 'blank', labelKey: 'pages.blank', descKey: 'pages.singleBody' },
-];
+import { templateOptions as pickerOptions } from './TemplateThumb';
 
 export function Pages({ t, go, locale }) {
   const confirm = useConfirm();
@@ -144,11 +136,7 @@ export function Pages({ t, go, locale }) {
       });
   }
 
-  const templateOptions = TEMPLATES.map((tpl) => ({
-    value: tpl.value,
-    label: t(tpl.labelKey),
-    description: t(tpl.descKey),
-  }));
+  const templateOptions = pickerOptions(t);
 
   if (status === 'loading' && !pages.length) {
     return (
@@ -368,6 +356,7 @@ export function Pages({ t, go, locale }) {
         <div className="nk-detail-stack">
           <RadioCards
             legend={t('pages.templatePick')}
+            className="nk-template-picker"
             value={createTemplate}
             onChange={setCreateTemplate}
             options={templateOptions}

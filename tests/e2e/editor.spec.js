@@ -3,6 +3,14 @@ const fs = require('fs');
 
 const fixture = JSON.parse(fs.readFileSync(process.env.NK_E2E_FIXTURE, 'utf8'));
 
+// Open the page in the editor and its page settings (the offer tab opens first).
+async function openPageSettings(page) {
+  await page.goto(`${fixture.adminUrl}#/pages/${fixture.pageId}`);
+  const settings = page.getByRole('button', { name: /Page settings/ }).first();
+  await expect(settings).toBeVisible({ timeout: 30000 });
+  await settings.click();
+}
+
 test.describe('editor: WooCommerce product', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(fixture.loginUrl);
@@ -16,8 +24,7 @@ test.describe('editor: WooCommerce product', () => {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
 
-    await page.goto(`${fixture.adminUrl}#/pages/${fixture.pageId}`);
-    await expect(page.locator('#noksha-root')).toBeVisible();
+    await openPageSettings(page);
 
     // Offer tab is open first: the source is the store product we set up.
     const wcRadio = page.getByRole('radio', { name: 'WooCommerce product' }).first();
@@ -56,7 +63,7 @@ test.describe('editor: WooCommerce product', () => {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
 
-    await page.goto(`${fixture.adminUrl}#/pages/${fixture.pageId}`);
+    await openPageSettings(page);
     const panel = page.locator('.nk-suggest');
     await expect(panel).toBeVisible({ timeout: 20000 });
     await expect(panel).toContainText('Suggestions from this product');

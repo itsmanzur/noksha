@@ -25,25 +25,42 @@ final class Activator {
      * Cached table-existence check based on DB version (avoids SHOW TABLES).
      */
     public static function has_table(string $suffix): bool {
-        static $memo = [];
-        if (array_key_exists($suffix, $memo)) {
-            return $memo[$suffix];
-        }
         $need = self::TABLE_SINCE[$suffix] ?? null;
         if ($need === null) {
-            return $memo[$suffix] = false;
+            return false;
+        }
+        // Tables were just created by install_tables(); the stored version is stale until the end.
+        if (self::$installing) {
+            return true;
+        }
+        if (array_key_exists($suffix, self::$table_memo)) {
+            return self::$table_memo[$suffix];
         }
         $installed = (float) get_option('noksha_db_version', '0');
-        return $memo[$suffix] = ($installed >= $need);
+        return self::$table_memo[$suffix] = ($installed >= $need);
+    }
+
+    /** @var array<string, bool> */
+    private static array $table_memo = [];
+
+    /** True while install/upgrade migrations run (version option not yet bumped). */
+    private static bool $installing = false;
+
+    private static function finish_install(): void {
+        self::$installing = false;
+        self::$table_memo = [];
     }
 
     public static function activate(): void {
         Caps::install();
         self::migrate_event_column();
         self::install_tables();
+        self::$installing = true;
         self::migrate_event_column();
         self::migrate_order_columns();
         self::migrate_v8_wallet_collect();
+        \Noksha\Fraud\Blacklist::migrate_from_option();
+        self::finish_install();
         $type = new Pages\PostType();
         $type->register();
         if (did_action('init')) {
@@ -92,10 +109,12 @@ final class Activator {
         Caps::install();
         self::migrate_event_column();
         self::install_tables();
+        self::$installing = true;
         self::migrate_event_column();
         self::migrate_order_columns();
         self::migrate_v8_wallet_collect();
         \Noksha\Fraud\Blacklist::migrate_from_option();
+        self::finish_install();
         if (get_option('noksha_onboarding') === false) {
             add_option('noksha_onboarding', [
                 'dismissed' => false,

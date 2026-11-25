@@ -1691,3 +1691,65 @@
     });
   });
 })();
+
+/* ---- Lively motion: reveal sections as they scroll into view ---- */
+(function () {
+  var cfg = window.nokshaFront || {};
+  var landing = document.querySelector('.nk-landing.nk-motion-lively');
+  if (!landing || cfg.preview || typeof IntersectionObserver === 'undefined') {
+    return;
+  }
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return;
+  }
+  var items = Array.prototype.filter.call(landing.children, function (el) {
+    return !el.classList.contains('nk-hero') && !el.classList.contains('nk-sticky-cta') && !el.classList.contains('nk-wa-float') && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE';
+  });
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('nk-in');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -6% 0px' });
+  items.forEach(function (el) {
+    el.classList.add('nk-reveal');
+    io.observe(el);
+  });
+  /* Safety net: never leave content hidden if the observer is slow. */
+  window.setTimeout(function () {
+    items.forEach(function (el) { el.classList.add('nk-in'); });
+  }, 6000);
+})();
+
+/* ---- Video section: load the player only after a tap (keeps pages light) ---- */
+(function () {
+  var cfg = window.nokshaFront || {};
+  if (cfg.preview) {
+    return;
+  }
+  document.querySelectorAll('.nk-video-frame[data-nk-video]').forEach(function (frame) {
+    var button = frame.querySelector('.nk-video-play');
+    if (!button) {
+      return;
+    }
+    button.addEventListener('click', function () {
+      var id = frame.getAttribute('data-id') || '';
+      var kind = frame.getAttribute('data-nk-video');
+      if (!/^[\w-]+$/.test(id)) {
+        return;
+      }
+      var frameEl = document.createElement('iframe');
+      var hash = frame.getAttribute('data-hash') || '';
+      frameEl.src = kind === 'vimeo'
+        ? 'https://player.vimeo.com/video/' + id + '?autoplay=1' + (/^[0-9a-f]+$/.test(hash) ? '&h=' + hash : '')
+        : 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0';
+      frameEl.allow = 'autoplay; fullscreen; picture-in-picture';
+      frameEl.allowFullscreen = true;
+      frameEl.title = button.getAttribute('aria-label') || 'Video';
+      frame.innerHTML = '';
+      frame.appendChild(frameEl);
+    });
+  });
+})();

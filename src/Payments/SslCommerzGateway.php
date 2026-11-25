@@ -158,12 +158,25 @@ final class SslCommerzGateway implements Gateway {
         if ($order['status'] === 'paid') {
             return;
         }
-        Repository::update((int) $order['id'], [
+        $id = (int) $order['id'];
+        if (!Repository::can_transition((string) $order['status'], 'paid')) {
+            // Money arrived for a closed order (e.g. customer cancelled first). Record it and flag for refund.
+            Repository::update($id, ['trx_id' => $val_id, 'trx_verified' => 1], false, 'sslcommerz');
+            Repository::update_payment($id, ['status' => 'paid', 'transaction_id' => $val_id]);
+            Repository::add_note($id, sprintf(
+                'ALERT: SSLCommerz payment %s received for a %s order. Refund the customer or reinstate the order manually.',
+                $val_id,
+                (string) $order['status']
+            ));
+            do_action('noksha_payment_on_closed_order', $id, $val_id, (string) $order['status']);
+            return;
+        }
+        Repository::update($id, [
             'status' => 'paid',
             'trx_id' => $val_id,
             'trx_verified' => 1,
         ], true, 'sslcommerz');
-        Repository::update_payment((int) $order['id'], [
+        Repository::update_payment($id, [
             'status' => 'paid',
             'transaction_id' => $val_id,
         ]);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from '@wordpress/element';
+import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 import { api, AsyncView, money } from '../api';
 import { useConfirm } from '../providers';
 import { Modal, Tabs } from '../ui';
@@ -6,11 +6,54 @@ import { EditorTopBar } from './EditorTopBar';
 import { EditorSectionList } from './EditorSectionList';
 import { Icon, IconButton, SECTION_ICONS } from './editorShared';
 
-const TYPES = ['hero', 'benefits', 'product', 'countdown', 'reviews', 'faq', 'guarantee', 'html', 'order_form'];
+/** Width the page is laid out at in the desktop/tablet preview; the frame is scaled down to fit the stage. */
+const VIRTUAL_WIDTH = { desktop: 1100, tablet: 768 };
+
+function previewScale(device, fit) {
+  const virtual = VIRTUAL_WIDTH[device];
+  if (!virtual || !fit.w) {
+    return 1;
+  }
+  return Math.min(1, Math.max(0.3, (fit.w - 40) / virtual));
+}
+
+/** Section picker groups, ordered by what the seller is trying to do. */
+const TYPE_GROUPS = [
+  { key: 'attention', types: ['hero', 'countdown', 'whatsapp'] },
+  { key: 'trust', types: ['benefits', 'reviews', 'guarantee', 'faq', 'compare'] },
+  { key: 'product', types: ['product', 'gallery', 'video', 'steps', 'order_form'] },
+  { key: 'advanced', types: ['html'] },
+];
+
+/** Tiny CSS wireframe so sellers can see what a section looks like before adding it. */
+function SectionThumb({ type }) {
+  return (
+    <span className={`nk-thumb nk-thumb-${type}`} aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
+/** Index where a new section goes: after the selected one, else above the order form. */
+function insertIndex(sections, type, selectedId) {
+  const formIndex = sections.findIndex((item) => item.type === 'order_form');
+  if (type === 'order_form') {
+    return sections.length;
+  }
+  const selectedIndex = selectedId ? sections.findIndex((item) => item.id === selectedId) : -1;
+  if (selectedIndex >= 0) {
+    const after = selectedIndex + 1;
+    return formIndex >= 0 && after > formIndex ? formIndex : after;
+  }
+  return formIndex >= 0 ? formIndex : sections.length;
+}
 const HTML_LIMIT = 20000;
 const METHODS = ['cod', 'manual_bkash', 'manual_nagad', 'sslcommerz'];
 const FIELD_KEYS = ['name', 'phone', 'email', 'division', 'district', 'upazila', 'address', 'note'];
-const ITEM_LIMITS = { benefits: 6, reviews: 8, faq: 12 };
+const ITEM_LIMITS = { benefits: 6, reviews: 8, faq: 12, steps: 6 };
+const SINGLE_TYPES = ['order_form', 'whatsapp'];
 const BULLET_LIMIT = 8;
 const COLOR_GROUPS = [
   ['colors.main', ['brand', 'brandForeground', 'accent']],
@@ -53,6 +96,19 @@ function blankSection(type, t) {
     guarantee: { title: t('section.guarantee'), text: '' },
     html: { html: '' },
     order_form: { title: t('section.order_form'), buttonLabel: t('editor.orderNow') },
+    gallery: { title: t('section.gallery'), images: [] },
+    video: { title: t('section.video'), url: '', caption: '' },
+    steps: {
+      title: t('section.steps'),
+      items: [{ title: t('steps.s1'), text: '' }, { title: t('steps.s2'), text: '' }, { title: t('steps.s3'), text: '' }],
+    },
+    compare: {
+      title: t('section.compare'),
+      usLabel: t('compare.us'),
+      themLabel: t('compare.them'),
+      rows: [{ label: '', us: '✓', them: '✗' }],
+    },
+    whatsapp: { number: '', label: '', message: '' },
   };
   return {
     id: 's_' + Math.random().toString(36).slice(2, 10),
@@ -111,7 +167,8 @@ export function Editor({ t, id, go }) {
   const [redoStack, setRedoStack] = useState([]);
   const [settingsTab, setSettingsTab] = useState('offer');
   const [addOpen, setAddOpen] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  // Focus mode by default: hides the WP admin menu/bar so the preview gets the full width.
+  const [fullscreen, setFullscreen] = useState(true);
 
   const frameRef = useRef(null);
   const scrollRef = useRef(0);
@@ -123,6 +180,24 @@ export function Editor({ t, id, go }) {
   const skipHistoryRef = useRef(false);
   const editingRef = useRef(false);
   const [toolbar, setToolbar] = useState(null);
+  const deviceRef = useRef(null);
+  const fitObserver = useRef(null);
+  const [fit, setFit] = useState({ w: 0, h: 0 });
+  const fitRef = useCallback((node) => {
+    if (fitObserver.current) {
+      fitObserver.current.disconnect();
+      fitObserver.current = null;
+    }
+    if (!node || !window.ResizeObserver) {
+      return;
+    }
+    const measure = () => setFit((prev) => (
+      prev.w === node.clientWidth && prev.h === node.clientHeight ? prev : { w: node.clientWidth, h: node.clientHeight }
+    ));
+    fitObserver.current = new window.ResizeObserver(measure);
+    fitObserver.current.observe(node);
+    measure();
+  }, []);
 
   const dirty = page ? JSON.stringify(page) !== saved : false;
   pageRef.current = page;
@@ -225,7 +300,11 @@ export function Editor({ t, id, go }) {
 
   useEffect(() => {
     document.body.classList.toggle('noksha-fullscreen', fullscreen);
-    return () => document.body.classList.remove('noksha-fullscreen');
+    document.documentElement.classList.toggle('noksha-fullscreen', fullscreen);
+    return () => {
+      document.body.classList.remove('noksha-fullscreen');
+      document.documentElement.classList.remove('noksha-fullscreen');
+    };
   }, [fullscreen]);
 
   const selectedId = view.kind === 'section' ? view.id : '';
@@ -233,7 +312,7 @@ export function Editor({ t, id, go }) {
     selectedRef.current = selectedId;
     markSelected(selectedId, view.from !== 'preview');
     placeToolbar(selectedId);
-  }, [selectedId, html]);
+  }, [selectedId, html, device, fit.w, fit.h]);
 
   function frameDoc() {
     try {
@@ -258,7 +337,11 @@ export function Editor({ t, id, go }) {
     }
     node.classList.add('nk-ed-sel');
     if (scroll) {
-      node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Scroll only the preview iframe — scrollIntoView would also scroll the whole WP admin page.
+      const win = doc.defaultView;
+      if (win) {
+        win.scrollTo({ top: Math.max(0, node.getBoundingClientRect().top + win.scrollY - 12), behavior: 'smooth' });
+      }
     }
   }
 
@@ -292,12 +375,16 @@ export function Editor({ t, id, go }) {
       setToolbar(null);
       return;
     }
-    const frameRect = frame.getBoundingClientRect();
+    // Coordinates are relative to the .nk-device-fit wrapper; the toolbar sits outside the scaled frame.
+    const scale = previewScale(device, fit);
+    const deviceEl = deviceRef.current;
     const nodeRect = node.getBoundingClientRect();
+    const originX = scale < 1 ? (fit.w - VIRTUAL_WIDTH[device] * scale) / 2 : (deviceEl ? deviceEl.offsetLeft : 0);
+    const originY = scale < 1 ? 0 : (deviceEl ? deviceEl.offsetTop : 0);
     setToolbar({
       id: sectionId,
-      top: Math.max(8, nodeRect.top - frameRect.top + 8),
-      left: Math.max(8, nodeRect.left - frameRect.left + 8),
+      top: Math.min(Math.max(8, originY + (frame.offsetTop + nodeRect.top) * scale + 8), Math.max(8, fit.h - 48)),
+      left: Math.max(8, originX + (frame.offsetLeft + nodeRect.left) * scale + 8),
     });
   }
 
@@ -309,6 +396,17 @@ export function Editor({ t, id, go }) {
     const style = doc.createElement('style');
     style.textContent = PREVIEW_CSS;
     doc.head.appendChild(style);
+    // Keep the floating toolbar glued to the selected section while the preview scrolls (incl. smooth scroll).
+    let scrollFrame = 0;
+    doc.addEventListener('scroll', () => {
+      if (scrollFrame) {
+        return;
+      }
+      scrollFrame = window.requestAnimationFrame(() => {
+        scrollFrame = 0;
+        actionsRef.current.place();
+      });
+    }, { passive: true });
     doc.addEventListener('click', (event) => {
       const editable = event.target && event.target.closest ? event.target.closest('[data-nk-prop]') : null;
       if (editable) {
@@ -434,12 +532,18 @@ export function Editor({ t, id, go }) {
 
   function openSettings(tab) {
     setSettingsTab(tab);
-    setView({ kind: 'home' });
+    setView({ kind: 'settings' });
   }
 
   function patchSection(sectionId, props) {
     setSections((sections) => sections.map((section) => (
       section.id === sectionId ? { ...section, props: { ...section.props, ...props } } : section
+    )));
+  }
+
+  function patchSectionStyle(sectionId, style) {
+    setSections((sections) => sections.map((section) => (
+      section.id === sectionId ? { ...section, style: { ...(section.style || {}), ...style } } : section
     )));
   }
 
@@ -479,13 +583,10 @@ export function Editor({ t, id, go }) {
 
   function addSection(type) {
     const created = blankSection(type, t);
+    const anchorId = selectedRef.current;
     setSections((sections) => {
-      const formIndex = sections.findIndex((item) => item.type === 'order_form');
-      if (formIndex < 0 || type === 'order_form') {
-        return sections.concat(created);
-      }
       const next = sections.slice();
-      next.splice(formIndex, 0, created);
+      next.splice(insertIndex(sections, type, anchorId), 0, created);
       return next;
     });
     setView({ kind: 'section', id: created.id });
@@ -560,8 +661,10 @@ export function Editor({ t, id, go }) {
     undo,
     redo,
     pick: (sectionId) => setView({ kind: 'section', id: sectionId, from: 'preview' }),
+    place: () => placeToolbar(selectedRef.current),
   };
 
+  const scale = previewScale(device, fit);
   const deviceClass = device === 'tablet' ? 'is-tablet' : (device === 'desktop' ? 'is-desktop' : 'is-phone');
 
   const section = page && selectedId ? page.sections.find((item) => item.id === selectedId) : null;
@@ -598,22 +701,56 @@ export function Editor({ t, id, go }) {
           {error ? <div className="nk-banner nk-ed-error" role="alert">{error}</div> : null}
           <div className="nk-editor-cols nk-ed-body">
             <aside className="nk-editor-pane nk-ed-side">
-              <EditorSectionList
-                t={t}
-                page={page}
-                selectedId={selectedId}
-                onOpen={(sectionId) => setView({ kind: 'section', id: sectionId })}
-                onToggle={toggleHidden}
-                onReorder={reorder}
-                onAdd={() => setAddOpen(true)}
-              />
+              {view.kind === 'home' ? (
+                <EditorSectionList
+                  t={t}
+                  page={page}
+                  selectedId={selectedId}
+                  onOpen={(sectionId) => setView({ kind: 'section', id: sectionId })}
+                  onToggle={toggleHidden}
+                  onReorder={reorder}
+                  onAdd={() => setAddOpen(true)}
+                  onOpenSettings={() => openSettings(settingsTab)}
+                />
+              ) : (
+                <EditorInspector
+                  t={t}
+                  view={view}
+                  section={section}
+                  page={page}
+                  settings={settings}
+                  settingsTab={settingsTab}
+                  onSettingsTab={setSettingsTab}
+                  onBack={() => setView({ kind: 'home' })}
+                  onPatch={patch}
+                  onPatchSection={patchSection}
+                  onPatchStyle={patchSectionStyle}
+                  onOpenSettings={openSettings}
+                  onToggleHidden={toggleHidden}
+                  onRemoveSection={removeSection}
+                  onRemovePage={removePage}
+                  onLeave={leave}
+                />
+              )}
             </aside>
             <section className="nk-editor-preview nk-ed-stage" aria-label={t('editor.preview')}>
               <div className="nk-ed-stage-bar">
                 <span className="nk-muted">{t('editor.previewHint')}</span>
                 {previewBusy ? <span className="nk-ed-busy">{t('editor.previewUpdating')}</span> : null}
               </div>
-              <div className={`nk-editor-frame nk-device ${deviceClass}`} style={{ position: 'relative' }}>
+              <div ref={fitRef} className={`nk-device-fit${scale < 1 ? ' is-scaled' : ''}`}>
+              <div
+                ref={deviceRef}
+                className={`nk-editor-frame nk-device ${deviceClass}`}
+                style={scale < 1
+                  ? {
+                    width: VIRTUAL_WIDTH[device],
+                    maxWidth: 'none',
+                    height: fit.h / scale,
+                    transform: `translateX(-50%) scale(${scale})`,
+                  }
+                  : undefined}
+              >
                 {device === 'desktop' ? (
                   <div className="nk-device-bar" aria-hidden="true">
                     <i /><i /><i />
@@ -625,6 +762,7 @@ export function Editor({ t, id, go }) {
                 ) : (
                   <iframe ref={frameRef} className="nk-editor-iframe" title={t('editor.preview')} srcDoc={html} onLoad={onFrameLoad} />
                 )}
+              </div>
                 {toolbar && section ? (
                   <div className="nk-canvas-bar" style={{ top: toolbar.top, left: toolbar.left }}>
                     <button type="button" className="nk-btn-ghost" onClick={() => {
@@ -645,40 +783,33 @@ export function Editor({ t, id, go }) {
                 ) : null}
               </div>
             </section>
-            <aside className="nk-editor-pane is-inspector nk-ed-side">
-              <EditorInspector
-                t={t}
-                view={view}
-                section={section}
-                page={page}
-                settings={settings}
-                settingsTab={settingsTab}
-                onSettingsTab={setSettingsTab}
-                onBackToSettings={() => setView({ kind: 'home' })}
-                onPatch={patch}
-                onPatchSection={patchSection}
-                onOpenSettings={openSettings}
-                onToggleHidden={toggleHidden}
-                onRemoveSection={removeSection}
-                onRemovePage={removePage}
-                onLeave={leave}
-              />
-            </aside>
           </div>
           <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('editor.addTitle')} size="lg">
-            <p className="nk-muted">{t('editor.addHelp')}</p>
-            <div className="nk-type-grid">
-              {TYPES.map((type) => {
-                const taken = type === 'order_form' && page.sections.some((item) => item.type === 'order_form');
-                return (
-                  <button key={type} type="button" className="nk-type" disabled={taken} onClick={() => addSection(type)}>
-                    <span className="nk-type-icon"><Icon name={SECTION_ICONS[type]} size={20} /></span>
-                    <strong>{t('section.' + type)}</strong>
-                    <small>{taken ? t('editor.alreadyAdded') : t('sectionHelp.' + type)}</small>
-                  </button>
-                );
-              })}
-            </div>
+            <p className="nk-muted">
+              {section && section.type !== 'order_form'
+                ? `${t('editor.addAfter')} ${t('section.' + section.type)}`
+                : t('editor.addHelp')}
+            </p>
+            {TYPE_GROUPS.map((group) => (
+              <div key={group.key} className="nk-type-group">
+                <h3 className="nk-type-group-title">{t('editor.group.' + group.key)}</h3>
+                <div className="nk-type-grid">
+                  {group.types.map((type) => {
+                    const taken = SINGLE_TYPES.includes(type) && page.sections.some((item) => item.type === type);
+                    return (
+                      <button key={type} type="button" className="nk-type" disabled={taken} onClick={() => addSection(type)}>
+                        <SectionThumb type={type} />
+                        <span className="nk-type-title">
+                          <span className="nk-type-icon"><Icon name={SECTION_ICONS[type]} size={16} /></span>
+                          <strong>{t('section.' + type)}</strong>
+                        </span>
+                        <small>{taken ? t('editor.alreadyAdded') : t('sectionHelp.' + type)}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </Modal>
         </div>
       ) : null}
@@ -694,9 +825,10 @@ function EditorInspector({
   settings,
   settingsTab,
   onSettingsTab,
-  onBackToSettings,
+  onBack,
   onPatch,
   onPatchSection,
+  onPatchStyle,
   onOpenSettings,
   onToggleHidden,
   onRemoveSection,
@@ -707,8 +839,8 @@ function EditorInspector({
     return (
       <div className="nk-panel-view">
         <div className="nk-panel-head">
-          <button type="button" className="nk-link-back" onClick={onBackToSettings}>
-            <Icon name="back" size={16} /> {t('editor.pageSettings')}
+          <button type="button" className="nk-link-back" onClick={onBack}>
+            <Icon name="back" size={16} /> {t('editor.sections')}
           </button>
           <h2>
             <span className="nk-head-icon"><Icon name={SECTION_ICONS[section.type]} /></span>
@@ -727,6 +859,7 @@ function EditorInspector({
             onChange={(props) => onPatchSection(section.id, props)}
             onOpen={onOpenSettings}
           />
+          <StyleFields t={t} section={section} onChange={(style) => onPatchStyle(section.id, style)} />
           <div className="nk-panel-foot">
             <button type="button" className="nk-btn-ghost nk-btn-icon" onClick={() => onToggleHidden(section.id)}>
               <Icon name={section.hidden ? 'eye' : 'eyeOff'} size={16} /> {section.hidden ? t('editor.showSection') : t('editor.hideSection')}
@@ -799,6 +932,9 @@ function EditorInspector({
   return (
     <div className="nk-panel-view nk-editor-inspector">
       <div className="nk-panel-head">
+        <button type="button" className="nk-link-back" onClick={onBack}>
+          <Icon name="back" size={16} /> {t('editor.sections')}
+        </button>
         <h2>{t('editor.pageSettings')}</h2>
         <p className="nk-muted">{t('editor.settingsHelp')}</p>
       </div>
@@ -896,6 +1032,94 @@ function Choice({ label, value, options, onChange }) {
   );
 }
 
+/** Layout variants per section type (first = default). Mirrors Sanitizer::LAYOUTS. */
+const STYLE_LAYOUTS = {
+  hero: ['split', 'center', 'overlay'],
+  benefits: ['cards', 'list', 'numbers'],
+  reviews: ['slider', 'grid'],
+  product: ['side', 'reverse', 'stacked'],
+  gallery: ['slider', 'grid'],
+};
+const STYLE_BACKGROUNDS = ['none', 'soft', 'warm', 'dark', 'brand', 'gradient'];
+const STYLE_SPACINGS = ['compact', 'normal', 'roomy'];
+const STYLE_SIZES = ['sm', 'md', 'lg', 'xl'];
+const STYLE_SIZE_SCALE = { sm: 0.88, md: 1, lg: 1.15, xl: 1.3 };
+const STYLE_RATIOS = ['auto', 'square', '4-3', '16-9', '3-4'];
+const STYLE_FITS = ['cover', 'contain'];
+const STYLE_ROUNDS = ['none', 'md', 'lg', 'full'];
+const STYLE_IMAGE_TYPES = ['hero', 'product', 'gallery'];
+
+/** Approximate heading size in px at phone and desktop widths, for the size hint. */
+function headingRange(type, size) {
+  const scale = STYLE_SIZE_SCALE[size] || 1;
+  const [low, high] = type === 'hero' ? [28, 52] : [22, 32];
+  return Math.round(low * scale) + '–' + Math.round(high * scale) + 'px';
+}
+
+/** Look & feel: layout variant, background band and spacing for one section. */
+function StyleFields({ t, section, onChange }) {
+  if (SINGLE_TYPES.includes(section.type)) {
+    return null;
+  }
+  const style = section.style || {};
+  const layouts = STYLE_LAYOUTS[section.type] || [];
+  const layout = layouts.includes(style.layout) ? style.layout : layouts[0];
+  const bg = STYLE_BACKGROUNDS.includes(style.bg) ? style.bg : 'none';
+  const space = STYLE_SPACINGS.includes(style.space) ? style.space : 'normal';
+  const size = STYLE_SIZES.includes(style.size) ? style.size : 'md';
+  const ratio = STYLE_RATIOS.includes(style.ratio) ? style.ratio : 'auto';
+  const fit = STYLE_FITS.includes(style.fit) ? style.fit : 'cover';
+  const round = STYLE_ROUNDS.includes(style.round) ? style.round : 'md';
+  const hasImage = STYLE_IMAGE_TYPES.includes(section.type);
+  return (
+    <div className="nk-style-box">
+      <h3 className="nk-group-title">{t('look.title')}</h3>
+      {layouts.length > 1 ? (
+        <Field label={t('look.layout')}>
+          <Choice label={t('look.layout')} value={layout} options={layouts.map((key) => [key, t('look.layout.' + key)])} onChange={(value) => onChange({ layout: value })} />
+        </Field>
+      ) : null}
+      <Field label={t('look.background')}>
+        <div className="nk-swatches" role="radiogroup" aria-label={t('look.background')}>
+          {STYLE_BACKGROUNDS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={bg === key}
+              title={t('look.bg.' + key)}
+              className={`nk-swatch nk-swatch-${key}${bg === key ? ' is-active' : ''}`}
+              onClick={() => onChange({ bg: key })}
+            >
+              <span className="nk-sr">{t('look.bg.' + key)}</span>
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label={t('look.spacing')}>
+        <Choice label={t('look.spacing')} value={space} options={STYLE_SPACINGS.map((key) => [key, t('look.space.' + key)])} onChange={(value) => onChange({ space: value })} />
+      </Field>
+      <Field label={t('look.textSize')} help={t('look.textSizeHint').replace('{range}', headingRange(section.type, size))}>
+        <Choice label={t('look.textSize')} value={size} options={STYLE_SIZES.map((key) => [key, t('look.size.' + key)])} onChange={(value) => onChange({ size: value })} />
+      </Field>
+      {hasImage ? (
+        <>
+          <h3 className="nk-group-title">{t('look.image')}</h3>
+          <Field label={t('look.ratio')}>
+            <Choice label={t('look.ratio')} value={ratio} options={STYLE_RATIOS.map((key) => [key, t('look.ratio.' + key)])} onChange={(value) => onChange({ ratio: value })} />
+          </Field>
+          <Field label={t('look.fit')}>
+            <Choice label={t('look.fit')} value={fit} options={STYLE_FITS.map((key) => [key, t('look.fit.' + key)])} onChange={(value) => onChange({ fit: value })} />
+          </Field>
+          <Field label={t('look.round')}>
+            <Choice label={t('look.round')} value={round} options={STYLE_ROUNDS.map((key) => [key, t('look.round.' + key)])} onChange={(value) => onChange({ round: value })} />
+          </Field>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function SectionFields({ t, section, onChange, onOpen }) {
   const props = section.props;
   const type = section.type;
@@ -944,6 +1168,36 @@ function SectionFields({ t, section, onChange, onOpen }) {
           </button>
         </>
       ) : null}
+      {type === 'gallery' ? (
+        <>
+          <TextField label={t('prop.sectionTitle')} value={props.title} onChange={(title) => onChange({ title })} />
+          <GalleryEditor t={t} images={props.images || []} onChange={(images) => onChange({ images })} />
+        </>
+      ) : null}
+      {type === 'video' ? (
+        <>
+          <TextField label={t('prop.sectionTitle')} value={props.title} onChange={(title) => onChange({ title })} />
+          <TextField label={t('prop.videoUrl')} help={t('help.videoUrl')} value={props.url} maxLength={300} onChange={(url) => onChange({ url })} />
+          <TextField label={t('prop.caption')} value={props.caption} maxLength={160} onChange={(caption) => onChange({ caption })} />
+        </>
+      ) : null}
+      {type === 'compare' ? (
+        <>
+          <TextField label={t('prop.sectionTitle')} value={props.title} onChange={(title) => onChange({ title })} />
+          <div className="nk-two">
+            <TextField label={t('prop.usLabel')} value={props.usLabel} maxLength={40} onChange={(usLabel) => onChange({ usLabel })} />
+            <TextField label={t('prop.themLabel')} value={props.themLabel} maxLength={40} onChange={(themLabel) => onChange({ themLabel })} />
+          </div>
+          <CompareEditor t={t} rows={props.rows || []} onChange={(rows) => onChange({ rows })} />
+        </>
+      ) : null}
+      {type === 'whatsapp' ? (
+        <>
+          <TextField label={t('prop.waNumber')} help={t('help.waNumber')} value={props.number} maxLength={20} onChange={(number) => onChange({ number })} />
+          <TextField label={t('prop.waLabel')} value={props.label} maxLength={40} onChange={(label) => onChange({ label })} />
+          <TextField label={t('prop.waMessage')} help={t('help.waMessage')} value={props.message} multiline maxLength={200} onChange={(message) => onChange({ message })} />
+        </>
+      ) : null}
       {type === 'html' ? (
         <Field label={t('prop.html')} help={t('help.htmlSafe')}>
           <textarea
@@ -958,12 +1212,73 @@ function SectionFields({ t, section, onChange, onOpen }) {
           />
         </Field>
       ) : null}
-      {type === 'benefits' || type === 'reviews' || type === 'faq' ? (
+      {type === 'benefits' || type === 'reviews' || type === 'faq' || type === 'steps' ? (
         <>
           <TextField label={t('prop.sectionTitle')} value={props.title} onChange={(title) => onChange({ title })} />
           <ItemsEditor t={t} type={type} items={props.items || []} onChange={(items) => onChange({ items })} />
         </>
       ) : null}
+    </div>
+  );
+}
+
+function GalleryEditor({ t, images, onChange }) {
+  const limit = 8;
+  function add() {
+    if (!chooseImage((url) => onChange(images.concat({ url, alt: '' })))) {
+      const url = window.prompt('https://');
+      if (url) {
+        onChange(images.concat({ url, alt: '' }));
+      }
+    }
+  }
+  return (
+    <div className="nk-ed-field">
+      <span className="nk-ed-label">{t('prop.photos')}</span>
+      <div className="nk-photo-grid">
+        {images.map((image, index) => (
+          <div key={index} className="nk-photo-cell">
+            <img src={image.url} alt="" />
+            <IconButton icon="trash" danger label={t('editor.remove')} onClick={() => onChange(images.filter((_, i) => i !== index))} />
+          </div>
+        ))}
+      </div>
+      {images.length < limit ? (
+        <button type="button" className="nk-add-row" onClick={add}><Icon name="plus" size={16} /> {t('prop.addPhoto')}</button>
+      ) : (
+        <p className="nk-help">{t('items.limit').replace('{n}', String(limit))}</p>
+      )}
+    </div>
+  );
+}
+
+function CompareEditor({ t, rows, onChange }) {
+  const limit = 8;
+  function update(index, partial) {
+    onChange(rows.map((row, i) => (i === index ? { ...row, ...partial } : row)));
+  }
+  return (
+    <div className="nk-ed-field">
+      <span className="nk-ed-label">{t('prop.rows')}</span>
+      <div className="nk-items">
+        {rows.map((row, index) => (
+          <div key={index} className="nk-item is-open">
+            <div className="nk-item-body">
+              <TextField label={t('prop.feature')} value={row.label} maxLength={80} onChange={(label) => update(index, { label })} />
+              <div className="nk-two">
+                <TextField label={t('prop.us')} value={row.us} maxLength={30} onChange={(us) => update(index, { us })} />
+                <TextField label={t('prop.them')} value={row.them} maxLength={30} onChange={(them) => update(index, { them })} />
+              </div>
+              <button type="button" className="nk-text-btn" onClick={() => onChange(rows.filter((_, i) => i !== index))}>{t('editor.remove')}</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {rows.length < limit ? (
+        <button type="button" className="nk-add-row" onClick={() => onChange(rows.concat({ label: '', us: '✓', them: '✗' }))}><Icon name="plus" size={16} /> {t('prop.addRow')}</button>
+      ) : (
+        <p className="nk-help">{t('items.limit').replace('{n}', String(limit))}</p>
+      )}
     </div>
   );
 }
@@ -1042,7 +1357,7 @@ function ItemsEditor({ t, type, items, onChange }) {
               </div>
               {isOpen ? (
                 <div className="nk-item-body">
-                  {type === 'benefits' ? (
+                  {type === 'benefits' || type === 'steps' ? (
                     <>
                       <TextField label={t('prop.itemTitle')} value={item.title} onChange={(title) => update(index, { title })} />
                       <TextField label={t('prop.itemText')} value={item.text} multiline maxLength={800} onChange={(text) => update(index, { text })} />
@@ -1660,6 +1975,14 @@ function PageMetaFields({ t, page, onChange, onDelete }) {
           ['en', t('settings.english')],
         ]} />
         <p className="nk-help">{t('editor.languageHelp')}</p>
+      </div>
+      <div className="nk-ed-field">
+        <span className="nk-ed-label">{t('editor.motion')}</span>
+        <Choice label={t('editor.motion')} value={page.motion === 'lively' ? 'lively' : 'simple'} onChange={(motion) => onChange({ motion })} options={[
+          ['simple', t('editor.motion.simple')],
+          ['lively', t('editor.motion.lively')],
+        ]} />
+        <p className="nk-help">{t('editor.motionHelp')}</p>
       </div>
       <div className="nk-ed-field">
         <span className="nk-ed-label">{t('editor.status')}</span>

@@ -9,22 +9,23 @@ namespace Noksha\Pages;
 
 final class Templates {
     public static function ids(): array {
-        return ['single', 'lead', 'festival', 'beauty', 'gadget', 'blank'];
+        return ['single', 'lead', 'festival', 'fashion', 'food', 'health', 'home', 'beauty', 'gadget', 'blank'];
     }
 
     public static function make(string $template, string $lang): array {
         $lang = $lang === 'bn' ? 'bn' : 'en';
         $template = in_array($template, self::ids(), true) ? $template : 'single';
-        $copy = self::copy($template, $lang);
+        $niche = Niches::has($template) ? Niches::build($template, $lang) : null;
+        $copy = $niche
+            ? ['title' => $niche['title'], 'product' => $niche['product'], 'sections' => $niche['sections']]
+            : self::copy($template, $lang);
         $checkout = self::checkout($lang);
-        $price = match ($template) {
+        $price = $niche ? $niche['price'] : match ($template) {
             'lead' => 0,
             'festival' => 420,
-            'beauty' => 890,
-            'gadget' => 1490,
             default => 480,
         };
-        $compare = $template === 'lead' ? 0 : ($template === 'gadget' ? 1990 : ($template === 'beauty' ? 1200 : 560));
+        $compare = $niche ? $niche['compare'] : ($template === 'lead' ? 0 : 560);
         $offer = [
             'productName' => $copy['product'],
             'price' => $price,
@@ -68,6 +69,7 @@ final class Templates {
                 'type' => $section['type'],
                 'hidden' => false,
                 'props' => $section['props'],
+                'style' => $section['style'] ?? [],
             ];
         }
         return [
@@ -76,7 +78,8 @@ final class Templates {
             'offer' => $offer,
             'checkout' => $checkout,
             'sections' => $sections,
-            'tokens' => null,
+            'tokens' => $niche['tokens'] ?? null,
+            'motion' => $niche['motion'] ?? 'simple',
         ];
     }
 

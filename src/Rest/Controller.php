@@ -72,6 +72,10 @@ final class Controller {
             ['methods' => 'GET', 'callback' => [$this, 'get_brand']] + $admin,
             ['methods' => 'PUT', 'callback' => [$this, 'put_brand']] + $admin,
         ]);
+        register_rest_route('noksha/v1', '/sms/test', [
+            'methods' => 'POST',
+            'callback' => [$this, 'sms_test'],
+        ] + $admin);
         register_rest_route('noksha/v1', '/pages', [
             ['methods' => 'GET', 'callback' => [$this, 'list_pages']] + $admin,
             ['methods' => 'POST', 'callback' => [$this, 'create_page']] + $admin,
@@ -256,6 +260,12 @@ final class Controller {
     public function put_settings(\WP_REST_Request $request): array {
         $params = $request->get_json_params();
         return Options::update_settings(is_array($params) ? $params : []);
+    }
+
+    public function sms_test(\WP_REST_Request $request): array {
+        $params = $request->get_json_params();
+        $phone = \Noksha\Region\Phone::normalize((string) (is_array($params) ? ($params['phone'] ?? '') : ''));
+        return \Noksha\Notify\Sms::send_test($phone !== '' ? $phone : (string) (is_array($params) ? ($params['phone'] ?? '') : ''));
     }
 
     public function get_brand(): array {
@@ -516,6 +526,9 @@ final class Controller {
         if ($collect < 0 || $collect > (float) $order['total']) {
             return new \WP_Error('noksha_invalid_collect', 'Collect amount must be between 0 and the order total.', ['status' => 400]);
         }
+        if (!Orders::can_transition((string) $order['status'], 'paid')) {
+            return new \WP_Error('noksha_bad_transition', 'This order cannot be marked paid from its current status.', ['status' => 409]);
+        }
         Orders::update((int) $order['id'], [
             'status' => 'paid',
             'trx_verified' => 1,
@@ -535,6 +548,9 @@ final class Controller {
         }
         if (!in_array($order['payment_method'], ['manual_bkash', 'manual_nagad'], true) || $order['trx_id'] === '') {
             return new \WP_Error('noksha_trx_required', 'This order has no TrxID to reject.', ['status' => 400]);
+        }
+        if (!Orders::can_transition((string) $order['status'], 'cancelled')) {
+            return new \WP_Error('noksha_bad_transition', 'This order cannot be cancelled from its current status.', ['status' => 409]);
         }
         Orders::update((int) $order['id'], [
             'status' => 'cancelled',
@@ -559,7 +575,7 @@ final class Controller {
 
     public function public_nonce(): array {
         return [
-            'nonce' => wp_create_nonce('noksha_public'),
+            'nonce' => \Noksha\Support\PublicNonce::create(),
             'createdAt' => time(),
         ];
     }
@@ -679,7 +695,7 @@ final class Controller {
             return new \WP_Error('noksha_rate', 'Too many requests.', ['status' => 429]);
         }
         $params = $this->params($request);
-        if (!wp_verify_nonce((string) ($params['nonce'] ?? ''), 'noksha_public')) {
+        if (!\Noksha\Support\PublicNonce::verify((string) ($params['nonce'] ?? ''))) {
             return new \WP_Error('noksha_nonce', 'The form expired.', ['status' => 403]);
         }
         $page_id = (int) ($params['page_id'] ?? 0);
@@ -723,8 +739,13 @@ final class Controller {
         $out = [];
         foreach ($fields as $field) {
             $value = (string) $field;
-            // Formula injection guard for Excel/Sheets.
-            if ($value !== '' && preg_match('/^[=+\-@\t\r]/', $value)) {
+            // Formula injection guard for Excel/Sheets. Plain numbers and phone numbers
+            // (e.g. +8801712345678, -5) are safe and must stay untouched.
+            if (
+                $value !== ''
+                && preg_match('/^[=+\-@\t\r]/', $value)
+                && !preg_match('/^[+\-]?\d+(\.\d+)?$/', $value)
+            ) {
                 $value = "'" . $value;
             }
             if (str_contains($value, '"') || str_contains($value, ',') || str_contains($value, "\n")) {
@@ -745,7 +766,7 @@ final class Controller {
             return new \WP_Error('noksha_rate', 'Too many events.', ['status' => 429]);
         }
         $params = $this->params($request);
-        if (!wp_verify_nonce((string) ($params['nonce'] ?? ''), 'noksha_public')) {
+        if (!\Noksha\Support\PublicNonce::verify((string) ($params['nonce'] ?? ''))) {
             return new \WP_Error('noksha_nonce', 'The form expired.', ['status' => 403]);
         }
         $event = sanitize_key((string) ($params['event'] ?? ''));
@@ -861,7 +882,8 @@ final class Controller {
             return new \WP_Error('noksha_rate', 'Too many attempts.', ['status' => 429]);
         }
         $params = $this->params($request);
-        if (!wp_verify_nonce((string) ($params['nonce'] ?? ''), 'noksha_public')) {
+        // Same form token as checkout (dev-noksha): it does not depend on who is signed in.
+        if (!\Noksha\Support\PublicNonce::verify((string) ($params['nonce'] ?? ''))) {
             return new \WP_Error('noksha_nonce', 'The form expired.', ['status' => 403]);
         }
         $page_id = (int) ($params['page_id'] ?? 0);
@@ -890,7 +912,7 @@ final class Controller {
             return new \WP_Error('noksha_rate', 'Too many OTP requests.', ['status' => 429]);
         }
         $params = $this->params($request);
-        if (!wp_verify_nonce((string) ($params['nonce'] ?? ''), 'noksha_public')) {
+        if (!\Noksha\Support\PublicNonce::verify((string) ($params['nonce'] ?? ''))) {
             return new \WP_Error('noksha_nonce', 'The form expired.', ['status' => 403]);
         }
         $lang = ($params['lang'] ?? '') === 'bn' ? 'bn' : 'en';
@@ -978,6 +1000,9 @@ final class Controller {
             '"Source Sans 3", "Noto Sans Bengali", sans-serif',
             '"Noto Sans", "Noto Sans Bengali", sans-serif',
             'system-ui, "Noto Sans Bengali", sans-serif',
+            '"Hind Siliguri", "Source Sans 3", sans-serif',
+            '"Anek Bangla", "Source Sans 3", sans-serif',
+            '"Noto Sans Bengali", "Source Sans 3", sans-serif',
         ];
     }
 

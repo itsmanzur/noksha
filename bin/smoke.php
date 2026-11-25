@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Noksha\Brand\Tokens;
 use Noksha\Catalog\WcSuggest;
 use Noksha\Front\CachePurge;
+use Noksha\Support\PublicNonce;
 use Noksha\Options;
 use Noksha\Orders\Checkout;
 use Noksha\Orders\Pricing;
@@ -47,7 +48,7 @@ check(count($payload['sections']) >= 5, 'template sections');
 
 $checkout = new Checkout();
 $bad = $checkout->place([
-    'nonce' => wp_create_nonce('noksha_public'),
+    'nonce' => PublicNonce::create(),
     'page_id' => $id,
     'name' => 'Test',
     'phone' => '01700000000',
@@ -62,7 +63,7 @@ $bad = $checkout->place([
 check(is_wp_error($bad) && $bad->get_error_code() === 'noksha_invalid_phone', 'reject patterned phone');
 
 $order = $checkout->place([
-    'nonce' => wp_create_nonce('noksha_public'),
+    'nonce' => PublicNonce::create(),
     'page_id' => $id,
     'name' => 'Nasrin',
     'phone' => '01712345678',
@@ -99,7 +100,7 @@ $doc = Pages::document($id);
 $doc['checkout']['payments'][] = 'sslcommerz';
 Pages::update($id, $doc);
 $ssl = $checkout->place([
-    'nonce' => wp_create_nonce('noksha_public'),
+    'nonce' => PublicNonce::create(),
     'page_id' => $id,
     'name' => 'Imran',
     'phone' => '01812345678',
@@ -113,7 +114,7 @@ $ssl = $checkout->place([
 check(is_wp_error($ssl) && $ssl->get_error_code() === 'noksha_invalid_payment', 'ssl without credentials is not offered ' . (is_wp_error($ssl) ? $ssl->get_error_code() : 'not-error'));
 
 $wallet = $checkout->place([
-    'nonce' => wp_create_nonce('noksha_public'),
+    'nonce' => PublicNonce::create(),
     'page_id' => $id,
     'name' => 'Rupa',
     'phone' => '01612345678',
@@ -137,7 +138,7 @@ if (is_array($wallet)) {
 // A visitor who types a phone and leaves is kept as a lead.
 $lead_req = new WP_REST_Request('POST', '/noksha/v1/leads/capture');
 $lead_req->set_header('content-type', 'application/json');
-$lead_req->set_body(wp_json_encode(['nonce' => wp_create_nonce('noksha_public'), 'page_id' => $id, 'phone' => '01712340099', 'session_id' => 'smokelead1', 'name' => 'Lead']));
+$lead_req->set_body(wp_json_encode(['nonce' => PublicNonce::create(), 'page_id' => $id, 'phone' => '01712340099', 'session_id' => 'smokelead1', 'name' => 'Lead']));
 $lead_res = rest_do_request($lead_req);
 check($lead_res->get_status() === 200 && !empty($lead_res->get_data()['ok']), 'lead capture answers (it used to fail on a missing method)');
 
@@ -181,7 +182,7 @@ if (Noksha\Catalog\WcProduct::active()) {
     check(is_array($stored) && (int) $stored['productId'] === $simple_id && !isset($stored['wc']), 'only the id is stored on the page');
 
     $base = [
-        'nonce' => wp_create_nonce('noksha_public'),
+        'nonce' => PublicNonce::create(),
         'page_id' => $wc_page,
         'name' => 'Rafi',
         'phone' => '01812345678',
@@ -682,7 +683,7 @@ if (Noksha\Catalog\WcProduct::active()) {
     $custom_offer['tiers'] = [['qty' => 2, 'discount' => 50]];
     Pages::update($id, ['offer' => $custom_offer]);
     $tiered = $checkout->place([
-        'nonce' => wp_create_nonce('noksha_public'), 'page_id' => $id, 'name' => 'Tier Buyer', 'phone' => '01712340005',
+        'nonce' => PublicNonce::create(), 'page_id' => $id, 'name' => 'Tier Buyer', 'phone' => '01712340005',
         'division_id' => '6', 'district_id' => '47', 'upazila_id' => 'thana-dhanmondi', 'address' => 'Road 7',
         'payment_method' => 'cod', 'qty' => 2, 'session_id' => 'smoketier1', 'expected_tier_discount' => 50,
     ]);
@@ -693,7 +694,7 @@ if (Noksha\Catalog\WcProduct::active()) {
         check((float) $t_row['collect_amount'] === (float) $t_row['total'], 'the courier collects the total after the step');
     }
     $stale_tier = $checkout->place([
-        'nonce' => wp_create_nonce('noksha_public'), 'page_id' => $id, 'name' => 'Tier Buyer', 'phone' => '01712340006',
+        'nonce' => PublicNonce::create(), 'page_id' => $id, 'name' => 'Tier Buyer', 'phone' => '01712340006',
         'division_id' => '6', 'district_id' => '47', 'upazila_id' => 'thana-dhanmondi', 'address' => 'Road 7',
         'payment_method' => 'cod', 'qty' => 2, 'session_id' => 'smoketier2', 'expected_tier_discount' => 30,
     ]);

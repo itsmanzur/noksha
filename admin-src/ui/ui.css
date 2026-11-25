@@ -266,7 +266,7 @@
 	position: relative;
 	width: 18px;
 	height: 18px;
-	border: 1px solid var(--nk-border);
+	border: 1px solid var(--nk-gray-300);
 	border-radius: 4px;
 	display: inline-flex;
 	align-items: center;
@@ -345,6 +345,37 @@
 .nk-ui-radio-card-desc {
 	font-size: var(--nk-text-xs);
 	color: var(--nk-text-muted);
+}
+
+.nk-ui-radio-card:focus-within {
+	outline: 2px solid var(--nk-brand);
+	outline-offset: 2px;
+}
+
+/* Template picker: a mini page sketch above each name. */
+.nk-template-picker .nk-ui-radio-cards-grid {
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.nk-template-picker .nk-ui-radio-card {
+	align-items: stretch;
+}
+
+.nk-template-picker .nk-ui-radio-card-icon {
+	display: flex;
+	justify-content: center;
+	padding: var(--nk-space-2);
+	margin-bottom: var(--nk-space-1);
+	border-radius: var(--nk-radius);
+	background: var(--nk-surface-muted, rgba(0, 0, 0, 0.04));
+}
+
+.nk-template-thumb {
+	display: block;
+	width: 72px;
+	height: 100px;
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+	border-radius: 5px;
 }
 
 .nk-ui-badge {
@@ -671,6 +702,18 @@
 	border-radius: var(--nk-radius-lg);
 	box-shadow: var(--nk-shadow-md);
 	outline: none;
+	display: flex;
+	flex-direction: column;
+	max-height: calc(100vh - 10vh - 24px);
+}
+
+.nk-ui-modal-header,
+.nk-ui-modal-footer {
+	flex: none;
+}
+
+.nk-ui-modal-body {
+	min-height: 0;
 }
 
 .nk-ui-modal.is-sm {

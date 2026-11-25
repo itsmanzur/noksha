@@ -4,10 +4,12 @@ import { useToast } from '../providers';
 import {
   Button,
   Input,
+  RadioCards,
   Select,
   Stepper,
   Toggle,
 } from '../ui';
+import { templateOptions } from './TemplateThumb';
 
 const STEPS = [
   { id: 'store', labelKey: 'welcome.stepStore' },
@@ -138,12 +140,13 @@ export function Welcome({ t, go, locale }) {
     body = (
       <>
         <p className="nk-muted">{t('welcome.pageHelp')}</p>
-        <Select label={t('pages.language')} value={template} onChange={(e) => setTemplate(e.target.value)}>
-          <option value="single">{t('pages.single')}</option>
-          <option value="lead">{t('pages.lead')}</option>
-          <option value="beauty">{t('pages.beauty')}</option>
-          <option value="gadget">{t('pages.gadget')}</option>
-        </Select>
+        <RadioCards
+          legend={t('pages.templatePick')}
+          className="nk-template-picker"
+          value={template}
+          onChange={setTemplate}
+          options={templateOptions(t, ['blank'])}
+        />
       </>
     );
   }

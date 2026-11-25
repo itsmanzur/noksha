@@ -35,7 +35,7 @@ final class Checkout {
         if (!empty($input['company_website'])) {
             return $this->error('invalid_payment', $lang, 400);
         }
-        if (!wp_verify_nonce((string) ($input['nonce'] ?? ''), 'noksha_public')) {
+        if (!\Noksha\Support\PublicNonce::verify((string) ($input['nonce'] ?? ''))) {
             return $this->error('nonce', $lang, 403);
         }
 
@@ -343,18 +343,30 @@ final class Checkout {
             $wpdb->query('COMMIT');
         }
 
-        $result = $gateway->start($order, $input);
+        try {
+            $result = $gateway->start($order, $input);
+        } catch (\Throwable $e) {
+            // Never leave a committed order dangling as "pending" when the gateway blows up.
+            if ($network_gateway) {
+                Repository::update($id, ['status' => 'cancelled'], true, 'sslcommerz');
+                Repository::add_note($id, 'Gateway exception: ' . noksha_clip($e->getMessage(), 300));
+            } else {
+                $wpdb->query('ROLLBACK');
+            }
+            return $this->error('payment_failed', $lang, 500);
+        }
+
+        Repository::add_payment([
+            'order_id' => $id,
+            'gateway' => $method,
+            'amount' => $total,
+            'status' => $result['payment_status'] ?? 'failed',
+            'transaction_id' => $result['transaction_id'] ?? '',
+            'gateway_ref' => isset($result['gateway_ref']) ? noksha_clip((string) $result['gateway_ref'], 191) : '',
+            'raw_response' => isset($result['raw_response']) ? noksha_clip((string) $result['raw_response'], 20000) : '',
+        ]);
 
         if ($network_gateway) {
-            Repository::add_payment([
-                'order_id' => $id,
-                'gateway' => $method,
-                'amount' => $total,
-                'status' => $result['payment_status'] ?? 'failed',
-                'transaction_id' => $result['transaction_id'] ?? '',
-                'gateway_ref' => isset($result['gateway_ref']) ? noksha_clip((string) $result['gateway_ref'], 191) : '',
-                'raw_response' => isset($result['raw_response']) ? noksha_clip((string) $result['raw_response'], 20000) : '',
-            ]);
             if (!empty($result['error'])) {
                 Repository::update($id, ['status' => 'cancelled'], true, 'sslcommerz');
                 Repository::add_note($id, 'Gateway failed: ' . (string) $result['error']);
@@ -365,15 +377,6 @@ final class Checkout {
                 'trx_id' => $result['transaction_id'] ?? '',
             ], true, 'sslcommerz');
         } else {
-            Repository::add_payment([
-                'order_id' => $id,
-                'gateway' => $method,
-                'amount' => $total,
-                'status' => $result['payment_status'] ?? 'failed',
-                'transaction_id' => $result['transaction_id'] ?? '',
-                'gateway_ref' => isset($result['gateway_ref']) ? noksha_clip((string) $result['gateway_ref'], 191) : '',
-                'raw_response' => isset($result['raw_response']) ? noksha_clip((string) $result['raw_response'], 20000) : '',
-            ]);
             if (!empty($result['error'])) {
                 $wpdb->query('ROLLBACK');
                 return $this->error((string) $result['error'], $lang, 422);
@@ -487,6 +490,15 @@ final class Checkout {
             if ($value !== '') {
                 $out[$key] = noksha_clip($value, 191);
             }
+        }
+        // Customer IP and browser, kept so server-side events (Meta CAPI) can match the buyer.
+        $ip = \Noksha\Support\RateLimit::client_ip();
+        if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+            $out['cip'] = $ip;
+        }
+        $agent = sanitize_text_field(wp_unslash((string) ($_SERVER['HTTP_USER_AGENT'] ?? '')));
+        if ($agent !== '') {
+            $out['cua'] = noksha_clip($agent, 300);
         }
         return $out;
     }

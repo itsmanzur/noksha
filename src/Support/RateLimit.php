@@ -75,8 +75,12 @@ final class RateLimit {
         if (!is_array($cf_ranges)) {
             $cf_ranges = [];
         }
-        // CF-Connecting-IP only when the immediate peer is a Cloudflare edge.
-        if (self::ip_in_list($remote, $cf_ranges) && !empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+        // CF-Connecting-IP only when the immediate peer is a Cloudflare edge, or a trusted local
+        // proxy (nginx/Varnish on this host) and the site owner confirmed it sits behind Cloudflare
+        // (filter noksha_behind_cloudflare). Otherwise the header is client-spoofable.
+        $cf_peer = self::ip_in_list($remote, $cf_ranges)
+            || (bool) apply_filters('noksha_behind_cloudflare', false, $remote);
+        if ($cf_peer && !empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
             $cf = sanitize_text_field(wp_unslash($_SERVER['HTTP_CF_CONNECTING_IP']));
             if (filter_var($cf, FILTER_VALIDATE_IP)) {
                 return $cf;

@@ -10,6 +10,7 @@ export function EditorSectionList({
   onToggle,
   onReorder,
   onAdd,
+  onOpenSettings,
 }) {
   const dragRef = useRef(-1);
   const [over, setOver] = useState(-1);
@@ -22,6 +23,14 @@ export function EditorSectionList({
         <p className="nk-muted">{t('editor.contentHelp')}</p>
       </div>
       <div className="nk-panel-body">
+        <button type="button" className="nk-settings-entry" onClick={onOpenSettings}>
+          <span className="nk-block-icon"><Icon name="tag" /></span>
+          <span className="nk-block-text">
+            <strong>{t('editor.pageSettings')}</strong>
+            <small>{t('editor.settingsEntryHint')}</small>
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
         {sections.length === 0 ? <p className="nk-muted">{t('editor.emptyContent')}</p> : null}
         <ol className="nk-blocks">
           {sections.map((item, index) => (

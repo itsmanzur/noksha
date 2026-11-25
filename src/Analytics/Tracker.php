@@ -10,6 +10,9 @@ namespace Noksha\Analytics;
 use Noksha\Orders\Repository as Orders;
 
 final class Tracker {
+    /** Below this many visits a conversion rate is noise, so it is reported as null. */
+    private const MIN_CONVERSION_VISITS = 30;
+
     public static function table(): string {
         global $wpdb;
         return $wpdb->prefix . 'noksha_events';
@@ -82,12 +85,12 @@ final class Tracker {
             'deltas' => [
                 'orders' => self::pct_delta((float) $funnel['orders'], (float) $prev['orders']),
                 'revenue' => self::pct_delta((float) $funnel['revenue'], (float) $prev['revenue']),
-                'conversion' => self::pct_delta((float) $funnel['conversion'], (float) $prev['conversion']),
+                'conversion' => self::pct_delta($funnel['conversion'], $prev['conversion']),
             ],
             'todayDeltas' => [
                 'orders' => self::pct_delta((float) $today_totals['orders'], (float) $yesterday['orders']),
                 'revenue' => self::pct_delta((float) $today_totals['revenue'], (float) $yesterday['revenue']),
-                'conversion' => self::pct_delta((float) $today_totals['conversion'], (float) $yesterday['conversion']),
+                'conversion' => self::pct_delta($today_totals['conversion'], $yesterday['conversion']),
             ],
             'series' => self::series($start, $days),
             'topPages' => self::top_pages($start),
@@ -377,7 +380,7 @@ final class Tracker {
 
     /** @return float|null Null when not enough visit volume. */
     private static function conversion_rate(int $visits, int $buyers): ?float {
-        if ($visits < 30) {
+        if ($visits < self::MIN_CONVERSION_VISITS) {
             return null;
         }
         return round($buyers / $visits * 100, 1);

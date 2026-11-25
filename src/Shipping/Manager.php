@@ -56,6 +56,12 @@ final class Manager {
         }
         $result = $courier->book($order);
         if (empty($result['ok'])) {
+            Orders::add_note($order_id, sprintf(
+                'Booking with %s failed (%s): %s',
+                $courier_id,
+                (string) ($result['error'] ?? 'courier_failed'),
+                noksha_clip((string) ($result['raw'] ?? ''), 300)
+            ));
             return new \WP_Error('noksha_' . ($result['error'] ?? 'courier_failed'), 'Courier booking failed.', [
                 'status' => 422,
                 'raw' => $result['raw'] ?? '',

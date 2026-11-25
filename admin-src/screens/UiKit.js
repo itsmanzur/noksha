@@ -58,15 +58,15 @@ export function UiKit({ t, locale }) {
 
       <section>
         <h2>Forms</h2>
-        <div className="nk-uikit-row" style={{ alignItems: 'stretch' }}>
+        <div className="nk-uikit-grid">
           <Input label="Name" placeholder="Customer" />
           <Select label="Method">
             <option value="cod">COD</option>
             <option value="bkash">bKash</option>
           </Select>
-          <Textarea label="Note" rows={2} />
+          <Textarea label="Note" rows={2} style={{ minHeight: 0 }} />
         </div>
-        <div className="nk-uikit-row">
+        <div className="nk-uikit-row nk-uikit-row-loose">
           <Toggle checked={toggle} onChange={setToggle} label="Enabled" />
           <Checkbox checked={check} onChange={setCheck} label="Agree" />
         </div>
@@ -80,6 +80,7 @@ export function UiKit({ t, locale }) {
         />
         <Combobox
           label="District"
+          placeholder="Search a district"
           value={combo}
           onChange={setCombo}
           options={[
@@ -140,8 +141,14 @@ export function UiKit({ t, locale }) {
         <DateRangePicker value={range} onChange={setRange} />
         <CopyField label="Webhook" value="https://example.test/wp-json/noksha/v1/webhooks/pathao" />
         <SecretField label="API key" value={secret} onChange={setSecret} saved={false} />
+      </section>
+
+      <section className="is-bare">
+        <h2>Card / toast</h2>
         <Card title="Card"><p className="nk-muted">Calm commerce operations surface.</p></Card>
-        <Button variant="secondary" onClick={() => toast({ message: t('uikit.toast') })}>Toast</Button>
+        <div className="nk-uikit-row">
+          <Button variant="secondary" onClick={() => toast({ message: t('uikit.toast') })}>Toast</Button>
+        </div>
       </section>
     </div>
   );
